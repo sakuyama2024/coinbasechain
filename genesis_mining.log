@@ -1,0 +1,45 @@
+CoinbaseChain Genesis Block Miner
+==================================
+
+Initializing RandomX for epoch 0...
+RandomX cache initialized
+Mining genesis block with:
+  Time: 1760290538
+  Bits: 0x1d0fffff
+  Target: 0000000fffff0000000000000000000000000000000000000000000000000000
+  Threads: 16
+
+Mining... 3527 hashes (705.40 H/s) [5s elapsed]
+Mining... 7193 hashes (719.30 H/s) [10s elapsed]
+Mining... 10409 hashes (693.93 H/s) [15s elapsed]
+Mining... 13728 hashes (686.40 H/s) [20s elapsed]
+Mining... 17094 hashes (683.76 H/s) [25s elapsed]
+Mining... 20366 hashes (678.87 H/s) [30s elapsed]
+Mining... 23586 hashes (673.89 H/s) [35s elapsed]
+Mining... 26743 hashes (668.58 H/s) [40s elapsed]
+Mining... 29896 hashes (664.36 H/s) [45s elapsed]
+Mining... 33145 hashes (662.90 H/s) [50s elapsed]
+Mining... 36125 hashes (656.82 H/s) [55s elapsed]
+Mining... 39223 hashes (653.72 H/s) [60s elapsed]
+Mining... 42355 hashes (651.62 H/s) [65s elapsed]
+Mining... 45674 hashes (652.49 H/s) [70s elapsed]
+Mining... 48387 hashes (645.16 H/s) [75s elapsed]
+Mining... 51124 hashes (639.05 H/s) [80s elapsed]
+Mining... 53828 hashes (633.27 H/s) [85s elapsed]
+Mining... 56492 hashes (627.69 H/s) [90s elapsed]
+Mining... 59574 hashes (627.09 H/s) [95s elapsed]
+Mining... 62529 hashes (625.29 H/s) [100s elapsed]
+Mining... 65499 hashes (623.80 H/s) [105s elapsed]
+Mining... 68361 hashes (621.46 H/s) [110s elapsed]
+Mining... 71403 hashes (620.90 H/s) [115s elapsed]
+Mining... 74511 hashes (620.92 H/s) [120s elapsed]
+Mining... 77377 hashes (619.02 H/s) [125s elapsed]
+Mining... 80488 hashes (619.14 H/s) [130s elapsed]
+Mining... 83421 hashes (617.93 H/s) [135s elapsed]
+Mining... 86133 hashes (615.24 H/s) [140s elapsed]
+Mining... 88925 hashes (613.28 H/s) [145s elapsed]
+Mining... 91861 hashes (612.41 H/s) [150s elapsed]
+Mining... 94749 hashes (611.28 H/s) [155s elapsed]
+Mining... 97538 hashes (609.61 H/s) [160s elapsed]
+Mining... 100495 hashes (609.06 H/s) [165s elapsed]
+Mining... 103322 hashes (607.78 H/s) [170s elapsed]

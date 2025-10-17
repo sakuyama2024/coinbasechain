@@ -1,0 +1,348 @@
+[2025-10-15 13:25:31.770] [default] [info] 
+[2025-10-15 13:25:31.770] [default] [info] 
+[2025-10-15 13:25:31.770] [default] [info] 
+[2025-10-15 13:25:31.770] [default] [info] 
+[2025-10-15 13:25:31.770] [default] [info] 
+[2025-10-15 13:25:31.770] [default] [info] 
+[2025-10-15 13:25:31.770] [default] [info] 
+[2025-10-15 13:25:31.770] [default] [info] 
+[2025-10-15 13:25:31.770] [default] [info] 
+[2025-10-15 13:25:31.770] [default] [info] 
+[2025-10-15 13:25:31.770] [default] [info] ╔══════════════════════════════════════════════════════════╗
+[2025-10-15 13:25:31.770] [default] [info] ║                                                          ║
+[2025-10-15 13:25:31.770] [default] [info] ║   ██╗   ██╗███╗   ██╗██╗ ██████╗██╗████████╗██╗   ██╗  ║
+[2025-10-15 13:25:31.770] [default] [info] ║   ██║   ██║████╗  ██║██║██╔════╝██║╚══██╔══╝╚██╗ ██╔╝  ║
+[2025-10-15 13:25:31.770] [default] [info] ║   ██║   ██║██╔██╗ ██║██║██║     ██║   ██║    ╚████╔╝   ║
+[2025-10-15 13:25:31.770] [default] [info] ║   ██║   ██║██║╚██╗██║██║██║     ██║   ██║     ╚██╔╝    ║
+[2025-10-15 13:25:31.770] [default] [info] ║   ╚██████╔╝██║ ╚████║██║╚██████╗██║   ██║      ██║     ║
+[2025-10-15 13:25:31.770] [default] [info] ║    ╚═════╝ ╚═╝  ╚═══╝╚═╝ ╚═════╝╚═╝   ╚═╝      ╚═╝     ║
+[2025-10-15 13:25:31.770] [default] [info] ║                                                          ║
+[2025-10-15 13:25:31.770] [default] [info] ║                    P O W   C H A I N                     ║
+[2025-10-15 13:25:31.770] [default] [info] ║                                                          ║
+[2025-10-15 13:25:31.770] [default] [info] ╚══════════════════════════════════════════════════════════╝
+[2025-10-15 13:25:31.770] [default] [info] 
+[2025-10-15 13:25:31.770] [default] [info] Logging system initialized (level: info)
+[2025-10-15 13:25:31.770] [default] [info] Initializing CoinbaseChain...
+[2025-10-15 13:25:31.770] [default] [info] Data directory: /var/folders/qr/dxdchy5s6y311kmp4dhhymxm0000gn/T/chain_20_7pp5mp01
+[2025-10-15 13:25:31.770] [default] [info] Initializing RandomX...
+[2025-10-15 13:25:31.770] [crypto] [info] RandomX initialized (cache size: 2, light mode only)
+[2025-10-15 13:25:31.770] [default] [info] Initializing blockchain...
+[2025-10-15 13:25:31.770] [default] [info] Using regtest
+[2025-10-15 13:25:31.770] [chain] [info] Loading headers from /var/folders/qr/dxdchy5s6y311kmp4dhhymxm0000gn/T/chain_20_7pp5mp01/headers.json
+[2025-10-15 13:25:31.770] [chain] [warning] Header file not found: /var/folders/qr/dxdchy5s6y311kmp4dhhymxm0000gn/T/chain_20_7pp5mp01/headers.json (starting fresh)
+[2025-10-15 13:25:31.770] [default] [info] No existing headers found, initializing with genesis block
+[2025-10-15 13:25:31.770] [default] [info] Blockchain initialized at height: 0
+[2025-10-15 13:25:31.770] [default] [info] Initializing miner...
+[2025-10-15 13:25:31.770] [default] [info] Initializing network manager...
+[2025-10-15 13:25:31.770] [network] [info] NetworkManager initialized with local nonce: 3099762665667099718
+[2025-10-15 13:25:31.770] [default] [info] HeaderSync initialized (sequential mode) with peer misbehavior tracking
+[2025-10-15 13:25:31.771] [default] [info] BanMan initialized with datadir: <none>
+[2025-10-15 13:25:31.771] [network] [info] Loading peer addresses from /var/folders/qr/dxdchy5s6y311kmp4dhhymxm0000gn/T/chain_20_7pp5mp01/peers.json
+[2025-10-15 13:25:31.771] [network] [warning] Peer address file not found: /var/folders/qr/dxdchy5s6y311kmp4dhhymxm0000gn/T/chain_20_7pp5mp01/peers.json (starting fresh)
+[2025-10-15 13:25:31.771] [default] [info] Initializing RPC server...
+[2025-10-15 13:25:31.771] [default] [info] Initialization complete
+[2025-10-15 13:25:31.771] [default] [info] Starting CoinbaseChain...
+[2025-10-15 13:25:31.771] [default] [info] RPC server started on /var/folders/qr/dxdchy5s6y311kmp4dhhymxm0000gn/T/chain_20_7pp5mp01/node.sock
+[2025-10-15 13:25:31.771] [default] [info] Starting periodic header saves (every 10 minutes)
+[2025-10-15 13:25:31.771] [default] [info] CoinbaseChain started successfully
+[2025-10-15 13:25:31.771] [default] [info] Data directory: /var/folders/qr/dxdchy5s6y311kmp4dhhymxm0000gn/T/chain_20_7pp5mp01
+[2025-10-15 13:25:31.771] [default] [info] Inbound connections disabled
+[2025-10-15 13:25:31.771] [default] [info] Press Ctrl+C to stop
+[2025-10-15 13:25:31.878] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:31.878] [default] [info] Miner: Mining block at height 1
+[2025-10-15 13:25:31.878] [default] [info]   Previous: 0233b37bb6942bfb...
+[2025-10-15 13:25:31.878] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:32.229] [crypto] [info] Created RandomX cache for epoch 55
+[2025-10-15 13:25:32.230] [crypto] [info] Created RandomX light mode VM for epoch 55
+[2025-10-15 13:25:32.248] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 1, Nonce: 0, Hash: b2b8afa78eebda14
+[2025-10-15 13:25:32.258] [default] [info] Accepted new block header: hash=b2b8afa78eebda14, height=1, work=0000000000000000
+[2025-10-15 13:25:32.258] [network] [info] Relaying block b2b8afa78eebda145df6f310d135312457a197a9499526c8fce22c52d88308c9 to 0 peers
+[2025-10-15 13:25:32.258] [default] [info] New best chain activated! Height: 1, Hash: b2b8afa78eebda14, Work: 0000000000000000
+[2025-10-15 13:25:32.296] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:32.296] [default] [info] Miner: Stopped
+[2025-10-15 13:25:32.296] [default] [info]   Total hashes: 0
+[2025-10-15 13:25:32.296] [default] [info]   Time: 0s
+[2025-10-15 13:25:32.296] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:32.296] [default] [info]   Blocks found: 1
+[2025-10-15 13:25:32.346] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:32.346] [default] [info] Miner: Mining block at height 2
+[2025-10-15 13:25:32.346] [default] [info]   Previous: b2b8afa78eebda14...
+[2025-10-15 13:25:32.346] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:32.365] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 2, Nonce: 0, Hash: f1e5a1f83395ef72
+[2025-10-15 13:25:32.374] [default] [info] Accepted new block header: hash=f1e5a1f83395ef72, height=2, work=0000000000000000
+[2025-10-15 13:25:32.374] [network] [info] Relaying block f1e5a1f83395ef72b35ea4347535ef0ab283227a7382c54e98cccd8efd10e003 to 0 peers
+[2025-10-15 13:25:32.374] [default] [info] New best chain activated! Height: 2, Hash: f1e5a1f83395ef72, Work: 0000000000000000
+[2025-10-15 13:25:32.450] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:32.450] [default] [info] Miner: Stopped
+[2025-10-15 13:25:32.450] [default] [info]   Total hashes: 0
+[2025-10-15 13:25:32.450] [default] [info]   Time: 0s
+[2025-10-15 13:25:32.450] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:32.450] [default] [info]   Blocks found: 2
+[2025-10-15 13:25:32.502] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:32.502] [default] [info] Miner: Mining block at height 3
+[2025-10-15 13:25:32.502] [default] [info]   Previous: f1e5a1f83395ef72...
+[2025-10-15 13:25:32.502] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:32.537] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 3, Nonce: 0, Hash: cf5965498ea2c5b6
+[2025-10-15 13:25:32.571] [default] [info] Accepted new block header: hash=cf5965498ea2c5b6, height=3, work=0000000000000000
+[2025-10-15 13:25:32.572] [network] [info] Relaying block cf5965498ea2c5b6e8dbd6603078da3defe01cc039ad2f55bb4e53bef06ade1b to 0 peers
+[2025-10-15 13:25:32.572] [default] [info] New best chain activated! Height: 3, Hash: cf5965498ea2c5b6, Work: 0000000000000000
+[2025-10-15 13:25:32.607] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:32.607] [default] [info] Miner: Stopped
+[2025-10-15 13:25:32.607] [default] [info]   Total hashes: 0
+[2025-10-15 13:25:32.607] [default] [info]   Time: 0s
+[2025-10-15 13:25:32.607] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:32.607] [default] [info]   Blocks found: 3
+[2025-10-15 13:25:32.663] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:32.663] [default] [info] Miner: Mining block at height 4
+[2025-10-15 13:25:32.663] [default] [info]   Previous: cf5965498ea2c5b6...
+[2025-10-15 13:25:32.663] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:32.730] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 4, Nonce: 1, Hash: 32ca0a86055762d4
+[2025-10-15 13:25:32.752] [default] [info] Accepted new block header: hash=32ca0a86055762d4, height=4, work=0000000000000000
+[2025-10-15 13:25:32.752] [network] [info] Relaying block 32ca0a86055762d412852e60706918b47b06088c70f51672e5cc53f45f909d2e to 0 peers
+[2025-10-15 13:25:32.752] [default] [info] New best chain activated! Height: 4, Hash: 32ca0a86055762d4, Work: 0000000000000000
+[2025-10-15 13:25:32.768] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:32.768] [default] [info] Miner: Stopped
+[2025-10-15 13:25:32.768] [default] [info]   Total hashes: 1
+[2025-10-15 13:25:32.768] [default] [info]   Time: 0s
+[2025-10-15 13:25:32.768] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:32.768] [default] [info]   Blocks found: 4
+[2025-10-15 13:25:32.823] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:32.823] [default] [info] Miner: Mining block at height 5
+[2025-10-15 13:25:32.823] [default] [info]   Previous: 32ca0a86055762d4...
+[2025-10-15 13:25:32.823] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:32.843] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 5, Nonce: 0, Hash: eb900250f43810b6
+[2025-10-15 13:25:32.851] [default] [info] Accepted new block header: hash=eb900250f43810b6, height=5, work=0000000000000000
+[2025-10-15 13:25:32.851] [network] [info] Relaying block eb900250f43810b6eebee55ac7530661d61369af76173fa903d1ee7eabc1c849 to 0 peers
+[2025-10-15 13:25:32.851] [default] [info] New best chain activated! Height: 5, Hash: eb900250f43810b6, Work: 0000000000000000
+[2025-10-15 13:25:32.928] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:32.928] [default] [info] Miner: Stopped
+[2025-10-15 13:25:32.928] [default] [info]   Total hashes: 0
+[2025-10-15 13:25:32.928] [default] [info]   Time: 0s
+[2025-10-15 13:25:32.928] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:32.928] [default] [info]   Blocks found: 5
+[2025-10-15 13:25:32.981] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:32.982] [default] [info] Miner: Mining block at height 6
+[2025-10-15 13:25:32.982] [default] [info]   Previous: eb900250f43810b6...
+[2025-10-15 13:25:32.982] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:33.054] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 6, Nonce: 1, Hash: 30c7d0e9da3cc882
+[2025-10-15 13:25:33.080] [default] [info] Accepted new block header: hash=30c7d0e9da3cc882, height=6, work=0000000000000000
+[2025-10-15 13:25:33.080] [network] [info] Relaying block 30c7d0e9da3cc882e9c0a078e0aa009653050a4747d4bf25423ed89fb46757b7 to 0 peers
+[2025-10-15 13:25:33.080] [default] [info] New best chain activated! Height: 6, Hash: 30c7d0e9da3cc882, Work: 0000000000000000
+[2025-10-15 13:25:33.082] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:33.083] [default] [info] Miner: Stopped
+[2025-10-15 13:25:33.083] [default] [info]   Total hashes: 1
+[2025-10-15 13:25:33.083] [default] [info]   Time: 0s
+[2025-10-15 13:25:33.083] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:33.083] [default] [info]   Blocks found: 6
+[2025-10-15 13:25:33.138] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:33.138] [default] [info] Miner: Mining block at height 7
+[2025-10-15 13:25:33.138] [default] [info]   Previous: 30c7d0e9da3cc882...
+[2025-10-15 13:25:33.138] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:33.233] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 7, Nonce: 3, Hash: e4799a0d8f85f1a8
+[2025-10-15 13:25:33.244] [default] [info] Accepted new block header: hash=e4799a0d8f85f1a8, height=7, work=0000000000000000
+[2025-10-15 13:25:33.244] [network] [info] Relaying block e4799a0d8f85f1a8d0fd46a5751ac4f4935db2c81a47224c916f92f8c3145de9 to 0 peers
+[2025-10-15 13:25:33.244] [default] [info] New best chain activated! Height: 7, Hash: e4799a0d8f85f1a8, Work: 0000000000000000
+[2025-10-15 13:25:33.244] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:33.244] [default] [info] Miner: Stopped
+[2025-10-15 13:25:33.244] [default] [info]   Total hashes: 3
+[2025-10-15 13:25:33.244] [default] [info]   Time: 0s
+[2025-10-15 13:25:33.244] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:33.244] [default] [info]   Blocks found: 7
+[2025-10-15 13:25:33.299] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:33.299] [default] [info] Miner: Mining block at height 8
+[2025-10-15 13:25:33.299] [default] [info]   Previous: e4799a0d8f85f1a8...
+[2025-10-15 13:25:33.299] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:33.342] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 8, Nonce: 1, Hash: 53b1cc2935cfae2a
+[2025-10-15 13:25:33.353] [default] [info] Accepted new block header: hash=53b1cc2935cfae2a, height=8, work=0000000000000000
+[2025-10-15 13:25:33.353] [network] [info] Relaying block 53b1cc2935cfae2a5ac697fd1d932b2d8da15320bc1fa500bd6b39b7fac41d83 to 0 peers
+[2025-10-15 13:25:33.353] [default] [info] New best chain activated! Height: 8, Hash: 53b1cc2935cfae2a, Work: 0000000000000000
+[2025-10-15 13:25:33.404] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:33.404] [default] [info] Miner: Stopped
+[2025-10-15 13:25:33.404] [default] [info]   Total hashes: 1
+[2025-10-15 13:25:33.404] [default] [info]   Time: 0s
+[2025-10-15 13:25:33.404] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:33.404] [default] [info]   Blocks found: 8
+[2025-10-15 13:25:33.459] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:33.459] [default] [info] Miner: Mining block at height 9
+[2025-10-15 13:25:33.459] [default] [info]   Previous: 53b1cc2935cfae2a...
+[2025-10-15 13:25:33.459] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:33.610] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 9, Nonce: 5, Hash: 5d81b50320d0a1e6
+[2025-10-15 13:25:33.630] [default] [info] Accepted new block header: hash=5d81b50320d0a1e6, height=9, work=0000000000000000
+[2025-10-15 13:25:33.630] [network] [info] Relaying block 5d81b50320d0a1e6a55488bf26cfbebf626d7d4ae80a5503af2e475ade558945 to 0 peers
+[2025-10-15 13:25:33.630] [default] [info] New best chain activated! Height: 9, Hash: 5d81b50320d0a1e6, Work: 0000000000000000
+[2025-10-15 13:25:33.669] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:33.669] [default] [info] Miner: Stopped
+[2025-10-15 13:25:33.669] [default] [info]   Total hashes: 5
+[2025-10-15 13:25:33.669] [default] [info]   Time: 0s
+[2025-10-15 13:25:33.669] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:33.669] [default] [info]   Blocks found: 9
+[2025-10-15 13:25:33.721] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:33.721] [default] [info] Miner: Mining block at height 10
+[2025-10-15 13:25:33.721] [default] [info]   Previous: 5d81b50320d0a1e6...
+[2025-10-15 13:25:33.721] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:33.755] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 10, Nonce: 0, Hash: c1d9c4f8dbfebea0
+[2025-10-15 13:25:33.781] [default] [info] Accepted new block header: hash=c1d9c4f8dbfebea0, height=10, work=0000000000000000
+[2025-10-15 13:25:33.781] [network] [info] Relaying block c1d9c4f8dbfebea0df1d732627185834bbab5584a831273c63265b4272222b37 to 0 peers
+[2025-10-15 13:25:33.781] [default] [info] New best chain activated! Height: 10, Hash: c1d9c4f8dbfebea0, Work: 0000000000000000
+[2025-10-15 13:25:33.826] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:33.826] [default] [info] Miner: Stopped
+[2025-10-15 13:25:33.826] [default] [info]   Total hashes: 0
+[2025-10-15 13:25:33.826] [default] [info]   Time: 0s
+[2025-10-15 13:25:33.826] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:33.826] [default] [info]   Blocks found: 10
+[2025-10-15 13:25:33.880] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:33.880] [default] [info] Miner: Mining block at height 11
+[2025-10-15 13:25:33.880] [default] [info]   Previous: c1d9c4f8dbfebea0...
+[2025-10-15 13:25:33.880] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:34.026] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 11, Nonce: 6, Hash: f8d349f1d8a5a1eb
+[2025-10-15 13:25:34.036] [default] [info] Accepted new block header: hash=f8d349f1d8a5a1eb, height=11, work=0000000000000000
+[2025-10-15 13:25:34.036] [network] [info] Relaying block f8d349f1d8a5a1ebab8a706c8a6cae8103651aa3e3000b5f3372781e3f3d744d to 0 peers
+[2025-10-15 13:25:34.036] [default] [info] New best chain activated! Height: 11, Hash: f8d349f1d8a5a1eb, Work: 0000000000000000
+[2025-10-15 13:25:34.090] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:34.090] [default] [info] Miner: Stopped
+[2025-10-15 13:25:34.090] [default] [info]   Total hashes: 6
+[2025-10-15 13:25:34.090] [default] [info]   Time: 0s
+[2025-10-15 13:25:34.090] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:34.090] [default] [info]   Blocks found: 11
+[2025-10-15 13:25:34.140] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:34.140] [default] [info] Miner: Mining block at height 12
+[2025-10-15 13:25:34.140] [default] [info]   Previous: f8d349f1d8a5a1eb...
+[2025-10-15 13:25:34.140] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:34.164] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 12, Nonce: 0, Hash: 0fa2087fb40f97ad
+[2025-10-15 13:25:34.174] [default] [info] Accepted new block header: hash=0fa2087fb40f97ad, height=12, work=0000000000000000
+[2025-10-15 13:25:34.174] [network] [info] Relaying block 0fa2087fb40f97adae6b671f1488c7e65f5df48541f1254ad5ee42c32285287a to 0 peers
+[2025-10-15 13:25:34.174] [default] [info] New best chain activated! Height: 12, Hash: 0fa2087fb40f97ad, Work: 0000000000000000
+[2025-10-15 13:25:34.245] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:34.245] [default] [info] Miner: Stopped
+[2025-10-15 13:25:34.245] [default] [info]   Total hashes: 0
+[2025-10-15 13:25:34.245] [default] [info]   Time: 0s
+[2025-10-15 13:25:34.245] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:34.245] [default] [info]   Blocks found: 12
+[2025-10-15 13:25:34.296] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:34.296] [default] [info] Miner: Mining block at height 13
+[2025-10-15 13:25:34.296] [default] [info]   Previous: 0fa2087fb40f97ad...
+[2025-10-15 13:25:34.296] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:34.330] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 13, Nonce: 0, Hash: 286a389db1b51ab2
+[2025-10-15 13:25:34.371] [default] [info] Accepted new block header: hash=286a389db1b51ab2, height=13, work=0000000000000000
+[2025-10-15 13:25:34.371] [network] [info] Relaying block 286a389db1b51ab2b82f74fae7e8d990ef83480c5af83d1909de76939966b477 to 0 peers
+[2025-10-15 13:25:34.371] [default] [info] New best chain activated! Height: 13, Hash: 286a389db1b51ab2, Work: 0000000000000000
+[2025-10-15 13:25:34.400] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:34.400] [default] [info] Miner: Stopped
+[2025-10-15 13:25:34.400] [default] [info]   Total hashes: 0
+[2025-10-15 13:25:34.400] [default] [info]   Time: 0s
+[2025-10-15 13:25:34.400] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:34.400] [default] [info]   Blocks found: 13
+[2025-10-15 13:25:34.454] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:34.454] [default] [info] Miner: Mining block at height 14
+[2025-10-15 13:25:34.454] [default] [info]   Previous: 286a389db1b51ab2...
+[2025-10-15 13:25:34.454] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:34.518] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 14, Nonce: 1, Hash: 5e274823abdb9829
+[2025-10-15 13:25:34.534] [default] [info] Accepted new block header: hash=5e274823abdb9829, height=14, work=0000000000000000
+[2025-10-15 13:25:34.534] [network] [info] Relaying block 5e274823abdb98295010997325b26c69a122e90457c1ad5f7e74bd325a2c712c to 0 peers
+[2025-10-15 13:25:34.534] [default] [info] New best chain activated! Height: 14, Hash: 5e274823abdb9829, Work: 0000000000000000
+[2025-10-15 13:25:34.557] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:34.557] [default] [info] Miner: Stopped
+[2025-10-15 13:25:34.557] [default] [info]   Total hashes: 1
+[2025-10-15 13:25:34.557] [default] [info]   Time: 0s
+[2025-10-15 13:25:34.557] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:34.557] [default] [info]   Blocks found: 14
+[2025-10-15 13:25:34.608] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:34.608] [default] [info] Miner: Mining block at height 15
+[2025-10-15 13:25:34.608] [default] [info]   Previous: 5e274823abdb9829...
+[2025-10-15 13:25:34.608] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:34.772] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 15, Nonce: 5, Hash: 0fda27b17124b66f
+[2025-10-15 13:25:34.782] [default] [info] Accepted new block header: hash=0fda27b17124b66f, height=15, work=0000000000000000
+[2025-10-15 13:25:34.782] [network] [info] Relaying block 0fda27b17124b66ff5445ab08acb99491ad4aa1f483cfe2675c23ea5e23f0ce0 to 0 peers
+[2025-10-15 13:25:34.782] [default] [info] New best chain activated! Height: 15, Hash: 0fda27b17124b66f, Work: 0000000000000000
+[2025-10-15 13:25:34.817] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:34.817] [default] [info] Miner: Stopped
+[2025-10-15 13:25:34.817] [default] [info]   Total hashes: 5
+[2025-10-15 13:25:34.817] [default] [info]   Time: 0s
+[2025-10-15 13:25:34.817] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:34.817] [default] [info]   Blocks found: 15
+[2025-10-15 13:25:34.871] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:34.871] [default] [info] Miner: Mining block at height 16
+[2025-10-15 13:25:34.871] [default] [info]   Previous: 0fda27b17124b66f...
+[2025-10-15 13:25:34.871] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:34.892] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 16, Nonce: 0, Hash: 32ffac6b6158f75e
+[2025-10-15 13:25:34.913] [default] [info] Accepted new block header: hash=32ffac6b6158f75e, height=16, work=0000000000000000
+[2025-10-15 13:25:34.913] [network] [info] Relaying block 32ffac6b6158f75e4c218691e6021f2ae305c54fa2c607682a915b2e647f3139 to 0 peers
+[2025-10-15 13:25:34.913] [default] [info] New best chain activated! Height: 16, Hash: 32ffac6b6158f75e, Work: 0000000000000000
+[2025-10-15 13:25:34.976] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:34.976] [default] [info] Miner: Stopped
+[2025-10-15 13:25:34.976] [default] [info]   Total hashes: 0
+[2025-10-15 13:25:34.976] [default] [info]   Time: 0s
+[2025-10-15 13:25:34.976] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:34.976] [default] [info]   Blocks found: 16
+[2025-10-15 13:25:35.030] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:35.030] [default] [info] Miner: Mining block at height 17
+[2025-10-15 13:25:35.030] [default] [info]   Previous: 32ffac6b6158f75e...
+[2025-10-15 13:25:35.030] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:35.051] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 17, Nonce: 0, Hash: 93acd57aa27856ef
+[2025-10-15 13:25:35.065] [default] [info] Accepted new block header: hash=93acd57aa27856ef, height=17, work=0000000000000000
+[2025-10-15 13:25:35.065] [network] [info] Relaying block 93acd57aa27856ef8744cbf6a66cf62d6cb938828ffe196da366712b117c8b74 to 0 peers
+[2025-10-15 13:25:35.065] [default] [info] New best chain activated! Height: 17, Hash: 93acd57aa27856ef, Work: 0000000000000000
+[2025-10-15 13:25:35.131] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:35.131] [default] [info] Miner: Stopped
+[2025-10-15 13:25:35.131] [default] [info]   Total hashes: 0
+[2025-10-15 13:25:35.131] [default] [info]   Time: 0s
+[2025-10-15 13:25:35.131] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:35.131] [default] [info]   Blocks found: 17
+[2025-10-15 13:25:35.184] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:35.184] [default] [info] Miner: Mining block at height 18
+[2025-10-15 13:25:35.184] [default] [info]   Previous: 93acd57aa27856ef...
+[2025-10-15 13:25:35.184] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:35.341] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 18, Nonce: 7, Hash: a1fcd8e6ec787aec
+[2025-10-15 13:25:35.360] [default] [info] Accepted new block header: hash=a1fcd8e6ec787aec, height=18, work=0000000000000000
+[2025-10-15 13:25:35.360] [network] [info] Relaying block a1fcd8e6ec787aec090344d186f66e8c650d76035ddb9fd6ff4a4607cc24e3c4 to 0 peers
+[2025-10-15 13:25:35.360] [default] [info] New best chain activated! Height: 18, Hash: a1fcd8e6ec787aec, Work: 0000000000000000
+[2025-10-15 13:25:35.393] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:35.393] [default] [info] Miner: Stopped
+[2025-10-15 13:25:35.393] [default] [info]   Total hashes: 7
+[2025-10-15 13:25:35.393] [default] [info]   Time: 0s
+[2025-10-15 13:25:35.393] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:35.393] [default] [info]   Blocks found: 18
+[2025-10-15 13:25:35.446] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:35.446] [default] [info] Miner: Mining block at height 19
+[2025-10-15 13:25:35.446] [default] [info]   Previous: a1fcd8e6ec787aec...
+[2025-10-15 13:25:35.446] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:35.465] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 19, Nonce: 0, Hash: 769183ac9277e4a0
+[2025-10-15 13:25:35.482] [default] [info] Accepted new block header: hash=769183ac9277e4a0, height=19, work=0000000000000000
+[2025-10-15 13:25:35.482] [network] [info] Relaying block 769183ac9277e4a00433f34464824cd1fae1ce50458def5b202f81b09e05548c to 0 peers
+[2025-10-15 13:25:35.482] [default] [info] New best chain activated! Height: 19, Hash: 769183ac9277e4a0, Work: 0000000000000000
+[2025-10-15 13:25:35.548] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:35.548] [default] [info] Miner: Stopped
+[2025-10-15 13:25:35.548] [default] [info]   Total hashes: 0
+[2025-10-15 13:25:35.548] [default] [info]   Time: 0s
+[2025-10-15 13:25:35.548] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:35.548] [default] [info]   Blocks found: 19
+[2025-10-15 13:25:35.598] [default] [info] Miner: Starting with 1 threads
+[2025-10-15 13:25:35.598] [default] [info] Miner: Mining block at height 20
+[2025-10-15 13:25:35.598] [default] [info]   Previous: 769183ac9277e4a0...
+[2025-10-15 13:25:35.598] [default] [info]   Target:   0x207fffff
+[2025-10-15 13:25:35.618] [default] [info] Miner[0]: *** BLOCK FOUND *** Height: 20, Nonce: 0, Hash: 6bece8a4a7e9a67b
+[2025-10-15 13:25:35.639] [default] [info] Accepted new block header: hash=6bece8a4a7e9a67b, height=20, work=0000000000000000
+[2025-10-15 13:25:35.639] [network] [info] Relaying block 6bece8a4a7e9a67bc109f6ed0a2be11204f35220a36182b6759a3fc291a68e65 to 0 peers
+[2025-10-15 13:25:35.639] [default] [info] New best chain activated! Height: 20, Hash: 6bece8a4a7e9a67b, Work: 0000000000000000
+[2025-10-15 13:25:35.700] [default] [info] Miner: Stopping...
+[2025-10-15 13:25:35.700] [default] [info] Miner: Stopped
+[2025-10-15 13:25:35.700] [default] [info]   Total hashes: 0
+[2025-10-15 13:25:35.700] [default] [info]   Time: 0s
+[2025-10-15 13:25:35.700] [default] [info]   Hashrate: 0 H/s
+[2025-10-15 13:25:35.700] [default] [info]   Blocks found: 20
+[2025-10-15 13:25:35.821] [default] [info] Shutting down CoinbaseChain...
+[2025-10-15 13:25:36.788] [default] [info] Stopping RPC server...
+[2025-10-15 13:25:36.789] [default] [info] RPC server stopped
+[2025-10-15 13:25:36.789] [default] [info] Stopping network manager...
+[2025-10-15 13:25:36.789] [default] [info] Saving headers to disk...
+[2025-10-15 13:25:36.789] [chain] [info] Saving 21 headers to /var/folders/qr/dxdchy5s6y311kmp4dhhymxm0000gn/T/chain_20_7pp5mp01/headers.json
+[2025-10-15 13:25:36.791] [chain] [info] Successfully saved 21 headers
+[2025-10-15 13:25:36.791] [default] [info] Saving peer addresses to disk...
+[2025-10-15 13:25:36.791] [network] [info] Saving 0 peer addresses to /var/folders/qr/dxdchy5s6y311kmp4dhhymxm0000gn/T/chain_20_7pp5mp01/peers.json
+[2025-10-15 13:25:36.792] [default] [info] Saving anchor connections to disk...
+[2025-10-15 13:25:36.792] [network] [info] Selected 0 anchor peers
+[2025-10-15 13:25:36.792] [default] [info] Shutting down RandomX...
+[2025-10-15 13:25:36.805] [crypto] [info] RandomX shutdown complete
+[2025-10-15 13:25:36.805] [default] [info] Releasing data directory lock...
+[2025-10-15 13:25:36.805] [default] [info] Shutdown complete
+[2025-10-15 13:25:36.805] [default] [info] Shutting down logging system

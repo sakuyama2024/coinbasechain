@@ -1,0 +1,69 @@
+cmake_minimum_required(VERSION 3.20)
+
+project(GenesisMinr VERSION 0.1.0 LANGUAGES CXX C)
+
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Find required packages
+find_package(Threads REQUIRED)
+
+# Fetch external dependencies
+include(FetchContent)
+
+# RandomX library from Unicity's fork
+message(STATUS "Fetching RandomX from Unicity fork...")
+FetchContent_Declare(
+  randomx
+  GIT_REPOSITORY https://github.com/unicitynetwork/RandomX.git
+  GIT_TAG        origin/master
+  GIT_SHALLOW    TRUE
+)
+
+# Disable RandomX tests and benchmarks
+set(RANDOMX_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(RANDOMX_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(randomx)
+
+# spdlog for logging
+message(STATUS "Fetching spdlog v1.12.0...")
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog.git
+  GIT_TAG        v1.12.0
+  GIT_SHALLOW    TRUE
+)
+
+FetchContent_MakeAvailable(spdlog)
+
+# Include directories from main project
+set(COINBASE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+include_directories(
+    ${COINBASE_ROOT}/include
+    ${COINBASE_ROOT}/src
+)
+
+# Create genesis miner executable
+add_executable(genesis_miner
+    genesis_miner.cpp
+    ${COINBASE_ROOT}/src/crypto/sha256.cpp
+    ${COINBASE_ROOT}/src/crypto/uint.cpp
+    ${COINBASE_ROOT}/src/crypto/arith_uint256.cpp
+    ${COINBASE_ROOT}/src/crypto/randomx_pow.cpp
+    ${COINBASE_ROOT}/src/primitives/block.cpp
+    ${COINBASE_ROOT}/src/util/logging.cpp
+)
+
+target_link_libraries(genesis_miner PRIVATE
+    Threads::Threads
+    randomx
+    spdlog::spdlog
+)
+
+# Set output directory
+set_target_properties(genesis_miner PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
