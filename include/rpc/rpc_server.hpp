@@ -109,6 +109,7 @@ private:
 
     // Command handlers - Testing
     std::string HandleSetMockTime(const std::vector<std::string>& params);
+    std::string HandleInvalidateBlock(const std::vector<std::string>& params);
 
 private:
     std::string socket_path_;

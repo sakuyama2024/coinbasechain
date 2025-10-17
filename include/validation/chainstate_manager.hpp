@@ -239,6 +239,23 @@ public:
     size_t GetOrphanHeaderCount() const;
 
     /**
+     * Mark a block and all its descendants as invalid
+     *
+     * This is the implementation for the `invalidateblock` RPC command.
+     * It marks the specified block as BLOCK_FAILED_VALID and all its
+     * descendants as BLOCK_FAILED_CHILD, then reactivates the best valid chain.
+     *
+     * Use cases:
+     * - Testing reorg scenarios
+     * - Manually excluding bad blocks from the chain
+     * - Debugging consensus issues
+     *
+     * @param hash Hash of block to invalidate
+     * @return true if block was found and invalidated
+     */
+    bool InvalidateBlock(const uint256& hash);
+
+    /**
      * Check Proof of Work for a batch of headers
      *
      * Uses the virtual CheckProofOfWork method, allowing test subclasses

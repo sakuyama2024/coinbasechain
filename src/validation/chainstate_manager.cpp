@@ -903,5 +903,94 @@ bool ChainstateManager::ContextualCheckBlockHeaderWrapper(const CBlockHeader& he
     return ContextualCheckBlockHeader(header, pindexPrev, params_, adjusted_time, state);
 }
 
+bool ChainstateManager::InvalidateBlock(const uint256& hash)
+{
+    std::lock_guard<std::recursive_mutex> lock(validation_mutex_);
+
+    // Look up the block
+    chain::CBlockIndex* pindex = block_manager_.LookupBlockIndex(hash);
+    if (!pindex) {
+        LOG_ERROR("InvalidateBlock: block {} not found", hash.ToString());
+        return false;
+    }
+
+    LOG_INFO("Invalidating block {} at height {}", hash.ToString(), pindex->nHeight);
+
+    // Mark this block as BLOCK_FAILED_VALID
+    pindex->nStatus |= chain::BLOCK_FAILED_VALID;
+    m_failed_blocks.insert(pindex);
+
+    // Mark all descendants as BLOCK_FAILED_CHILD
+    // Walk through all blocks and mark any that descend from this block
+    const auto& block_index = block_manager_.GetBlockIndex();
+    for (const auto& [block_hash, block] : block_index) {
+        // Skip the block itself (already marked)
+        if (&block == pindex) {
+            continue;
+        }
+
+        // Check if this block descends from the invalidated block
+        // by walking back through ancestors
+        const chain::CBlockIndex* ancestor = block.GetAncestor(pindex->nHeight);
+        if (ancestor == pindex) {
+            // This block descends from the invalidated block
+            const_cast<chain::CBlockIndex*>(&block)->nStatus |= chain::BLOCK_FAILED_CHILD;
+            LOG_DEBUG("Marked descendant {} at height {} as BLOCK_FAILED_CHILD",
+                     block_hash.ToString().substr(0, 16),
+                     block.nHeight);
+        }
+    }
+
+    // Remove invalidated blocks from the candidate set
+    chain_selector_.ClearCandidates();
+
+    // Rebuild candidates with only valid blocks
+    for (const auto& [block_hash, block] : block_index) {
+        if (block.IsValid(chain::BLOCK_VALID_TREE)) {
+            // Check if this is a leaf node (no known children)
+            bool is_leaf = true;
+            for (const auto& [other_hash, other_block] : block_index) {
+                if (other_block.pprev == &block) {
+                    is_leaf = false;
+                    break;
+                }
+            }
+
+            if (is_leaf) {
+                chain::CBlockIndex* mutable_block = const_cast<chain::CBlockIndex*>(&block);
+                chain_selector_.AddCandidateUnchecked(mutable_block);
+                LOG_DEBUG("Re-added valid leaf as candidate: height={}, hash={}",
+                         block.nHeight,
+                         block_hash.ToString().substr(0, 16));
+            }
+        }
+    }
+
+    // If the active tip descends from the invalidated block, reactivate best valid chain
+    chain::CBlockIndex* current_tip = block_manager_.GetTip();
+    if (current_tip) {
+        const chain::CBlockIndex* ancestor = current_tip->GetAncestor(pindex->nHeight);
+        if (ancestor == pindex) {
+            // Current tip descends from invalidated block - need to reactivate
+            LOG_WARN("Active tip descends from invalidated block, reactivating best valid chain");
+
+            // Find the best valid chain
+            chain::CBlockIndex* pindexMostWork = chain_selector_.FindMostWorkChain();
+            if (pindexMostWork) {
+                LOG_INFO("Reactivating to block {} at height {}",
+                        pindexMostWork->GetBlockHash().ToString(),
+                        pindexMostWork->nHeight);
+                ActivateBestChain(pindexMostWork);
+            } else {
+                LOG_ERROR("No valid chain found after invalidation!");
+                return false;
+            }
+        }
+    }
+
+    LOG_INFO("Successfully invalidated block {} and all descendants", hash.ToString());
+    return true;
+}
+
 } // namespace validation
 } // namespace coinbasechain

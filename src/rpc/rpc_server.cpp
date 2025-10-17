@@ -71,6 +71,7 @@ void RPCServer::RegisterHandlers()
 
     // Testing commands
     handlers_["setmocktime"] = [this](const auto& p) { return HandleSetMockTime(p); };
+    handlers_["invalidateblock"] = [this](const auto& p) { return HandleInvalidateBlock(p); };
 }
 
 bool RPCServer::Start()
@@ -782,6 +783,38 @@ std::string RPCServer::HandleSetMockTime(const std::vector<std::string>& params)
             << "  \"message\": \"Mock time set to " << mock_time << "\"\n"
             << "}\n";
     }
+
+    return oss.str();
+}
+
+std::string RPCServer::HandleInvalidateBlock(const std::vector<std::string>& params)
+{
+    if (params.empty()) {
+        return "{\"error\":\"Missing block hash parameter\"}\n";
+    }
+
+    uint256 hash;
+    hash.SetHex(params[0]);
+
+    // Check if block exists
+    auto* index = chainstate_manager_.LookupBlockIndex(hash);
+    if (!index) {
+        return "{\"error\":\"Block not found\"}\n";
+    }
+
+    // Invalidate the block
+    bool success = chainstate_manager_.InvalidateBlock(hash);
+
+    if (!success) {
+        return "{\"error\":\"Failed to invalidate block\"}\n";
+    }
+
+    std::ostringstream oss;
+    oss << "{\n"
+        << "  \"success\": true,\n"
+        << "  \"hash\": \"" << hash.GetHex() << "\",\n"
+        << "  \"message\": \"Block and all descendants invalidated\"\n"
+        << "}\n";
 
     return oss.str();
 }
