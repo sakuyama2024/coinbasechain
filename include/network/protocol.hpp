@@ -81,7 +81,6 @@ constexpr uint64_t MAX_SIZE = 0x02000000;  // 32 MB - Maximum serialized object 
 constexpr size_t MAX_VECTOR_ALLOCATE = 5 * 1000 * 1000;  // 5 MB - Incremental allocation limit
 
 // Network message limits (Bitcoin Core src/net.h)
-constexpr uint32_t MAX_MESSAGE_SIZE = 32 * 1024 * 1024;  // 32 MB
 constexpr size_t MAX_PROTOCOL_MESSAGE_LENGTH = 4 * 1000 * 1000;  // 4 MB - Single message limit
 constexpr size_t DEFAULT_MAX_RECEIVE_BUFFER = 5 * 1000;  // 5 KB per peer
 constexpr size_t DEFAULT_MAX_SEND_BUFFER = 1 * 1000;  // 1 KB per peer
@@ -101,7 +100,7 @@ constexpr size_t MAX_ORPHAN_BLOCKS_SIZE = 5 * 1000 * 1000;  // 5 MB total
 constexpr unsigned int DEFAULT_MAX_PEER_CONNECTIONS = 125;  // Total connections
 constexpr int MAX_CONNECTIONS_PER_NETGROUP = 10;  // Per subnet limit
 
-// Timeouts (matching Bitcoin Core)
+// Timeouts and intervals (in seconds)
 constexpr int VERSION_HANDSHAKE_TIMEOUT_SEC = 60;  // 1 minute for handshake
 constexpr int PING_INTERVAL_SEC = 120;              // 2 minutes between pings
 constexpr int PING_TIMEOUT_SEC = 20 * 60;           // 20 minutes - peer must respond to ping
@@ -112,6 +111,7 @@ constexpr size_t MAX_SUBVERSION_LENGTH = 256;
 constexpr int64_t TIMESTAMP_ALLOWANCE_SEC = 2 * 60 * 60;  // 2 hours
 
 // Time validation (Bitcoin Core src/validation.cpp)
+// TODO one hour blocks ?
 constexpr int64_t MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60;  // 2 hours - Maximum block timestamp in future
 
 // User agent string (from version.hpp)

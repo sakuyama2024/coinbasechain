@@ -405,6 +405,13 @@ bool VersionMessage::deserialize(const uint8_t* data, size_t size) {
     addr_from = d.read_network_address(false);
     nonce = d.read_uint64();
     user_agent = d.read_string();
+
+    // SECURITY: Enforce maximum user agent length to prevent memory exhaustion
+    // Legitimate user agents are ~20-50 bytes (e.g., "/CoinbaseChain:1.0.0/")
+    if (user_agent.length() > protocol::MAX_SUBVERSION_LENGTH) {
+        return false;
+    }
+
     start_height = d.read_int32();
     if (d.bytes_remaining() > 0) {
         relay = d.read_bool();

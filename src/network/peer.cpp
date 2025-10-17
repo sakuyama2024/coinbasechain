@@ -275,9 +275,9 @@ void Peer::process_received_data(std::vector<uint8_t>& buffer) {
             return;
         }
 
-        // Validate payload size
-        if (header.length > protocol::MAX_MESSAGE_SIZE) {
-            LOG_NET_ERROR("Message too large: {}", header.length);
+        // Validate payload size (already checked in deserialize_header, but double-check for safety)
+        if (header.length > protocol::MAX_PROTOCOL_MESSAGE_LENGTH) {
+            LOG_NET_ERROR("Message too large: {} bytes (max: {})", header.length, protocol::MAX_PROTOCOL_MESSAGE_LENGTH);
             disconnect();
             return;
         }
