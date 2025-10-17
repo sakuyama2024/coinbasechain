@@ -201,6 +201,13 @@ uint64_t MessageDeserializer::read_varint() {
         return 0;
     }
 
+    // SECURITY: Validate against MAX_SIZE to prevent DoS attacks
+    // Bitcoin Core: src/serialize.h ReadCompactSize() validation
+    if (vi.value > protocol::MAX_SIZE) {
+        error_ = true;
+        return 0;
+    }
+
     position_ += consumed;
     return vi.value;
 }
@@ -335,6 +342,13 @@ bool deserialize_header(const uint8_t* data, size_t size, protocol::MessageHeade
     header.length = endian::ReadLE32(data + pos);
     pos += 4;
 
+    // SECURITY: Enforce MAX_PROTOCOL_MESSAGE_LENGTH to prevent huge message attacks
+    // Bitcoin Core: src/net.h line 68 (MAX_PROTOCOL_MESSAGE_LENGTH = 4 MB)
+    // Prevents attackers from sending 4+ GB messages causing memory exhaustion
+    if (header.length > protocol::MAX_PROTOCOL_MESSAGE_LENGTH) {
+        return false;
+    }
+
     std::memcpy(header.checksum.data(), data + pos, protocol::CHECKSUM_SIZE);
 
     return true;
@@ -452,9 +466,21 @@ bool AddrMessage::deserialize(const uint8_t* data, size_t size) {
     uint64_t count = d.read_varint();
     if (count > protocol::MAX_ADDR_SIZE) return false;
 
-    addresses.reserve(count);
+    // SECURITY: Incremental allocation to prevent DoS attacks
+    // Bitcoin Core: src/serialize.h Unser() incremental allocation pattern
+    // Instead of reserve(count) which could allocate GBs, allocate in 5 MB batches
+    addresses.clear();
+    uint64_t allocated = 0;
+    constexpr size_t batch_size = protocol::MAX_VECTOR_ALLOCATE / sizeof(protocol::TimestampedAddress);
+
     for (uint64_t i = 0; i < count; ++i) {
+        // Allocate next batch when needed
+        if (addresses.size() >= allocated) {
+            allocated = std::min(count, allocated + batch_size);
+            addresses.reserve(allocated);
+        }
         addresses.push_back(d.read_timestamped_address());
+        if (d.has_error()) return false;
     }
     return !d.has_error();
 }
@@ -483,9 +509,19 @@ bool InvMessage::deserialize(const uint8_t* data, size_t size) {
     uint64_t count = d.read_varint();
     if (count > protocol::MAX_INV_SIZE) return false;
 
-    inventory.reserve(count);
+    // SECURITY: Incremental allocation to prevent DoS attacks
+    // Bitcoin Core: src/serialize.h Unser() incremental allocation pattern
+    inventory.clear();
+    uint64_t allocated = 0;
+    constexpr size_t batch_size = protocol::MAX_VECTOR_ALLOCATE / sizeof(protocol::InventoryVector);
+
     for (uint64_t i = 0; i < count; ++i) {
+        if (inventory.size() >= allocated) {
+            allocated = std::min(count, allocated + batch_size);
+            inventory.reserve(allocated);
+        }
         inventory.push_back(d.read_inventory_vector());
+        if (d.has_error()) return false;
     }
     return !d.has_error();
 }
@@ -505,9 +541,18 @@ bool GetDataMessage::deserialize(const uint8_t* data, size_t size) {
     uint64_t count = d.read_varint();
     if (count > protocol::MAX_INV_SIZE) return false;
 
-    inventory.reserve(count);
+    // SECURITY: Incremental allocation to prevent DoS attacks
+    inventory.clear();
+    uint64_t allocated = 0;
+    constexpr size_t batch_size = protocol::MAX_VECTOR_ALLOCATE / sizeof(protocol::InventoryVector);
+
     for (uint64_t i = 0; i < count; ++i) {
+        if (inventory.size() >= allocated) {
+            allocated = std::min(count, allocated + batch_size);
+            inventory.reserve(allocated);
+        }
         inventory.push_back(d.read_inventory_vector());
+        if (d.has_error()) return false;
     }
     return !d.has_error();
 }
@@ -527,9 +572,18 @@ bool NotFoundMessage::deserialize(const uint8_t* data, size_t size) {
     uint64_t count = d.read_varint();
     if (count > protocol::MAX_INV_SIZE) return false;
 
-    inventory.reserve(count);
+    // SECURITY: Incremental allocation to prevent DoS attacks
+    inventory.clear();
+    uint64_t allocated = 0;
+    constexpr size_t batch_size = protocol::MAX_VECTOR_ALLOCATE / sizeof(protocol::InventoryVector);
+
     for (uint64_t i = 0; i < count; ++i) {
+        if (inventory.size() >= allocated) {
+            allocated = std::min(count, allocated + batch_size);
+            inventory.reserve(allocated);
+        }
         inventory.push_back(d.read_inventory_vector());
+        if (d.has_error()) return false;
     }
     return !d.has_error();
 }
@@ -556,10 +610,22 @@ bool GetHeadersMessage::deserialize(const uint8_t* data, size_t size) {
     version = d.read_uint32();
 
     uint64_t count = d.read_varint();
-    if (count > 2000) return false;  // Reasonable limit
 
-    block_locator_hashes.reserve(count);
+    // SECURITY: Enforce MAX_LOCATOR_SZ to prevent CPU exhaustion attacks
+    // Bitcoin Core: src/net_processing.cpp line 85 (MAX_LOCATOR_SZ = 101)
+    // Prevents attackers from sending 1000+ locator hashes causing expensive FindFork() operations
+    if (count > protocol::MAX_LOCATOR_SZ) return false;
+
+    // SECURITY: Incremental allocation to prevent DoS attacks
+    block_locator_hashes.clear();
+    uint64_t allocated = 0;
+    constexpr size_t batch_size = protocol::MAX_VECTOR_ALLOCATE / 32;  // 32 bytes per hash
+
     for (uint64_t i = 0; i < count; ++i) {
+        if (block_locator_hashes.size() >= allocated) {
+            allocated = std::min(count, allocated + batch_size);
+            block_locator_hashes.reserve(allocated);
+        }
         std::array<uint8_t, 32> hash;
         auto bytes = d.read_bytes(32);
         if (bytes.size() != 32) return false;
@@ -593,8 +659,17 @@ bool HeadersMessage::deserialize(const uint8_t* data, size_t size) {
     uint64_t count = d.read_varint();
     if (count > protocol::MAX_HEADERS_SIZE) return false;
 
-    headers.reserve(count);
+    // SECURITY: Incremental allocation to prevent DoS attacks
+    headers.clear();
+    uint64_t allocated = 0;
+    constexpr size_t batch_size = protocol::MAX_VECTOR_ALLOCATE / sizeof(CBlockHeader);
+
     for (uint64_t i = 0; i < count; ++i) {
+        if (headers.size() >= allocated) {
+            allocated = std::min(count, allocated + batch_size);
+            headers.reserve(allocated);
+        }
+
         // Read header bytes
         auto header_bytes = d.read_bytes(CBlockHeader::HEADER_SIZE);
         if (header_bytes.size() != CBlockHeader::HEADER_SIZE) return false;

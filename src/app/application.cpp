@@ -291,8 +291,7 @@ bool Application::init_chain() {
 bool Application::init_network() {
     LOG_INFO("Initializing network manager...");
 
-    // Pass through par_threads and datadir from AppConfig to NetworkManager config
-    config_.network_config.par_threads = config_.par_threads;
+    // Pass through datadir from AppConfig to NetworkManager config
     config_.network_config.datadir = config_.datadir.string();
 
     network_manager_ = std::make_unique<network::NetworkManager>(*chainstate_manager_, config_.network_config);

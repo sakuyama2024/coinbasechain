@@ -109,6 +109,16 @@ bool NetworkManager::start() {
         }
     }
 
+    // Load anchor peers (for eclipse attack resistance)
+    // Anchors are the last 2-3 outbound peers we connected to before shutdown
+    // We try to reconnect to them first to maintain network view consistency
+    if (!config_.datadir.empty()) {
+        std::string anchors_path = config_.datadir + "/anchors.dat";
+        if (LoadAnchors(anchors_path)) {
+            LOG_NET_INFO("Loaded anchors, will connect to them first");
+        }
+    }
+
     // Schedule periodic tasks
     schedule_next_connection_attempt();
     schedule_next_maintenance();
@@ -122,6 +132,15 @@ void NetworkManager::stop() {
     }
 
     running_.store(false, std::memory_order_release);
+
+    // Save anchor peers before shutdown (for eclipse attack resistance)
+    // This allows us to reconnect to the same peers on next startup
+    if (!config_.datadir.empty()) {
+        std::string anchors_path = config_.datadir + "/anchors.dat";
+        if (SaveAnchors(anchors_path)) {
+            LOG_NET_INFO("Saved anchor peers for next startup");
+        }
+    }
 
     // Stop transport (stops listening and closes connections)
     if (transport_) {

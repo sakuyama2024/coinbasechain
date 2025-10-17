@@ -170,6 +170,16 @@ public:
      */
     void SetBestHeader(chain::CBlockIndex* pindex) { m_best_header = pindex; }
 
+    /**
+     * Remove a block from the candidate set
+     *
+     * Used when invalidating blocks or when a block is no longer a valid tip.
+     *
+     * @param pindex Block to remove
+     * @note Caller must hold validation_mutex_
+     */
+    void RemoveCandidate(chain::CBlockIndex* pindex);
+
 private:
     /**
      * Set of blocks that could be chain tips

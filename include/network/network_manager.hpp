@@ -32,8 +32,6 @@ namespace network {
  * - Routes messages between components
  * - Periodic maintenance tasks
  *
- * This is much simpler than Bitcoins's CConnman which has complex
- * thread management, bandwidth limiting, whitelisting, etc.
  */
 class NetworkManager {
 public:
@@ -42,7 +40,6 @@ public:
         uint16_t listen_port;               // Port to listen on (0 = don't listen)
         bool listen_enabled;                // Enable inbound connections
         size_t io_threads;                  // Number of IO threads
-        int par_threads;                     // Number of parallel RandomX verification threads (0 = auto)
         std::string datadir;                 // Data directory (for banlist.json)
 
         std::chrono::seconds connect_interval;  // Time between connection attempts
@@ -53,7 +50,6 @@ public:
             , listen_port(protocol::ports::MAINNET)
             , listen_enabled(false)
             , io_threads(4)
-            , par_threads(0)                 // Auto-detect by default
             , datadir("")                    // Empty = no persistent bans
             , connect_interval(std::chrono::seconds(5))
             , maintenance_interval(std::chrono::seconds(30))
@@ -122,14 +118,11 @@ private:
     std::unique_ptr<sync::HeaderSync> header_sync_;
     std::unique_ptr<sync::BanMan> ban_man_;
 
-    // Note: acceptor is now handled by transport layer
-
     // Periodic tasks
     std::unique_ptr<boost::asio::steady_timer> connect_timer_;
     std::unique_ptr<boost::asio::steady_timer> maintenance_timer_;
 
-    // Initial sync tracking (matches Bitcoin's nSyncStarted)
-    // Thread-safe: accessed from multiple io_context threads
+    // Sync state
     std::atomic<uint64_t> sync_peer_id_{0};  // 0 = no sync peer, otherwise peer ID we're syncing from
     std::atomic<int64_t> sync_start_time_{0};  // When did sync start? (microseconds since epoch)
     std::atomic<int64_t> last_headers_received_{0};  // Last time we received headers (microseconds since epoch)
@@ -149,7 +142,7 @@ private:
     void run_maintenance();
     void schedule_next_maintenance();
 
-    // Initial sync (matches Bitcoin's initial getheaders logic in SendMessages)
+    // Initial sync 
     void check_initial_sync();
 
     // Message handling

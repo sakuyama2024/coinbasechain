@@ -9,22 +9,21 @@ namespace coinbasechain {
 namespace protocol {
 
 // Protocol version
-constexpr uint32_t PROTOCOL_VERSION = 70016;  // Bitcoin Core 0.16.0+
-constexpr uint32_t MIN_PEER_PROTO_VERSION = 70001;
+constexpr uint32_t PROTOCOL_VERSION = 10000;  // Custom protocol version
+constexpr uint32_t MIN_PEER_PROTO_VERSION = 10000;
 
 // Network magic bytes - unique identifier for the network
-// Using custom values (not Bitcoin mainnet to avoid accidental connections)
 namespace magic {
-    constexpr uint32_t MAINNET = 0xC0C0C0C0;   // Custom mainnet magic
-    constexpr uint32_t TESTNET = 0xC0C0C0C1;   // Custom testnet magic
-    constexpr uint32_t REGTEST = 0xC0C0C0C2;   // Custom regtest magic
+    constexpr uint32_t MAINNET = 0xC0C0C0C0;   
+    constexpr uint32_t TESTNET = 0xC0C0C0C1;   
+    constexpr uint32_t REGTEST = 0xC0C0C0C2;   
 }
 
 // Default ports
 namespace ports {
-    constexpr uint16_t MAINNET = 8333;
-    constexpr uint16_t TESTNET = 18333;
-    constexpr uint16_t REGTEST = 18444;
+    constexpr uint16_t MAINNET = 9590;
+    constexpr uint16_t TESTNET = 19590;
+    constexpr uint16_t REGTEST = 29509;
 }
 
 // Service flags - what services this node provides
@@ -70,11 +69,34 @@ constexpr size_t MESSAGE_HEADER_SIZE = 24;
 constexpr size_t COMMAND_SIZE = 12;
 constexpr size_t CHECKSUM_SIZE = 4;
 
-// Message size limits
+// ============================================================================
+// SECURITY LIMITS (from Bitcoin Core - CRITICAL for DoS protection)
+// ============================================================================
+
+// Serialization limits (Bitcoin Core src/serialize.h)
+constexpr uint64_t MAX_SIZE = 0x02000000;  // 32 MB - Maximum serialized object size
+constexpr size_t MAX_VECTOR_ALLOCATE = 5 * 1000 * 1000;  // 5 MB - Incremental allocation limit
+
+// Network message limits (Bitcoin Core src/net.h)
 constexpr uint32_t MAX_MESSAGE_SIZE = 32 * 1024 * 1024;  // 32 MB
-constexpr uint32_t MAX_INV_SIZE = 50000;
-constexpr uint32_t MAX_HEADERS_SIZE = 2000;
-constexpr uint32_t MAX_ADDR_SIZE = 1000;
+constexpr size_t MAX_PROTOCOL_MESSAGE_LENGTH = 4 * 1000 * 1000;  // 4 MB - Single message limit
+constexpr size_t DEFAULT_MAX_RECEIVE_BUFFER = 5 * 1000;  // 5 KB per peer
+constexpr size_t DEFAULT_MAX_SEND_BUFFER = 1 * 1000;  // 1 KB per peer
+constexpr size_t DEFAULT_RECV_FLOOD_SIZE = 5 * 1000 * 1000;  // 5 MB - Flood protection
+
+// Protocol-specific limits (Bitcoin Core src/net_processing.cpp)
+constexpr unsigned int MAX_LOCATOR_SZ = 101;  // GETHEADERS/GETBLOCKS locator limit
+constexpr uint32_t MAX_INV_SIZE = 50000;  // Inventory items
+constexpr uint32_t MAX_HEADERS_SIZE = 2000;  // Headers per response
+constexpr uint32_t MAX_ADDR_SIZE = 1000;  // Addresses per ADDR message
+
+// Orphan management
+constexpr unsigned int MAX_ORPHAN_BLOCKS = 100;  // Orphan block count limit
+constexpr size_t MAX_ORPHAN_BLOCKS_SIZE = 5 * 1000 * 1000;  // 5 MB total
+
+// Connection limits
+constexpr unsigned int DEFAULT_MAX_PEER_CONNECTIONS = 125;  // Total connections
+constexpr int MAX_CONNECTIONS_PER_NETGROUP = 10;  // Per subnet limit
 
 // Timeouts (matching Bitcoin Core)
 constexpr int VERSION_HANDSHAKE_TIMEOUT_SEC = 60;  // 1 minute for handshake
@@ -85,6 +107,9 @@ constexpr int INACTIVITY_TIMEOUT_SEC = 20 * 60;     // 20 minutes - matches Bitc
 // Network address constants
 constexpr size_t MAX_SUBVERSION_LENGTH = 256;
 constexpr int64_t TIMESTAMP_ALLOWANCE_SEC = 2 * 60 * 60;  // 2 hours
+
+// Time validation (Bitcoin Core src/validation.cpp)
+constexpr int64_t MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60;  // 2 hours - Maximum block timestamp in future
 
 // User agent string
 constexpr const char* USER_AGENT = "/CoinbaseChain:0.1.0/";

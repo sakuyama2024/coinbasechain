@@ -41,7 +41,6 @@ public:
         uint16_t listen_port;               // Port to listen on (0 = don't listen)
         bool listen_enabled;                // Enable inbound connections
         size_t io_threads;                  // Number of IO threads
-        int par_threads;                     // Number of parallel RandomX verification threads (0 = auto)
         std::string datadir;                 // Data directory (for banlist.json)
 
         std::chrono::seconds connect_interval;  // Time between connection attempts
@@ -52,7 +51,6 @@ public:
             , listen_port(protocol::ports::MAINNET)
             , listen_enabled(false)
             , io_threads(4)
-            , par_threads(0)                 // Auto-detect by default
             , datadir("")                    // Empty = no persistent bans
             , connect_interval(std::chrono::seconds(5))
             , maintenance_interval(std::chrono::seconds(30))

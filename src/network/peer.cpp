@@ -165,6 +165,16 @@ void Peer::on_disconnect() {
 }
 
 void Peer::on_transport_receive(const std::vector<uint8_t>& data) {
+    // SECURITY: Enforce DEFAULT_RECV_FLOOD_SIZE to prevent unbounded receive buffer DoS
+    // Bitcoin Core: src/net.cpp CNode::ReceiveMsgBytes() enforces receive buffer limits
+    // Prevents attackers from sending data faster than we can process, exhausting memory
+    if (recv_buffer_.size() + data.size() > protocol::DEFAULT_RECV_FLOOD_SIZE) {
+        LOG_NET_WARN("Receive buffer overflow (current: {} bytes, incoming: {} bytes, limit: {} bytes), disconnecting from {}",
+                     recv_buffer_.size(), data.size(), protocol::DEFAULT_RECV_FLOOD_SIZE, address());
+        disconnect();
+        return;
+    }
+
     // Accumulate received data into buffer
     recv_buffer_.insert(recv_buffer_.end(), data.begin(), data.end());
 

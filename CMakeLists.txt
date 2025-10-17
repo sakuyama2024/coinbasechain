@@ -362,12 +362,16 @@ add_executable(coinbasechain_tests
     test/timedata_tests.cpp
     test/reorg_tests.cpp
     test/pow_tests.cpp
+    test/invalidateblock_tests.cpp
     test/unit/reorg_multi_node_tests.cpp
     test/network/simulated_network.cpp
     test/network/simulated_node.cpp
     test/network/network_bridged_transport.cpp
     test/network/attack_simulated_node.cpp
     test/network/network_tests.cpp
+    test/network/invalidateblock_functional_tests.cpp
+    test/security_attack_simulations.cpp
+    test/security_quick_tests.cpp
 )
 
 target_include_directories(coinbasechain_tests PRIVATE

@@ -235,5 +235,12 @@ void ChainSelector::UpdateBestHeader(chain::CBlockIndex* pindex)
     }
 }
 
+void ChainSelector::RemoveCandidate(chain::CBlockIndex* pindex)
+{
+    if (pindex) {
+        m_candidates.erase(pindex);
+    }
+}
+
 } // namespace validation
 } // namespace coinbasechain

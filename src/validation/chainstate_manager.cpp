@@ -553,6 +553,9 @@ bool ChainstateManager::Initialize(const CBlockHeader& genesis_header)
     // Initialize the candidate set with genesis block
     chain::CBlockIndex* genesis = block_manager_.GetTip();
     if (genesis) {
+        // Mark genesis as valid to TREE level (it's pre-validated)
+        [[maybe_unused]] bool raised = genesis->RaiseValidity(chain::BLOCK_VALID_TREE);
+
         chain_selector_.AddCandidateUnchecked(genesis);
         chain_selector_.SetBestHeader(genesis);
         LOG_DEBUG("Initialized with genesis as candidate: height={}, hash={}",
@@ -914,81 +917,174 @@ bool ChainstateManager::InvalidateBlock(const uint256& hash)
         return false;
     }
 
+    // Can't invalidate genesis
+    if (pindex->nHeight == 0) {
+        LOG_ERROR("InvalidateBlock: cannot invalidate genesis block");
+        return false;
+    }
+
     LOG_INFO("Invalidating block {} at height {}", hash.ToString(), pindex->nHeight);
 
-    // Mark this block as BLOCK_FAILED_VALID
-    pindex->nStatus |= chain::BLOCK_FAILED_VALID;
-    m_failed_blocks.insert(pindex);
+    chain::CBlockIndex* to_mark_failed = pindex;
+    bool pindex_was_in_chain = false;
 
-    // Mark all descendants as BLOCK_FAILED_CHILD
-    // Walk through all blocks and mark any that descend from this block
+    // Step 1: Pre-build candidate map (Bitcoin Core pattern)
+    // Find all competing fork blocks that have at least as much work as where we'll end up
+    // (i.e., pindex->pprev)
     const auto& block_index = block_manager_.GetBlockIndex();
+    std::multimap<arith_uint256, chain::CBlockIndex*> candidate_blocks_by_work;
+
     for (const auto& [block_hash, block] : block_index) {
-        // Skip the block itself (already marked)
-        if (&block == pindex) {
+        chain::CBlockIndex* candidate = const_cast<chain::CBlockIndex*>(&block);
+
+        // Include blocks that:
+        // 1. Are NOT in the active chain
+        // 2. Have at least as much work as pindex->pprev (the new tip after disconnection)
+        // 3. Are validated to at least TREE level
+        if (!block_manager_.ActiveChain().Contains(candidate) &&
+            pindex->pprev &&
+            candidate->nChainWork >= pindex->pprev->nChainWork &&
+            candidate->IsValid(chain::BLOCK_VALID_TREE)) {
+            candidate_blocks_by_work.insert(std::make_pair(candidate->nChainWork, candidate));
+            LOG_DEBUG("Pre-built candidate: height={}, hash={}, work={}",
+                     candidate->nHeight,
+                     block_hash.ToString().substr(0, 16),
+                     candidate->nChainWork.ToString().substr(0, 16));
+        }
+    }
+
+    LOG_DEBUG("Pre-built {} candidate blocks for invalidation", candidate_blocks_by_work.size());
+
+    // Step 2: Disconnect loop with incremental candidate addition
+    while (true) {
+        chain::CBlockIndex* current_tip = block_manager_.GetTip();
+
+        // Check if pindex is in the active chain
+        if (!current_tip || !block_manager_.ActiveChain().Contains(pindex)) {
+            break;
+        }
+
+        pindex_was_in_chain = true;
+        chain::CBlockIndex* invalid_walk_tip = current_tip;
+
+        // Disconnect the current tip
+        if (!DisconnectTip()) {
+            LOG_ERROR("Failed to disconnect tip during invalidation");
+            return false;
+        }
+
+        // Mark the disconnected block as invalid
+        invalid_walk_tip->nStatus |= chain::BLOCK_FAILED_VALID;
+        m_failed_blocks.insert(invalid_walk_tip);
+
+        // Remove from candidates
+        chain_selector_.RemoveCandidate(invalid_walk_tip);
+
+        // Add parent as candidate (so we have a valid tip to fall back to)
+        if (invalid_walk_tip->pprev) {
+            chain_selector_.AddCandidateUnchecked(invalid_walk_tip->pprev);
+        }
+
+        // ADD COMPETING FORKS as they become viable (Bitcoin Core pattern)
+        // As we disconnect, some fork blocks now have enough work to be candidates
+        if (invalid_walk_tip->pprev) {
+            auto candidate_it = candidate_blocks_by_work.lower_bound(invalid_walk_tip->pprev->nChainWork);
+            while (candidate_it != candidate_blocks_by_work.end()) {
+                chain::CBlockIndex* fork_candidate = candidate_it->second;
+
+                // Check if this fork has at least as much work as the new tip
+                if (fork_candidate->nChainWork >= invalid_walk_tip->pprev->nChainWork) {
+                    chain_selector_.AddCandidateUnchecked(fork_candidate);
+                    LOG_DEBUG("Added competing fork as candidate: height={}, hash={}, work={}",
+                             fork_candidate->nHeight,
+                             fork_candidate->GetBlockHash().ToString().substr(0, 16),
+                             fork_candidate->nChainWork.ToString().substr(0, 16));
+                    candidate_it = candidate_blocks_by_work.erase(candidate_it);
+                } else {
+                    ++candidate_it;
+                }
+            }
+        }
+
+        // If this is not the originally requested block, mark it as BLOCK_FAILED_CHILD
+        // (it's only failing because its ancestor failed)
+        if (invalid_walk_tip->pprev == to_mark_failed &&
+            (to_mark_failed->nStatus & chain::BLOCK_FAILED_VALID)) {
+            to_mark_failed->nStatus = (to_mark_failed->nStatus ^ chain::BLOCK_FAILED_VALID) |
+                                       chain::BLOCK_FAILED_CHILD;
+        }
+
+        to_mark_failed = invalid_walk_tip;
+
+        LOG_DEBUG("Disconnected and invalidated block at height {}: {}",
+                 invalid_walk_tip->nHeight,
+                 invalid_walk_tip->GetBlockHash().ToString().substr(0, 16));
+    }
+
+    // Safety check: If block is still in chain, something went wrong
+    if (block_manager_.ActiveChain().Contains(to_mark_failed)) {
+        LOG_ERROR("InvalidateBlock: block still in active chain after disconnect loop");
+        return false;
+    }
+
+    // Mark pindex (or the last disconnected block) as invalid
+    // even if it was never in the main chain
+    to_mark_failed->nStatus |= chain::BLOCK_FAILED_VALID;
+    m_failed_blocks.insert(to_mark_failed);
+    chain_selector_.RemoveCandidate(to_mark_failed);
+
+    // Mark all other descendants as BLOCK_FAILED_CHILD
+    // (blocks that weren't in the active chain but descend from pindex)
+    for (const auto& [block_hash, block] : block_index) {
+        if (&block == to_mark_failed) {
             continue;
         }
 
-        // Check if this block descends from the invalidated block
-        // by walking back through ancestors
         const chain::CBlockIndex* ancestor = block.GetAncestor(pindex->nHeight);
         if (ancestor == pindex) {
-            // This block descends from the invalidated block
             const_cast<chain::CBlockIndex*>(&block)->nStatus |= chain::BLOCK_FAILED_CHILD;
+            chain_selector_.RemoveCandidate(const_cast<chain::CBlockIndex*>(&block));
             LOG_DEBUG("Marked descendant {} at height {} as BLOCK_FAILED_CHILD",
                      block_hash.ToString().substr(0, 16),
                      block.nHeight);
         }
     }
 
-    // Remove invalidated blocks from the candidate set
-    chain_selector_.ClearCandidates();
-
-    // Rebuild candidates with only valid blocks
-    for (const auto& [block_hash, block] : block_index) {
-        if (block.IsValid(chain::BLOCK_VALID_TREE)) {
-            // Check if this is a leaf node (no known children)
-            bool is_leaf = true;
-            for (const auto& [other_hash, other_block] : block_index) {
-                if (other_block.pprev == &block) {
-                    is_leaf = false;
-                    break;
-                }
-            }
-
-            if (is_leaf) {
-                chain::CBlockIndex* mutable_block = const_cast<chain::CBlockIndex*>(&block);
-                chain_selector_.AddCandidateUnchecked(mutable_block);
-                LOG_DEBUG("Re-added valid leaf as candidate: height={}, hash={}",
-                         block.nHeight,
-                         block_hash.ToString().substr(0, 16));
-            }
-        }
-    }
-
-    // If the active tip descends from the invalidated block, reactivate best valid chain
+    // Final cleanup - catch any blocks that arrived during invalidation
+    // Bitcoin Core does this to handle race conditions where blocks arrive during invalidation
     chain::CBlockIndex* current_tip = block_manager_.GetTip();
     if (current_tip) {
-        const chain::CBlockIndex* ancestor = current_tip->GetAncestor(pindex->nHeight);
-        if (ancestor == pindex) {
-            // Current tip descends from invalidated block - need to reactivate
-            LOG_WARN("Active tip descends from invalidated block, reactivating best valid chain");
+        for (const auto& [block_hash, block] : block_index) {
+            chain::CBlockIndex* mutable_block = const_cast<chain::CBlockIndex*>(&block);
 
-            // Find the best valid chain
-            chain::CBlockIndex* pindexMostWork = chain_selector_.FindMostWorkChain();
-            if (pindexMostWork) {
-                LOG_INFO("Reactivating to block {} at height {}",
-                        pindexMostWork->GetBlockHash().ToString(),
-                        pindexMostWork->nHeight);
-                ActivateBestChain(pindexMostWork);
-            } else {
-                LOG_ERROR("No valid chain found after invalidation!");
-                return false;
+            // Bitcoin Core's criteria: block is valid and has at least as much work as tip
+            if (block.IsValid(chain::BLOCK_VALID_TREE) &&
+                block.nChainWork >= current_tip->nChainWork) {
+
+                // Check if it's a leaf (no children)
+                bool is_leaf = true;
+                for (const auto& [other_hash, other_block] : block_index) {
+                    if (other_block.pprev == mutable_block) {
+                        is_leaf = false;
+                        break;
+                    }
+                }
+
+                if (is_leaf) {
+                    chain_selector_.AddCandidateUnchecked(mutable_block);
+                }
             }
         }
     }
 
-    LOG_INFO("Successfully invalidated block {} and all descendants", hash.ToString());
+    LOG_INFO("Successfully invalidated block {} and {} descendants",
+             hash.ToString(),
+             pindex_was_in_chain ? "disconnected" : "marked");
+
+    // NOTE: Bitcoin Core does NOT call ActivateBestChain() here
+    // The candidates are set up correctly, and the next block arrival
+    // or external ActivateBestChain() call will activate the best chain
+
     return true;
 }
 

@@ -33,9 +33,6 @@ struct AppConfig {
     // Chain type (mainnet, testnet, regtest)
     chain::ChainType chain_type = chain::ChainType::MAIN;
 
-    // Parallel RandomX verification threads (0 = auto-detect)
-    int par_threads = 0;
-
     // Suspicious reorg depth (0 = unlimited, default = 100)
     int suspicious_reorg_depth = 100;
 

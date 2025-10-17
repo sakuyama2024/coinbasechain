@@ -49,9 +49,6 @@ int main(int argc, char* argv[]) {
             else if (arg.find("--threads=") == 0) {
                 config.network_config.io_threads = std::stoi(arg.substr(10));
             }
-            else if (arg.find("--par=") == 0) {
-                config.par_threads = std::stoi(arg.substr(6));
-            }
             else if (arg.find("--suspiciousreorgdepth=") == 0) {
                 config.suspicious_reorg_depth = std::stoi(arg.substr(23));
             }
