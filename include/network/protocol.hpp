@@ -14,17 +14,19 @@ constexpr uint32_t PROTOCOL_VERSION = coinbasechain::PROTOCOL_VERSION;
 constexpr uint32_t MIN_PEER_PROTO_VERSION = coinbasechain::MIN_PEER_PROTO_VERSION;
 
 // Network magic bytes - unique identifier for the network
+// High Hamming distance between values prevents cross-network contamination
+// ASCII encoding: "UNIC" (Unicity) for mainnet
 namespace magic {
-    constexpr uint32_t MAINNET = 0xC0C0C0C0;   
-    constexpr uint32_t TESTNET = 0xC0C0C0C1;   
-    constexpr uint32_t REGTEST = 0xC0C0C0C2;   
+    constexpr uint32_t MAINNET = 0x554E4943;  // "UNIC" - Unicity mainnet
+    constexpr uint32_t TESTNET = 0xA3F8D412;  // High bit separation from mainnet
+    constexpr uint32_t REGTEST = 0x4B7C2E91;  // High bit separation from mainnet/testnet
 }
 
-// Default ports
+// Default ports - consistent pattern: mainnet, mainnet+10000, mainnet+20000
 namespace ports {
     constexpr uint16_t MAINNET = 9590;
-    constexpr uint16_t TESTNET = 19590;
-    constexpr uint16_t REGTEST = 29509;
+    constexpr uint16_t TESTNET = 19590;  // MAINNET + 10000
+    constexpr uint16_t REGTEST = 29590;  // MAINNET + 20000
 }
 
 // Service flags - what services this node provides

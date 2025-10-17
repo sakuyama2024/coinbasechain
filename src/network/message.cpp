@@ -201,8 +201,7 @@ uint64_t MessageDeserializer::read_varint() {
         return 0;
     }
 
-    // SECURITY: Validate against MAX_SIZE to prevent DoS attacks
-    // Bitcoin Core: src/serialize.h ReadCompactSize() validation
+    //Validate against MAX_SIZE to prevent DoS attacks
     if (vi.value > protocol::MAX_SIZE) {
         error_ = true;
         return 0;
@@ -342,8 +341,6 @@ bool deserialize_header(const uint8_t* data, size_t size, protocol::MessageHeade
     header.length = endian::ReadLE32(data + pos);
     pos += 4;
 
-    // SECURITY: Enforce MAX_PROTOCOL_MESSAGE_LENGTH to prevent huge message attacks
-    // Bitcoin Core: src/net.h line 68 (MAX_PROTOCOL_MESSAGE_LENGTH = 4 MB)
     // Prevents attackers from sending 4+ GB messages causing memory exhaustion
     if (header.length > protocol::MAX_PROTOCOL_MESSAGE_LENGTH) {
         return false;
@@ -466,8 +463,7 @@ bool AddrMessage::deserialize(const uint8_t* data, size_t size) {
     uint64_t count = d.read_varint();
     if (count > protocol::MAX_ADDR_SIZE) return false;
 
-    // SECURITY: Incremental allocation to prevent DoS attacks
-    // Bitcoin Core: src/serialize.h Unser() incremental allocation pattern
+    // Incremental allocation to prevent DoS attacks
     // Instead of reserve(count) which could allocate GBs, allocate in 5 MB batches
     addresses.clear();
     uint64_t allocated = 0;
@@ -509,8 +505,7 @@ bool InvMessage::deserialize(const uint8_t* data, size_t size) {
     uint64_t count = d.read_varint();
     if (count > protocol::MAX_INV_SIZE) return false;
 
-    // SECURITY: Incremental allocation to prevent DoS attacks
-    // Bitcoin Core: src/serialize.h Unser() incremental allocation pattern
+    //Incremental allocation to prevent DoS attacks
     inventory.clear();
     uint64_t allocated = 0;
     constexpr size_t batch_size = protocol::MAX_VECTOR_ALLOCATE / sizeof(protocol::InventoryVector);
@@ -611,12 +606,11 @@ bool GetHeadersMessage::deserialize(const uint8_t* data, size_t size) {
 
     uint64_t count = d.read_varint();
 
-    // SECURITY: Enforce MAX_LOCATOR_SZ to prevent CPU exhaustion attacks
-    // Bitcoin Core: src/net_processing.cpp line 85 (MAX_LOCATOR_SZ = 101)
+    // Enforce MAX_LOCATOR_SZ to prevent CPU exhaustion attacks
     // Prevents attackers from sending 1000+ locator hashes causing expensive FindFork() operations
     if (count > protocol::MAX_LOCATOR_SZ) return false;
-
-    // SECURITY: Incremental allocation to prevent DoS attacks
+ 
+    //Incremental allocation to prevent DoS attacks
     block_locator_hashes.clear();
     uint64_t allocated = 0;
     constexpr size_t batch_size = protocol::MAX_VECTOR_ALLOCATE / 32;  // 32 bytes per hash
