@@ -12,15 +12,10 @@
 namespace coinbasechain {
 namespace sync {
 
-/**
- * DoS Protection Constants
- * Based on Bitcoin Core design
- */
+// DoS Protection Constants (from Bitcoin Core)
 static constexpr int DISCOURAGEMENT_THRESHOLD = 100;  // Misbehavior score threshold for disconnection
 
-/**
- * Common misbehavior penalties
- */
+// Common misbehavior penalties
 namespace MisbehaviorPenalty {
     static constexpr int INVALID_POW = 100;           // Instant disconnect - invalid PoW
     static constexpr int OVERSIZED_MESSAGE = 20;      // Oversized headers message
@@ -34,10 +29,7 @@ namespace MisbehaviorPenalty {
 // Maximum unconnecting headers messages before penalty
 static constexpr int MAX_UNCONNECTING_HEADERS = 10;
 
-/**
- * NetPermissionFlags - Permission flags for peer connections
- * Based on Bitcoin Core's NetPermissionFlags
- */
+// NetPermissionFlags - Permission flags for peer connections (from Bitcoin Core)
 enum class NetPermissionFlags : uint32_t {
     None = 0,
     NoBan = (1U << 0),          // Cannot be banned/disconnected for misbehavior
@@ -58,12 +50,9 @@ inline bool HasPermission(NetPermissionFlags flags, NetPermissionFlags check) {
     return (flags & check) == check && static_cast<uint32_t>(check) != 0;
 }
 
-/**
- * Peer - Tracks state and misbehavior for a single peer connection
- *
- * Simplified from Bitcoin's Peer struct for headers-only chain.
- * No block download tracking, no transaction relay, just header sync.
- */
+// Peer - Tracks state and misbehavior for a single peer connection
+// Simplified from Bitcoin's Peer struct for headers-only chain
+// No block download tracking, no transaction relay, just header sync
 struct Peer {
     int id;                                  // Peer identifier
     int misbehavior_score{0};               // Cumulative misbehavior score
@@ -77,70 +66,29 @@ struct Peer {
         : id(peer_id), address(peer_addr), permissions(perms) {}
 };
 
-/**
- * PeerManager - Manages peer connections and misbehavior tracking
- *
- * Responsibilities:
- * - Track misbehavior scores for all connected peers
- * - Mark peers for disconnection when threshold exceeded
- * - Provide thread-safe access to peer state
- *
- * Simplified from Bitcoin's PeerManager (no actual network management,
- * just misbehavior tracking for DoS protection).
- */
+// PeerManager - Manages peer connections and misbehavior tracking
+// Simplified from Bitcoin's PeerManager (no actual network management,
+// just misbehavior tracking for DoS protection)
 class PeerManager {
 public:
     PeerManager() = default;
     ~PeerManager() = default;
 
-    /**
-     * Add a new peer
-     * @param peer_id Peer identifier
-     * @param address Peer address (for logging)
-     * @param permissions Permission flags (NoBan, Manual, etc.)
-     */
     void AddPeer(int peer_id, const std::string& address = "unknown",
                  NetPermissionFlags permissions = NetPermissionFlags::None);
 
-    /**
-     * Remove a peer (on disconnect)
-     */
     void RemovePeer(int peer_id);
 
-    /**
-     * Record misbehavior for a peer
-     *
-     * @param peer_id Peer identifier
-     * @param howmuch Misbehavior penalty to add
-     * @param message Reason for misbehavior (for logging)
-     * @return true if peer should be disconnected
-     */
+    // Record misbehavior for peer, returns true if should disconnect
     bool Misbehaving(int peer_id, int howmuch, const std::string& message);
 
-    /**
-     * Check if peer should be disconnected
-     */
     bool ShouldDisconnect(int peer_id) const;
-
-    /**
-     * Get peer's current misbehavior score
-     */
     int GetMisbehaviorScore(int peer_id) const;
-
-    /**
-     * Get peer count (for stats/debugging)
-     */
     size_t GetPeerCount() const;
 
-    /**
-     * Increment unconnecting headers counter
-     * @return true if threshold exceeded (peer should be penalized)
-     */
+    // Returns true if threshold exceeded (peer should be penalized)
     bool IncrementUnconnectingHeaders(int peer_id);
 
-    /**
-     * Reset unconnecting headers counter (on successful connection)
-     */
     void ResetUnconnectingHeaders(int peer_id);
 
 private:

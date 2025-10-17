@@ -21,18 +21,8 @@ namespace validation {
 
 namespace network {
 
-/**
- * NetworkManager - Top-level coordinator for all networking
- *
- * Simplified version inspired by Bitcoins's CConnman:
- * - Manages the io_context thread pool
- * - Coordinates PeerManager and AddressManager
- * - Handles outbound connection attempts
- * - Accepts inbound connections (if listening)
- * - Routes messages between components
- * - Periodic maintenance tasks
- *
- */
+// NetworkManager - Top-level coordinator for all networking (inspired by Bitcoin's CConnman)
+// Manages io_context, coordinates PeerManager/AddressManager, handles connections, routes messages
 class NetworkManager {
 public:
     struct Config {

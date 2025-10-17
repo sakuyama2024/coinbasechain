@@ -21,24 +21,11 @@ namespace validation { class ChainstateManager; }
 
 namespace rpc {
 
-/**
- * Simple RPC server using Unix domain sockets
- *
- * Handles CLI queries from coinbasechain-cli
- */
+// Simple RPC server using Unix domain sockets (handles CLI queries from coinbasechain-cli)
 class RPCServer {
 public:
     using CommandHandler = std::function<std::string(const std::vector<std::string>&)>;
 
-    /**
-     * Constructor
-     * @param socket_path Path to Unix domain socket
-     * @param chainstate_manager Reference to chainstate manager
-     * @param network_manager Reference to network manager
-     * @param miner Reference to CPU miner (optional)
-     * @param params Chain parameters
-     * @param shutdown_callback Callback to trigger graceful shutdown
-     */
     RPCServer(const std::string& socket_path,
              validation::ChainstateManager& chainstate_manager,
              network::NetworkManager& network_manager,
@@ -47,41 +34,15 @@ public:
              std::function<void()> shutdown_callback = nullptr);
     ~RPCServer();
 
-    /**
-     * Start RPC server (listens for connections)
-     */
     bool Start();
-
-    /**
-     * Stop RPC server
-     */
     void Stop();
-
-    /**
-     * Check if running
-     */
     bool IsRunning() const { return running_; }
 
 private:
-    /**
-     * Server thread loop
-     */
     void ServerThread();
-
-    /**
-     * Handle client connection
-     */
     void HandleClient(int client_fd);
-
-    /**
-     * Parse and execute RPC command
-     */
     std::string ExecuteCommand(const std::string& method,
                               const std::vector<std::string>& params);
-
-    /**
-     * Register command handlers
-     */
     void RegisterHandlers();
 
     // Command handlers - Blockchain

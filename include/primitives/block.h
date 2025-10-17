@@ -14,18 +14,11 @@
 #include <utility>
 #include <vector>
 
-/**
- * CBlockHeader - Block header structure
- *
- * In our headers-only blockchain, this header represents the entire block
- * (there are no transactions to store separately).
- *
- * Based on Bitcoin's block header, simplified for Coinbase Chain.
- * Key differences from Bitcoin:
- * - Uses minerAddress (uint160) instead of hashMerkleRoot
- * - Includes hashRandomX for RandomX PoW algorithm
- * - No transaction data (headers-only chain)
- */
+// CBlockHeader - Block header structure (represents entire block in headers-only chain)
+// Based on Bitcoin's block header, simplified for Coinbase Chain:
+// - Uses minerAddress (uint160) instead of hashMerkleRoot
+// - Includes hashRandomX for RandomX PoW algorithm
+// - No transaction data (headers-only chain)
 class CBlockHeader
 {
 public:
@@ -133,10 +126,7 @@ public:
     [[nodiscard]] std::string ToString() const;
 };
 
-/**
- * CBlockLocator - Describes a position in the block chain
- * Used for syncing to find common ancestor with peer
- */
+// CBlockLocator - Describes a position in the block chain (for finding common ancestor with peer)
 struct CBlockLocator
 {
     std::vector<uint256> vHave;

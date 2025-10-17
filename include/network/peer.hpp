@@ -19,9 +19,7 @@ namespace network {
 class Peer;
 using PeerPtr = std::shared_ptr<Peer>;
 
-/**
- * Peer connection states
- */
+// Peer connection states
 enum class PeerState {
     DISCONNECTED,       // Not connected
     CONNECTING,         // TCP connection in progress
@@ -32,9 +30,7 @@ enum class PeerState {
     DISCONNECTING       // Shutting down
 };
 
-/**
- * Peer connection statistics
- */
+// Peer connection statistics
 struct PeerStats {
     uint64_t bytes_sent = 0;
     uint64_t bytes_received = 0;
@@ -46,28 +42,15 @@ struct PeerStats {
     int64_t ping_time_ms = -1;  // -1 means not measured yet
 };
 
-/**
- * Message handler callback type
- * Returns true if message was handled successfully
- */
+// Message handler callback type (returns true if message handled successfully)
 using MessageHandler = std::function<bool(PeerPtr peer, std::unique_ptr<message::Message> msg)>;
 
-/**
- * Peer class - Represents a single peer connection
- *
- * Handles:
- * - Asynchronous TCP connection
- * - Bitcoin protocol handshake (VERSION/VERACK)
- * - Message framing and parsing
- * - Send/receive queuing
- * - Ping/pong for keepalive
- * - Connection lifecycle management
- */
+// Peer class - Represents a single peer connection
+// Handles async TCP connection, Bitcoin protocol handshake (VERSION/VERACK),
+// message framing/parsing, send/receive queuing, ping/pong keepalive, lifecycle management
 class Peer : public std::enable_shared_from_this<Peer> {
 public:
-    /**
-     * Create outbound peer (we initiate connection)
-     */
+    // Create outbound peer (we initiate connection)
     static PeerPtr create_outbound(
         boost::asio::io_context& io_context,
         TransportConnectionPtr connection,
@@ -75,9 +58,7 @@ public:
         uint64_t local_nonce
     );
 
-    /**
-     * Create inbound peer (they connected to us)
-     */
+    // Create inbound peer (they connected to us)
     static PeerPtr create_inbound(
         boost::asio::io_context& io_context,
         TransportConnectionPtr connection,
@@ -91,26 +72,11 @@ public:
     Peer(const Peer&) = delete;
     Peer& operator=(const Peer&) = delete;
 
-    /**
-     * Start the peer connection
-     * For outbound: initiates connection
-     * For inbound: starts receiving messages
-     */
+    // Start peer connection (outbound: initiates connection, inbound: starts receiving messages)
     void start();
 
-    /**
-     * Disconnect the peer
-     */
     void disconnect();
-
-    /**
-     * Send a message to the peer
-     */
     void send_message(std::unique_ptr<message::Message> msg);
-
-    /**
-     * Set the message handler callback
-     */
     void set_message_handler(MessageHandler handler);
 
     // Getters

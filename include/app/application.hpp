@@ -20,9 +20,7 @@
 namespace coinbasechain {
 namespace app {
 
-/**
- * Application configuration
- */
+// Application configuration
 struct AppConfig {
     // Data directory
     std::filesystem::path datadir;
@@ -45,15 +43,8 @@ struct AppConfig {
     }
 };
 
-/**
- * Application - Main application coordinator
- *
- * Responsibilities:
- * - Initialize all components in correct order
- * - Manage lifecycle (start/stop)
- * - Handle signals (SIGINT, SIGTERM)
- * - Coordinate shutdown
- */
+// Application - Main application coordinator
+// Initializes components, manages lifecycle, handles signals, coordinates shutdown
 class Application {
 public:
     explicit Application(const AppConfig& config = AppConfig{});

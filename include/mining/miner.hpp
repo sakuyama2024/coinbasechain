@@ -27,9 +27,7 @@ namespace validation {
 
 namespace mining {
 
-/**
- * Block template - header ready for mining
- */
+// Block template - header ready for mining
 struct BlockTemplate {
     CBlockHeader header;          // Block header to mine
     uint32_t nBits;              // Difficulty target
@@ -37,73 +35,26 @@ struct BlockTemplate {
     uint256 hashPrevBlock;       // Previous block hash
 };
 
-/**
- * CPU Miner - Single-threaded RandomX mining for regtest
- *
- * Simplified single-threaded implementation:
- * - Single mining thread for simplicity
- * - Atomic operations for safe state access from RPC
- * - Designed for regtest/testing only
- */
+// CPU Miner - Single-threaded RandomX mining for regtest
+// Atomics for safe RPC access, designed for regtest/testing only
 class CPUMiner {
 public:
-    /**
-     * Constructor
-     * @param params Chain parameters
-     * @param chainstate Chainstate manager for processing found blocks
-     */
     CPUMiner(const chain::ChainParams& params, validation::ChainstateManager& chainstate);
     ~CPUMiner();
 
-    /**
-     * Start mining (single-threaded)
-     * @param num_threads Ignored - always uses 1 thread for regtest
-     * @return true if started successfully
-     */
+    // Start mining (num_threads ignored, always uses 1 thread for regtest)
     bool Start(int num_threads = 1);
-
-    /**
-     * Stop mining
-     */
     void Stop();
 
-    /**
-     * Check if currently mining
-     */
     bool IsMining() const { return mining_.load(); }
-
-    /**
-     * Get current hashrate (hashes per second)
-     */
     double GetHashrate() const;
-
-    /**
-     * Get total hashes computed
-     */
     uint64_t GetTotalHashes() const { return total_hashes_.load(); }
-
-    /**
-     * Get number of blocks found
-     */
     int GetBlocksFound() const { return blocks_found_.load(); }
 
 private:
-    /**
-     * Mining worker function (runs in single thread)
-     */
     void MiningWorker();
-
-    /**
-     * Create block template from current chain tip
-     * @return Block template ready for mining
-     */
     BlockTemplate CreateBlockTemplate();
-
-    /**
-     * Check if we should regenerate block template
-     * (e.g., chain tip changed)
-     */
-    bool ShouldRegenerateTemplate();
+    bool ShouldRegenerateTemplate();  // e.g., chain tip changed
 
 private:
     // Chain params

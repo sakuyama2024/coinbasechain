@@ -27,26 +27,13 @@ namespace sync {
 // Forward declaration
 class PeerManager;
 
-/**
- * HeaderSync - Simplified headers-only blockchain synchronization
- *
- * Key simplification vs Bitcoin:
- * - Single-pass sync (no presync/redownload)
- * - Headers = blocks (no separate block download)
- * - Fast sync (< 1 minute for millions of headers)
- *
- * See IBD_ANALYSIS.md for design rationale.
- *
- * THREAD SAFETY:
- * ---------------
- * HeaderSync is called from multiple io_context threads concurrently.
- * Internal state (state_, last_batch_size_, callback) is protected by mutex_.
- *
- * LOCKING ORDER (see LOCKING_ORDER.md):
- * - ChainstateManager::validation_mutex_ acquired FIRST (inside ProcessHeaders)
- * - HeaderSync::mutex_ acquired AFTER (for state updates)
- * - This mutex is held only for brief state reads/writes, not during validation
- */
+// HeaderSync - Simplified headers-only blockchain synchronization
+// Single-pass sync (no presync/redownload), headers = blocks, fast sync
+// See IBD_ANALYSIS.md for design rationale
+//
+// THREAD SAFETY: Called from multiple io_context threads concurrently
+// Internal state protected by mutex_ (held only for brief reads/writes, not during validation)
+// LOCKING ORDER: ChainstateManager::validation_mutex_ FIRST, HeaderSync::mutex_ AFTER
 class HeaderSync {
 public:
     enum class State {
@@ -55,95 +42,46 @@ public:
         SYNCED     // Caught up to network tip
     };
 
-    /**
-     * Constructor
-     * @param chainstate_manager Reference to chainstate manager (handles validation)
-     * @param params Chain parameters (for genesis, consensus rules)
-     */
     HeaderSync(validation::ChainstateManager& chainstate_manager, const chain::ChainParams& params);
     ~HeaderSync();
 
-    /**
-     * Initialize with genesis block
-     */
     bool Initialize();
 
-    /**
-     * Process received HEADERS message from peer
-     * @param headers List of headers (up to 2000)
-     * @param peer_id ID of peer who sent headers (for logging/banning)
-     * @return true if successfully processed, false on error
-     */
+    // Process HEADERS message from peer (returns true if successfully processed)
     bool ProcessHeaders(const std::vector<CBlockHeader>& headers, int peer_id);
 
-    /**
-     * Get block locator for GETHEADERS request
-     * Used to tell peer where our chain is, so they know what to send
-     */
+    // Get block locator for GETHEADERS request (tells peer where our chain is)
     CBlockLocator GetLocator() const;
 
-    /**
-     * Get block locator starting from pprev of tip (for initial sync)
-     * This ensures we get a non-empty response even if peer is at same tip
-     * Matches Bitcoin's initial sync behavior 
-     */
+    // Get block locator from pprev of tip (ensures non-empty response even if peer at same tip)
     CBlockLocator GetLocatorFromPrev() const;
 
-    /**
-     * Check if we're synced (tip is recent)
-     * @param max_age_seconds Maximum age of tip to be considered synced (default: 1 hour)
-     */
+    // Check if synced (tip is recent, default max_age_seconds = 1 hour)
     bool IsSynced(int64_t max_age_seconds = 3600) const;
 
-    /**
-     * Get current sync state (thread-safe)
-     */
     State GetState() const {
         std::lock_guard<std::mutex> lock(mutex_);
         return state_;
     }
 
-    /**
-     * Get sync progress (0.0 to 1.0)
-     * Estimates based on tip timestamp vs current time
-     */
+    // Get sync progress (0.0 to 1.0, estimated from tip timestamp vs current time)
     double GetProgress() const;
 
-    /**
-     * Get best known header height
-     */
     int GetBestHeight() const;
-
-    /**
-     * Get best known header hash
-     */
     uint256 GetBestHash() const;
 
-    /**
-     * Should we request more headers from peer?
-     * True if last batch was full (2000 headers) and we're not synced
-     */
+    // Should we request more headers? (true if last batch was full and we're not synced)
     bool ShouldRequestMore() const;
 
-    /**
-     * Callback when sync state changes
-     * Used to notify application of sync progress (thread-safe)
-     */
     void SetSyncStateCallback(std::function<void(State, int)> callback) {
         std::lock_guard<std::mutex> lock(mutex_);
         sync_state_callback_ = callback;
     }
 
-    /**
-     * Get peer manager (for external peer management)
-     */
     PeerManager& GetPeerManager() { return *peer_manager_; }
     const PeerManager& GetPeerManager() const { return *peer_manager_; }
 
 private:
-    /**
-     * Update sync state
-     */
     void UpdateState();
 
 private:

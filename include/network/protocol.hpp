@@ -117,14 +117,8 @@ inline std::string GetUserAgent() {
     return coinbasechain::GetUserAgent();
 }
 
-/**
- * Message header structure (24 bytes)
- * Layout:
- *   - magic (4 bytes): Network identifier
- *   - command (12 bytes): Command name (null-padded)
- *   - length (4 bytes): Payload length
- *   - checksum (4 bytes): First 4 bytes of double SHA256 of payload
- */
+// Message header structure (24 bytes):
+// magic (4 bytes), command (12 bytes null-padded), length (4 bytes), checksum (4 bytes)
 struct MessageHeader {
     uint32_t magic;
     std::array<char, COMMAND_SIZE> command;
@@ -141,9 +135,7 @@ struct MessageHeader {
     void set_command(const std::string& cmd);
 };
 
-/**
- * Network address structure (30 bytes without timestamp, 34 with)
- */
+// Network address structure (30 bytes without timestamp, 34 with)
 struct NetworkAddress {
     uint64_t services;
     std::array<uint8_t, 16> ip;  // IPv6 format (IPv4 mapped)
@@ -162,9 +154,7 @@ struct NetworkAddress {
     bool is_ipv4() const;
 };
 
-/**
- * Timestamped network address (34 bytes)
- */
+// Timestamped network address (34 bytes)
 struct TimestampedAddress {
     uint32_t timestamp;
     NetworkAddress address;
@@ -173,9 +163,7 @@ struct TimestampedAddress {
     TimestampedAddress(uint32_t ts, const NetworkAddress& addr);
 };
 
-/**
- * Inventory vector - identifies a transaction or block
- */
+// Inventory vector - identifies a transaction or block
 struct InventoryVector {
     InventoryType type;
     std::array<uint8_t, 32> hash;  // SHA256 hash

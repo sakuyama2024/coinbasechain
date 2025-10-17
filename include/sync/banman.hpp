@@ -12,10 +12,7 @@
 namespace coinbasechain {
 namespace sync {
 
-/**
- * CBanEntry - Represents a single ban entry
- * Stored persistently on disk
- */
+// CBanEntry - Represents a single ban entry (stored persistently on disk)
 struct CBanEntry {
     static constexpr int CURRENT_VERSION = 1;
 
@@ -27,91 +24,36 @@ struct CBanEntry {
     CBanEntry(int64_t create_time, int64_t ban_until)
         : nCreateTime(create_time), nBanUntil(ban_until) {}
 
-    /**
-     * Check if ban has expired
-     */
     bool IsExpired(int64_t now) const {
         // nBanUntil == 0 means permanent ban
         return nBanUntil > 0 && now >= nBanUntil;
     }
 };
 
-/**
- * BanMan - Manages persistent bans and temporary discouragement
- *
- * Two-tier system:
- * 1. Manual bans: Persistent, stored on disk, permanent or timed
- * 2. Discouragement: Temporary, in-memory, probabilistic (bloom filter simulation)
- *
- * Based on Bitcoin Core's BanMan design.
- */
+// BanMan - Manages persistent bans and temporary discouragement (from Bitcoin Core)
+// Two-tier system:
+// 1. Manual bans: Persistent, stored on disk, permanent or timed
+// 2. Discouragement: Temporary, in-memory, probabilistic (bloom filter simulation)
 class BanMan {
 public:
-    /**
-     * Constructor
-     * @param datadir Path to data directory (for banlist.json)
-     */
     explicit BanMan(const std::string& datadir = "");
     ~BanMan();
 
-    /**
-     * Load bans from disk
-     */
     bool Load();
-
-    /**
-     * Save bans to disk
-     */
     bool Save();
 
-    /**
-     * Manually ban an address
-     * @param address IP address or hostname
-     * @param ban_time_offset Seconds until ban expires (0 = permanent)
-     */
+    // Manually ban address (0 = permanent, otherwise seconds until expiry)
     void Ban(const std::string& address, int64_t ban_time_offset = 0);
-
-    /**
-     * Manually unban an address
-     */
     void Unban(const std::string& address);
-
-    /**
-     * Check if address is banned
-     * @return true if banned and not expired
-     */
     bool IsBanned(const std::string& address) const;
 
-    /**
-     * Discourage an address (automatic, temporary)
-     * Used when peer misbehaves - soft ban for ~24 hours
-     */
+    // Discourage address (automatic, temporary ~24 hours for misbehavior)
     void Discourage(const std::string& address);
-
-    /**
-     * Check if address is discouraged
-     * @return true if discouraged (probabilistic check)
-     */
     bool IsDiscouraged(const std::string& address) const;
-
-    /**
-     * Clear all discouragement (for testing/debug)
-     */
     void ClearDiscouraged();
 
-    /**
-     * Get all banned addresses
-     */
     std::map<std::string, CBanEntry> GetBanned() const;
-
-    /**
-     * Clear all bans (for testing/debug)
-     */
     void ClearBanned();
-
-    /**
-     * Sweep expired bans
-     */
     void SweepBanned();
 
 private:
@@ -131,9 +73,6 @@ private:
     // Discouragement duration (24 hours)
     static constexpr int64_t DISCOURAGEMENT_DURATION = 24 * 60 * 60;
 
-    /**
-     * Get banlist file path
-     */
     std::string GetBanlistPath() const;
 };
 
