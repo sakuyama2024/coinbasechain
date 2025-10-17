@@ -639,11 +639,9 @@ std::vector<uint8_t> HeadersMessage::serialize() const {
     MessageSerializer s;
     s.write_varint(headers.size());
     for (const auto& header : headers) {
-        // Serialize each header and write it
         auto header_bytes = header.Serialize();
         s.write_bytes(header_bytes);
-        // Bitcoin protocol requires a var_int tx count after each header (always 0 for us)
-        s.write_varint(0);
+        // Headers-only chain: no transaction count needed
     }
     return s.data();
 }
@@ -672,9 +670,6 @@ bool HeadersMessage::deserialize(const uint8_t* data, size_t size) {
         if (!header.Deserialize(header_bytes.data(), header_bytes.size())) {
             return false;
         }
-
-        // Skip tx count (should be 0)
-        d.read_varint();
 
         headers.push_back(header);
     }
