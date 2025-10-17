@@ -204,7 +204,7 @@ void Peer::send_version() {
 
     // Use our local nonce for self-connection prevention
     version_msg->nonce = local_nonce_;
-    version_msg->user_agent = protocol::USER_AGENT;
+    version_msg->user_agent = protocol::GetUserAgent();
     version_msg->start_height = 0;  // TODO: Get from blockchain
     version_msg->relay = true;
 

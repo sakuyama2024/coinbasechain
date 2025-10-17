@@ -2,6 +2,7 @@
 #include "crypto/randomx_pow.hpp"
 #include "util/logging.hpp"
 #include "util/fs_lock.hpp"
+#include "version.hpp"
 #include <iostream>  // Keep for signal handler (async-signal-safe)
 #include <thread>
 #include <chrono>
@@ -27,6 +28,23 @@ Application* Application::instance() {
 }
 
 bool Application::initialize() {
+    // Determine chain type name for banner
+    std::string chain_name;
+    switch (config_.chain_type) {
+        case chain::ChainType::MAIN:
+            chain_name = "MAINNET";
+            break;
+        case chain::ChainType::TESTNET:
+            chain_name = "TESTNET";
+            break;
+        case chain::ChainType::REGTEST:
+            chain_name = "REGTEST";
+            break;
+    }
+
+    // Print startup banner (use std::cout for immediate visibility before logger fully initialized)
+    std::cout << GetStartupBanner(chain_name) << std::flush;
+
     LOG_INFO("Initializing CoinbaseChain...");
 
     // Create data directory

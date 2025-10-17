@@ -378,7 +378,7 @@ VersionMessage::VersionMessage()
       services(protocol::NODE_NETWORK),
       timestamp(0),
       nonce(0),
-      user_agent(protocol::USER_AGENT),
+      user_agent(protocol::GetUserAgent()),
       start_height(0),
       relay(true) {
 }

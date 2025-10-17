@@ -4,13 +4,14 @@
 #include <cstdint>
 #include <string>
 #include <array>
+#include "version.hpp"
 
 namespace coinbasechain {
 namespace protocol {
 
-// Protocol version
-constexpr uint32_t PROTOCOL_VERSION = 10000;  // Custom protocol version
-constexpr uint32_t MIN_PEER_PROTO_VERSION = 10000;
+// Protocol version (from version.hpp)
+constexpr uint32_t PROTOCOL_VERSION = coinbasechain::PROTOCOL_VERSION;
+constexpr uint32_t MIN_PEER_PROTO_VERSION = coinbasechain::MIN_PEER_PROTO_VERSION;
 
 // Network magic bytes - unique identifier for the network
 namespace magic {
@@ -111,8 +112,10 @@ constexpr int64_t TIMESTAMP_ALLOWANCE_SEC = 2 * 60 * 60;  // 2 hours
 // Time validation (Bitcoin Core src/validation.cpp)
 constexpr int64_t MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60;  // 2 hours - Maximum block timestamp in future
 
-// User agent string
-constexpr const char* USER_AGENT = "/CoinbaseChain:0.1.0/";
+// User agent string (from version.hpp)
+inline std::string GetUserAgent() {
+    return coinbasechain::GetUserAgent();
+}
 
 /**
  * Message header structure (24 bytes)

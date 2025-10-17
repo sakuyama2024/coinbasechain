@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(CoinbaseChain VERSION 0.1.0 LANGUAGES CXX C)
+project(CoinbaseChain VERSION 1.0.0 LANGUAGES CXX C)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 20)
