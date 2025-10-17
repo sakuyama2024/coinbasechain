@@ -338,7 +338,7 @@ set_target_properties(coinbasechain-cli PROPERTIES
 # Enable testing
 enable_testing()
 
-# Create test executable
+# Create test executable (now includes network tests - all using Catch2)
 add_executable(coinbasechain_tests
     test/catch_amalgamated.cpp
     test/block_tests.cpp
@@ -363,12 +363,18 @@ add_executable(coinbasechain_tests
     test/reorg_tests.cpp
     test/pow_tests.cpp
     test/unit/reorg_multi_node_tests.cpp
+    test/network/simulated_network.cpp
+    test/network/simulated_node.cpp
+    test/network/network_bridged_transport.cpp
+    test/network/attack_simulated_node.cpp
+    test/network/network_tests.cpp
 )
 
 target_include_directories(coinbasechain_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/test
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/network
     ${Boost_INCLUDE_DIRS}
 )
 
@@ -386,65 +392,6 @@ target_link_libraries(coinbasechain_tests PRIVATE
 
 # Register test with CTest
 add_test(NAME coinbasechain_tests COMMAND coinbasechain_tests)
-
-# Fetch Google Test for network simulation tests
-message(STATUS "Fetching Google Test v1.14.0...")
-FetchContent_Declare(
-  googletest
-  GIT_REPOSITORY https://github.com/google/googletest.git
-  GIT_TAG        v1.14.0
-  GIT_SHALLOW    TRUE
-)
-# For Windows: Prevent overriding the parent project's compiler/linker settings
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
-
-# Create test library for network simulation
-add_library(test_network_simulation STATIC
-    test/network/simulated_network.cpp
-    test/network/simulated_node.cpp
-    test/network/network_bridged_transport.cpp
-    test/network/attack_simulated_node.cpp
-)
-
-target_include_directories(test_network_simulation PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/test
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/network
-)
-
-target_link_libraries(test_network_simulation PUBLIC
-    primitives
-    crypto
-    util
-    chain
-    sync
-    network
-    validation
-    consensus
-)
-
-# Create network simulation test executable
-add_executable(network_tests
-    test/network/network_tests.cpp
-)
-
-target_include_directories(network_tests PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/network
-)
-
-target_link_libraries(network_tests PRIVATE
-    test_network_simulation
-    validation
-    GTest::gtest
-    GTest::gtest_main
-)
-
-# Register network tests with CTest
-add_test(NAME network_tests COMMAND network_tests)
 
 # Add tools subdirectory
 add_subdirectory(tools/genesis_miner)

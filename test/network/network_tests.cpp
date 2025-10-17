@@ -28,9 +28,10 @@
 #include "simulated_node.hpp"
 #include "attack_simulated_node.hpp"
 #include "chain/chainparams.hpp"
-#include <gtest/gtest.h>
+#include <catch_amalgamated.hpp>
 #include <vector>
 #include <chrono>
+#include <iostream>
 
 using namespace coinbasechain::test;
 
@@ -43,40 +44,37 @@ static void SetZeroLatency(SimulatedNetwork& network) {
     network.SetNetworkConditions(conditions);
 }
 
-// Test fixture to initialize chain params
-class NetworkTestEnvironment : public ::testing::Environment {
-public:
-    void SetUp() override {
+// Global test setup - Catch2 style
+// This runs once before all tests
+struct GlobalSetup {
+    GlobalSetup() {
         // Initialize global chain params for REGTEST
         coinbasechain::chain::GlobalChainParams::Select(coinbasechain::chain::ChainType::REGTEST);
     }
 };
-
-// Register the environment
-const ::testing::Environment* const network_env =
-    ::testing::AddGlobalTestEnvironment(new NetworkTestEnvironment);
+static GlobalSetup global_setup;
 
 // ==============================================================================
 // PEER MANAGER TESTS
 // ==============================================================================
 
-TEST(PeerManagerTest, BasicHandshake) {
+TEST_CASE("PeerManagerTest - BasicHandshake", "[peermanagertest][network]") {
     SimulatedNetwork network(12345);  // Deterministic seed
     SimulatedNode node1(1, &network);
     SimulatedNode node2(2, &network);
 
     // Node 1 connects to Node 2
-    EXPECT_TRUE(node1.ConnectTo(2));
+    CHECK(node1.ConnectTo(2));
 
     // Process messages (handshake: VERSION -> VERACK)
     network.AdvanceTime(100);
 
     // Both nodes should have 1 peer
-    EXPECT_EQ(node1.GetPeerCount(), 1);
-    EXPECT_EQ(node2.GetPeerCount(), 1);
+    CHECK(node1.GetPeerCount() == 1);
+    CHECK(node2.GetPeerCount() == 1);
 }
 
-TEST(PeerManagerTest, MultipleConnections) {
+TEST_CASE("PeerManagerTest - MultipleConnections", "[peermanagertest][network]") {
     SimulatedNetwork network(12345);
     std::vector<std::unique_ptr<SimulatedNode>> nodes;
 
@@ -87,31 +85,31 @@ TEST(PeerManagerTest, MultipleConnections) {
 
     // Node 0 connects to all others
     for (int i = 1; i < 5; i++) {
-        EXPECT_TRUE(nodes[0]->ConnectTo(i));
+        CHECK(nodes[0]->ConnectTo(i));
     }
 
     network.AdvanceTime(100);
 
     // Node 0 should have 4 outbound connections
-    EXPECT_EQ(nodes[0]->GetOutboundPeerCount(), 4);
-    EXPECT_EQ(nodes[0]->GetPeerCount(), 4);
+    CHECK(nodes[0]->GetOutboundPeerCount() == 4);
+    CHECK(nodes[0]->GetPeerCount() == 4);
 
     // Each other node should have 1 inbound connection
     for (int i = 1; i < 5; i++) {
-        EXPECT_EQ(nodes[i]->GetInboundPeerCount(), 1);
+        CHECK(nodes[i]->GetInboundPeerCount() == 1);
     }
 }
 
-TEST(PeerManagerTest, SelfConnectionPrevention) {
+TEST_CASE("PeerManagerTest - SelfConnectionPrevention", "[peermanagertest][network]") {
     SimulatedNetwork network(12345);
     SimulatedNode node(1, &network);
 
     // Try to connect to self - should fail
-    EXPECT_FALSE(node.ConnectTo(1));
-    EXPECT_EQ(node.GetPeerCount(), 0);
+    CHECK_FALSE(node.ConnectTo(1));
+    CHECK(node.GetPeerCount() == 0);
 }
 
-TEST(PeerManagerTest, PeerDisconnection) {
+TEST_CASE("PeerManagerTest - PeerDisconnection", "[peermanagertest][network]") {
     SimulatedNetwork network(12345);
     SetZeroLatency(network);
 
@@ -122,18 +120,18 @@ TEST(PeerManagerTest, PeerDisconnection) {
     uint64_t time_ms = 100;
     network.AdvanceTime(time_ms);
 
-    EXPECT_EQ(node1.GetPeerCount(), 1);
+    CHECK(node1.GetPeerCount() == 1);
 
     // Disconnect
     node1.DisconnectFrom(2);
     time_ms += 500;
     network.AdvanceTime(time_ms);
 
-    EXPECT_EQ(node1.GetPeerCount(), 0);
-    EXPECT_EQ(node2.GetPeerCount(), 0);
+    CHECK(node1.GetPeerCount() == 0);
+    CHECK(node2.GetPeerCount() == 0);
 }
 
-TEST(PeerManagerTest, MaxConnectionLimits) {
+TEST_CASE("PeerManagerTest - MaxConnectionLimits", "[peermanagertest][network]") {
     SimulatedNetwork network(12345);
     SimulatedNode server(1, &network);  // Will accept connections
 
@@ -151,11 +149,11 @@ TEST(PeerManagerTest, MaxConnectionLimits) {
     network.AdvanceTime(1000);
 
     // Should have hit the max inbound limit (125 by default)
-    EXPECT_LE(server.GetInboundPeerCount(), 125);
-    EXPECT_GT(server.GetInboundPeerCount(), 100);  // Should have some connections
+    CHECK(server.GetInboundPeerCount() <= 125);
+    CHECK(server.GetInboundPeerCount() > 100);  // Should have some connections
 }
 
-TEST(PeerManagerTest, PeerEviction) {
+TEST_CASE("PeerManagerTest - PeerEviction", "[peermanagertest][network]") {
     SimulatedNetwork network(12345);
     SimulatedNode server(1, &network);
 
@@ -170,14 +168,14 @@ TEST(PeerManagerTest, PeerEviction) {
 
     // Should have evicted some to make room
     size_t final_count = server.GetInboundPeerCount();
-    EXPECT_LE(final_count, 125);
+    CHECK(final_count <= 125);
 }
 
 // ==============================================================================
 // BAN MANAGER TESTS
 // ==============================================================================
 
-TEST(BanManTest, BasicBan) {
+TEST_CASE("BanManTest - BasicBan", "[banmantest][network]") {
     SimulatedNetwork network(12345);
     SetZeroLatency(network);
 
@@ -188,13 +186,13 @@ TEST(BanManTest, BasicBan) {
     std::string node2_addr = node2.GetAddress();
     node1.Ban(node2_addr);
 
-    EXPECT_TRUE(node1.IsBanned(node2_addr));
+    CHECK(node1.IsBanned(node2_addr));
 
     // Try to connect to banned node - should fail
-    EXPECT_FALSE(node1.ConnectTo(2));
+    CHECK_FALSE(node1.ConnectTo(2));
 }
 
-TEST(BanManTest, UnbanAddress) {
+TEST_CASE("BanManTest - UnbanAddress", "[banmantest][network]") {
     SimulatedNetwork network(12345);
     SimulatedNode node1(1, &network);
     SimulatedNode node2(2, &network);
@@ -203,18 +201,18 @@ TEST(BanManTest, UnbanAddress) {
 
     // Ban then unban
     node1.Ban(node2_addr);
-    EXPECT_TRUE(node1.IsBanned(node2_addr));
+    CHECK(node1.IsBanned(node2_addr));
 
     node1.Unban(node2_addr);
-    EXPECT_FALSE(node1.IsBanned(node2_addr));
+    CHECK_FALSE(node1.IsBanned(node2_addr));
 
     // Should now be able to connect
-    EXPECT_TRUE(node1.ConnectTo(2));
+    CHECK(node1.ConnectTo(2));
     network.AdvanceTime(100);
-    EXPECT_EQ(node1.GetPeerCount(), 1);
+    CHECK(node1.GetPeerCount() == 1);
 }
 
-TEST(BanManTest, MisbehaviorBan) {
+TEST_CASE("BanManTest - MisbehaviorBan", "[banmantest][network]") {
     SimulatedNetwork network(12345);
     SimulatedNode honest(1, &network);
     SimulatedNode attacker(2, &network);
@@ -222,17 +220,17 @@ TEST(BanManTest, MisbehaviorBan) {
     attacker.ConnectTo(1);
     network.AdvanceTime(100);
 
-    EXPECT_EQ(honest.GetPeerCount(), 1);
+    CHECK(honest.GetPeerCount() == 1);
 
     // Attacker sends invalid data
     // TODO: Need to implement SendInvalidHeaders or similar
     // For now, test that ban system is accessible
 
     honest.Ban(attacker.GetAddress());
-    EXPECT_TRUE(honest.IsBanned(attacker.GetAddress()));
+    CHECK(honest.IsBanned(attacker.GetAddress()));
 }
 
-TEST(BanManTest, DiscouragementSystem) {
+TEST_CASE("BanManTest - DiscouragementSystem", "[banmantest][network]") {
     // TODO: Test the discourage system (probabilistic rejection)
     // This tests the grey-listing feature for borderline misbehavior
 }
@@ -241,7 +239,7 @@ TEST(BanManTest, DiscouragementSystem) {
 // HEADER SYNC TESTS
 // ==============================================================================
 
-TEST(HeaderSyncTest, InitialSync) {
+TEST_CASE("HeaderSyncTest - InitialSync", "[headersynctest][network]") {
     SimulatedNetwork network(12345);
 
     // Set zero latency for fast, deterministic testing
@@ -277,14 +275,14 @@ TEST(HeaderSyncTest, InitialSync) {
                    node1.GetTipHeight(), node2.GetTipHeight());
         }
     }
-    EXPECT_EQ(node1.GetTipHeight(), 100);
+    CHECK(node1.GetTipHeight() == 100);
 
     // Node 2 should have synced to same height
-    EXPECT_EQ(node2.GetTipHeight(), 100);
-    EXPECT_EQ(node2.GetTipHash(), node1.GetTipHash());
+    CHECK(node2.GetTipHeight() == 100);
+    CHECK(node2.GetTipHash() == node1.GetTipHash());
 }
 
-TEST(HeaderSyncTest, SyncFromMultiplePeers) {
+TEST_CASE("HeaderSyncTest - SyncFromMultiplePeers", "[headersynctest][network]") {
     SimulatedNetwork network(12345);
     SetZeroLatency(network);
 
@@ -303,8 +301,8 @@ TEST(HeaderSyncTest, SyncFromMultiplePeers) {
     time_ms += 100;
     network.AdvanceTime(time_ms);
 
-    EXPECT_EQ(synced_node1.GetTipHeight(), 50);
-    EXPECT_EQ(synced_node2.GetTipHeight(), 50);
+    CHECK(synced_node1.GetTipHeight() == 50);
+    CHECK(synced_node2.GetTipHeight() == 50);
 
     // New node connects to both
     new_node.ConnectTo(1);
@@ -313,10 +311,10 @@ TEST(HeaderSyncTest, SyncFromMultiplePeers) {
     network.AdvanceTime(time_ms);
 
     // Should sync from one of them
-    EXPECT_EQ(new_node.GetTipHeight(), 50);
+    CHECK(new_node.GetTipHeight() == 50);
 }
 
-TEST(HeaderSyncTest, CatchUpAfterMining) {
+TEST_CASE("HeaderSyncTest - CatchUpAfterMining", "[headersynctest][network]") {
     SimulatedNetwork network(12345);
     SetZeroLatency(network);
 
@@ -336,14 +334,14 @@ TEST(HeaderSyncTest, CatchUpAfterMining) {
     }
 
     // Node 2 should catch up
-    EXPECT_EQ(node2.GetTipHeight(), 20);
+    CHECK(node2.GetTipHeight() == 20);
 }
 
 // ==============================================================================
 // IBD (INITIAL BLOCK DOWNLOAD) TESTS
 // ==============================================================================
 
-TEST(IBDTest, FreshNodeSyncsFromGenesis) {
+TEST_CASE("IBDTest - FreshNodeSyncsFromGenesis", "[ibdtest][network]") {
     // Test that a brand new node can sync the entire chain from a peer
     SimulatedNetwork network(12345);
     SetZeroLatency(network);
@@ -356,8 +354,8 @@ TEST(IBDTest, FreshNodeSyncsFromGenesis) {
     for (int i = 0; i < 200; i++) {
         miner.MineBlock();
     }
-    EXPECT_EQ(miner.GetTipHeight(), 200);
-    EXPECT_EQ(fresh_node.GetTipHeight(), 0);  // Still at genesis
+    CHECK(miner.GetTipHeight() == 200);
+    CHECK(fresh_node.GetTipHeight() == 0);  // Still at genesis
 
     // NOW fresh node connects and syncs
     printf("[IBD] Fresh node connecting to miner...\n");
@@ -374,13 +372,13 @@ TEST(IBDTest, FreshNodeSyncsFromGenesis) {
     }
 
     // Fresh node should have synced the entire chain
-    EXPECT_EQ(fresh_node.GetTipHeight(), 200);
-    EXPECT_EQ(fresh_node.GetTipHash(), miner.GetTipHash());
+    CHECK(fresh_node.GetTipHeight() == 200);
+    CHECK(fresh_node.GetTipHash() == miner.GetTipHash());
 
     printf("[IBD] Fresh node synced! Height=%d\n", fresh_node.GetTipHeight());
 }
 
-TEST(IBDTest, LargeChainSync) {
+TEST_CASE("IBDTest - LargeChainSync", "[ibdtest][network]") {
     // Test syncing a large chain (2000+ headers requires multiple batches)
     SimulatedNetwork network(12345);
     SetZeroLatency(network);
@@ -396,7 +394,7 @@ TEST(IBDTest, LargeChainSync) {
             printf("[IBD] ...mined %d blocks\n", i);
         }
     }
-    EXPECT_EQ(miner.GetTipHeight(), 2500);
+    CHECK(miner.GetTipHeight() == 2500);
 
     // Connect and sync
     printf("[IBD] Syncing node connecting...\n");
@@ -419,13 +417,13 @@ TEST(IBDTest, LargeChainSync) {
     }
 
     // Should have synced entire chain
-    EXPECT_EQ(syncing_node.GetTipHeight(), 2500);
-    EXPECT_EQ(syncing_node.GetTipHash(), miner.GetTipHash());
+    CHECK(syncing_node.GetTipHeight() == 2500);
+    CHECK(syncing_node.GetTipHash() == miner.GetTipHash());
 
     printf("[IBD] Large chain sync complete!\n");
 }
 
-TEST(IBDTest, SyncWhileMining) {
+TEST_CASE("IBDTest - SyncWhileMining", "[ibdtest][network]") {
     // Test that a node can sync while the peer continues mining
     SimulatedNetwork network(12345);
     SetZeroLatency(network);
@@ -461,11 +459,11 @@ TEST(IBDTest, SyncWhileMining) {
 
     // Syncing node should eventually catch up to moving target
     // Miner now has 100 + 100 = 200 blocks
-    EXPECT_EQ(miner.GetTipHeight(), 200);
-    EXPECT_EQ(syncing_node.GetTipHeight(), 200);
+    CHECK(miner.GetTipHeight() == 200);
+    CHECK(syncing_node.GetTipHeight() == 200);
 }
 
-TEST(IBDTest, MultiPeerSync) {
+TEST_CASE("IBDTest - MultiPeerSync", "[ibdtest][network]") {
     // Test that a node can sync from multiple peers simultaneously
     // (though Bitcoin typically syncs from one peer at a time)
     SimulatedNetwork network(12345);
@@ -487,7 +485,7 @@ TEST(IBDTest, MultiPeerSync) {
         time_ms += 100;
         network.AdvanceTime(time_ms);
     }
-    EXPECT_EQ(peer2.GetTipHeight(), 150);
+    CHECK(peer2.GetTipHeight() == 150);
 
     // Now syncing node connects to BOTH peers
     syncing_node.ConnectTo(1);
@@ -502,11 +500,11 @@ TEST(IBDTest, MultiPeerSync) {
     }
 
     // Should sync successfully (from whichever peer it chose)
-    EXPECT_EQ(syncing_node.GetTipHeight(), 150);
-    EXPECT_EQ(syncing_node.GetPeerCount(), 2);
+    CHECK(syncing_node.GetTipHeight() == 150);
+    CHECK(syncing_node.GetPeerCount() == 2);
 }
 
-TEST(IBDTest, SyncAfterDisconnect) {
+TEST_CASE("IBDTest - SyncAfterDisconnect", "[ibdtest][network]") {
     // Test that queued messages are purged on disconnect and sync can resume
     SimulatedNetwork network(12345);
 
@@ -544,14 +542,14 @@ TEST(IBDTest, SyncAfterDisconnect) {
     syncing_node.DisconnectFrom(1);
     time_ms += 100;
     network.AdvanceTime(time_ms);
-    EXPECT_EQ(syncing_node.GetPeerCount(), 0);
+    CHECK(syncing_node.GetPeerCount() == 0);
 
     // Advance past when messages would have arrived (if not purged)
     time_ms += 3000;
     network.AdvanceTime(time_ms);
 
     // Height should STILL be 0 because queued messages were purged
-    EXPECT_EQ(syncing_node.GetTipHeight(), 0);
+    CHECK(syncing_node.GetTipHeight() == 0);
     printf("[IBD] Height after disconnect+wait: %d (messages were purged!)\n", syncing_node.GetTipHeight());
 
     // Now reconnect with zero latency for fast completion
@@ -568,18 +566,18 @@ TEST(IBDTest, SyncAfterDisconnect) {
     }
 
     // Should now complete sync
-    EXPECT_EQ(syncing_node.GetTipHeight(), 500);
+    CHECK(syncing_node.GetTipHeight() == 500);
     printf("[IBD] Resumed sync complete! Height=%d\n", syncing_node.GetTipHeight());
 }
 
-TEST(IBDTest, IsInitialBlockDownloadFlag) {
+TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
     // Test that IsInitialBlockDownload() flag is set correctly during sync
     // This would require exposing IBD status from SimulatedNode
     // TODO: Add GetIsIBD() method to SimulatedNode if needed
-    GTEST_SKIP() << "Requires GetIsIBD() method on SimulatedNode";
+    SKIP("Requires GetIsIBD() method on SimulatedNode");
 }
 
-TEST(IBDTest, ReorgDuringSync) {
+TEST_CASE("IBDTest - ReorgDuringSync", "[ibdtest][network]") {
     // Test that a node can handle a reorg while syncing
     // Scenario: Node starts syncing chain A, then peer switches to longer chain B
     SimulatedNetwork network(12345);
@@ -596,7 +594,7 @@ TEST(IBDTest, ReorgDuringSync) {
 
     uint256 chain_a_tip = miner.GetTipHash();
     printf("[IBD] Chain A tip: %s\n", chain_a_tip.GetHex().substr(0, 16).c_str());
-    EXPECT_EQ(miner.GetTipHeight(), 50);
+    CHECK(miner.GetTipHeight() == 50);
 
     // Syncing node connects and starts downloading chain A
     printf("[IBD] Syncing node connecting...\n");
@@ -618,7 +616,7 @@ TEST(IBDTest, ReorgDuringSync) {
         miner.MineBlock();
     }
 
-    EXPECT_EQ(miner.GetTipHeight(), 80);
+    CHECK(miner.GetTipHeight() == 80);
 
     // Continue sync - syncing node should follow the extended chain
     printf("[IBD] Syncing node continuing sync to catch up with extended chain...\n");
@@ -628,14 +626,14 @@ TEST(IBDTest, ReorgDuringSync) {
     }
 
     // Syncing node should have synced to extended chain
-    EXPECT_EQ(syncing_node.GetTipHeight(), 80);
-    EXPECT_EQ(syncing_node.GetTipHash(), miner.GetTipHash());
+    CHECK(syncing_node.GetTipHeight() == 80);
+    CHECK(syncing_node.GetTipHash() == miner.GetTipHash());
 
     printf("[IBD] Chain extension test complete! Syncing node followed to height %d\n",
            syncing_node.GetTipHeight());
 }
 
-TEST(IBDTest, OrphanHeaderHandling) {
+TEST_CASE("IBDTest - OrphanHeaderHandling", "[ibdtest][network]") {
     // Test that orphan headers (headers whose parent is not yet known) are handled correctly
     // This is critical for IBD when headers arrive out of order
 
@@ -653,7 +651,7 @@ TEST(IBDTest, OrphanHeaderHandling) {
     for (int i = 0; i < 50; i++) {
         node1.MineBlock();
     }
-    EXPECT_EQ(node1.GetTipHeight(), 50);
+    CHECK(node1.GetTipHeight() == 50);
 
     // Node2 connects
     printf("[Orphan] Node2 connecting...\n");
@@ -668,8 +666,8 @@ TEST(IBDTest, OrphanHeaderHandling) {
     }
 
     // Both nodes should be synced
-    EXPECT_EQ(node2.GetTipHeight(), 50);
-    EXPECT_EQ(node2.GetTipHash(), node1.GetTipHash());
+    CHECK(node2.GetTipHeight() == 50);
+    CHECK(node2.GetTipHash() == node1.GetTipHash());
 
     printf("[Orphan] Test complete - nodes synced to height %d\n", node2.GetTipHeight());
 
@@ -685,7 +683,7 @@ TEST(IBDTest, OrphanHeaderHandling) {
 // REORG TESTS
 // ==============================================================================
 
-TEST(ReorgTest, DeepReorg) {
+TEST_CASE("ReorgTest - DeepReorg", "[reorgtest][network]") {
     // Test a deep reorg scenario where a longer chain replaces a significant portion of history
     // This tests the reorg depth limits and chain reorganization logic
     SimulatedNetwork network(12345);
@@ -711,9 +709,9 @@ TEST(ReorgTest, DeepReorg) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(miner_a.GetTipHeight(), 10);
-    EXPECT_EQ(miner_b.GetTipHeight(), 10);
-    EXPECT_EQ(miner_a.GetTipHash(), miner_b.GetTipHash());
+    CHECK(miner_a.GetTipHeight() == 10);
+    CHECK(miner_b.GetTipHeight() == 10);
+    CHECK(miner_a.GetTipHash() == miner_b.GetTipHash());
 
     uint256 common_ancestor = miner_a.GetTipHash();
     printf("[Reorg] Common ancestor: %s\n", common_ancestor.GetHex().substr(0, 16).c_str());
@@ -729,14 +727,14 @@ TEST(ReorgTest, DeepReorg) {
     for (int i = 0; i < 20; i++) {
         miner_a.MineBlock();
     }
-    EXPECT_EQ(miner_a.GetTipHeight(), 30);
+    CHECK(miner_a.GetTipHeight() == 30);
 
     // Miner B builds a LONGER chain (25 more blocks = 35 total)
     printf("[Reorg] Miner B building LONGER chain to height 35...\n");
     for (int i = 0; i < 25; i++) {
         miner_b.MineBlock();
     }
-    EXPECT_EQ(miner_b.GetTipHeight(), 35);
+    CHECK(miner_b.GetTipHeight() == 35);
 
     // Observer first syncs from Miner A
     printf("[Reorg] Observer syncing from Miner A...\n");
@@ -749,8 +747,8 @@ TEST(ReorgTest, DeepReorg) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(observer.GetTipHeight(), 30);
-    EXPECT_EQ(observer.GetTipHash(), miner_a.GetTipHash());
+    CHECK(observer.GetTipHeight() == 30);
+    CHECK(observer.GetTipHash() == miner_a.GetTipHash());
     printf("[Reorg] Observer at height 30 (chain A)\n");
 
     // NOW observer learns about longer chain B - should trigger deep reorg
@@ -766,14 +764,14 @@ TEST(ReorgTest, DeepReorg) {
     }
 
     // Observer should reorg to chain B (35 blocks, more work)
-    EXPECT_EQ(observer.GetTipHeight(), 35);
-    EXPECT_EQ(observer.GetTipHash(), miner_b.GetTipHash());
+    CHECK(observer.GetTipHeight() == 35);
+    CHECK(observer.GetTipHash() == miner_b.GetTipHash());
 
     printf("[Reorg] Deep reorg complete! Observer reorged from height 30 to 35\n");
     printf("[Reorg] Reorg depth: %d blocks\n", 30 - 10); // 20 blocks reorged
 }
 
-TEST(ReorgTest, CompetingChainsEqualWork) {
+TEST_CASE("ReorgTest - CompetingChainsEqualWork", "[reorgtest][network]") {
     // Test behavior when two chains have equal work
     // The node should stick with the first-seen chain (tie-breaker)
     SimulatedNetwork network(12345);
@@ -798,8 +796,8 @@ TEST(ReorgTest, CompetingChainsEqualWork) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(miner_a.GetTipHeight(), 5);
-    EXPECT_EQ(miner_b.GetTipHeight(), 5);
+    CHECK(miner_a.GetTipHeight() == 5);
+    CHECK(miner_b.GetTipHeight() == 5);
     uint256 common_ancestor = miner_a.GetTipHash();
 
     // Partition
@@ -814,9 +812,9 @@ TEST(ReorgTest, CompetingChainsEqualWork) {
         miner_b.MineBlock();
     }
 
-    EXPECT_EQ(miner_a.GetTipHeight(), 15);
-    EXPECT_EQ(miner_b.GetTipHeight(), 15);
-    EXPECT_NE(miner_a.GetTipHash(), miner_b.GetTipHash()); // Different tips, same height
+    CHECK(miner_a.GetTipHeight() == 15);
+    CHECK(miner_b.GetTipHeight() == 15);
+    CHECK(miner_a.GetTipHash() != miner_b.GetTipHash()); // Different tips, same height
 
     // Observer syncs from A first
     printf("[Equal] Observer syncing from Miner A first...\n");
@@ -829,9 +827,9 @@ TEST(ReorgTest, CompetingChainsEqualWork) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(observer.GetTipHeight(), 15);
+    CHECK(observer.GetTipHeight() == 15);
     uint256 chain_a_tip = observer.GetTipHash();
-    EXPECT_EQ(chain_a_tip, miner_a.GetTipHash());
+    CHECK(chain_a_tip == miner_a.GetTipHash());
 
     // Observer learns about equal-work chain B
     printf("[Equal] Observer learning about equal-work chain B...\n");
@@ -845,13 +843,13 @@ TEST(ReorgTest, CompetingChainsEqualWork) {
     }
 
     // Observer should STICK with chain A (first-seen wins on ties)
-    EXPECT_EQ(observer.GetTipHeight(), 15);
-    EXPECT_EQ(observer.GetTipHash(), chain_a_tip);
+    CHECK(observer.GetTipHeight() == 15);
+    CHECK(observer.GetTipHash() == chain_a_tip);
 
     printf("[Equal] Observer correctly stuck with first-seen chain (no reorg)\n");
 }
 
-TEST(ReorgTest, MultipleReorgs) {
+TEST_CASE("ReorgTest - MultipleReorgs", "[reorgtest][network]") {
     // Test multiple reorgs in sequence (chain thrashing)
     // This can happen in adversarial scenarios or network partitions
     SimulatedNetwork network(12345);
@@ -877,9 +875,9 @@ TEST(ReorgTest, MultipleReorgs) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(victim.GetTipHeight(), 10);
-    EXPECT_EQ(attacker_a.GetTipHeight(), 10);
-    EXPECT_EQ(attacker_b.GetTipHeight(), 10);
+    CHECK(victim.GetTipHeight() == 10);
+    CHECK(attacker_a.GetTipHeight() == 10);
+    CHECK(attacker_b.GetTipHeight() == 10);
 
     // Disconnect attackers
     attacker_a.DisconnectFrom(1);
@@ -892,7 +890,7 @@ TEST(ReorgTest, MultipleReorgs) {
     for (int i = 0; i < 5; i++) {
         attacker_a.MineBlock();
     }
-    EXPECT_EQ(attacker_a.GetTipHeight(), 15);
+    CHECK(attacker_a.GetTipHeight() == 15);
 
     // Victim learns about attacker A's chain - reorg #1
     // Attacker A reconnects to victim to propagate longer chain
@@ -905,7 +903,7 @@ TEST(ReorgTest, MultipleReorgs) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(victim.GetTipHeight(), 15);
+    CHECK(victim.GetTipHeight() == 15);
     printf("[MultiReorg] Reorg #1 complete: victim -> chain A (height 15)\n");
 
     // Disconnect after reorg
@@ -918,7 +916,7 @@ TEST(ReorgTest, MultipleReorgs) {
     for (int i = 0; i < 8; i++) {
         attacker_b.MineBlock();
     }
-    EXPECT_EQ(attacker_b.GetTipHeight(), 18);
+    CHECK(attacker_b.GetTipHeight() == 18);
 
     // Victim learns about attacker B's chain - reorg #2
     attacker_b.ConnectTo(1);
@@ -930,7 +928,7 @@ TEST(ReorgTest, MultipleReorgs) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(victim.GetTipHeight(), 18);
+    CHECK(victim.GetTipHeight() == 18);
     printf("[MultiReorg] Reorg #2 complete: victim -> chain B (height 18)\n");
 
     // Disconnect after reorg
@@ -943,7 +941,7 @@ TEST(ReorgTest, MultipleReorgs) {
     for (int i = 0; i < 5; i++) {
         attacker_a.MineBlock();
     }
-    EXPECT_EQ(attacker_a.GetTipHeight(), 20);
+    CHECK(attacker_a.GetTipHeight() == 20);
 
     // Victim gets reorged AGAIN - reorg #3
     attacker_a.ConnectTo(1);
@@ -955,12 +953,12 @@ TEST(ReorgTest, MultipleReorgs) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(victim.GetTipHeight(), 20);
+    CHECK(victim.GetTipHeight() == 20);
     printf("[MultiReorg] Reorg #3 complete: victim -> chain A again (height 20)\n");
     printf("[MultiReorg] Victim survived 3 reorgs!\n");
 }
 
-TEST(ReorgTest, ReorgDuringReorg) {
+TEST_CASE("ReorgTest - ReorgDuringReorg", "[reorgtest][network]") {
     // Test that a node can handle receiving multiple longer chains in succession
     // This tests state machine consistency during sequential reorg attempts
     //
@@ -1006,9 +1004,9 @@ TEST(ReorgTest, ReorgDuringReorg) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(miner_a.GetTipHeight(), 50);
-    EXPECT_EQ(miner_b.GetTipHeight(), 50);
-    EXPECT_EQ(miner_c.GetTipHeight(), 50);
+    CHECK(miner_a.GetTipHeight() == 50);
+    CHECK(miner_b.GetTipHeight() == 50);
+    CHECK(miner_c.GetTipHeight() == 50);
 
     uint256 common_ancestor = victim.GetTipHash();
     printf("[NestedReorg] Common ancestor at height 50: %s\n",
@@ -1026,7 +1024,7 @@ TEST(ReorgTest, ReorgDuringReorg) {
     for (int i = 0; i < 5; i++) {
         miner_a.MineBlock();
     }
-    EXPECT_EQ(miner_a.GetTipHeight(), 55);
+    CHECK(miner_a.GetTipHeight() == 55);
     printf("[NestedReorg] Miner A tip: %s\n", miner_a.GetTipHash().GetHex().substr(0, 16).c_str());
 
     // Miner B builds longer chain (10 blocks = height 60)
@@ -1034,7 +1032,7 @@ TEST(ReorgTest, ReorgDuringReorg) {
     for (int i = 0; i < 10; i++) {
         miner_b.MineBlock();
     }
-    EXPECT_EQ(miner_b.GetTipHeight(), 60);
+    CHECK(miner_b.GetTipHeight() == 60);
     printf("[NestedReorg] Miner B tip: %s\n", miner_b.GetTipHash().GetHex().substr(0, 16).c_str());
 
     // Miner C builds LONGEST chain (15 blocks = height 65)
@@ -1042,7 +1040,7 @@ TEST(ReorgTest, ReorgDuringReorg) {
     for (int i = 0; i < 15; i++) {
         miner_c.MineBlock();
     }
-    EXPECT_EQ(miner_c.GetTipHeight(), 65);
+    CHECK(miner_c.GetTipHeight() == 65);
     printf("[NestedReorg] Miner C tip: %s\n", miner_c.GetTipHash().GetHex().substr(0, 16).c_str());
 
     // Victim first learns about chain B (height 60)
@@ -1060,8 +1058,8 @@ TEST(ReorgTest, ReorgDuringReorg) {
     network.AdvanceTime(time_ms);
 
     // Verify victim reorged to chain B
-    EXPECT_EQ(victim.GetTipHeight(), 60);
-    EXPECT_EQ(victim.GetTipHash(), miner_b.GetTipHash());
+    CHECK(victim.GetTipHeight() == 60);
+    CHECK(victim.GetTipHash() == miner_b.GetTipHash());
     printf("[NestedReorg] Victim successfully reorged to chain B: height=%d\n", victim.GetTipHeight());
 
     // IMPORTANT: Disconnect miner B BEFORE miner C connects
@@ -1100,17 +1098,17 @@ TEST(ReorgTest, ReorgDuringReorg) {
     printf("[NestedReorg]   Miner C: height=%d, tip=%s\n",
            miner_c.GetTipHeight(), miner_c.GetTipHash().GetHex().substr(0, 16).c_str());
 
-    EXPECT_EQ(victim.GetTipHeight(), 65);
-    EXPECT_EQ(victim.GetTipHash(), miner_c.GetTipHash());
+    CHECK(victim.GetTipHeight() == 65);
+    CHECK(victim.GetTipHash() == miner_c.GetTipHash());
 
     printf("[NestedReorg] SUCCESS! Victim ended at height 65 (chain C)\n");
     printf("[NestedReorg] Victim correctly chose longest chain despite nested reorg\n");
 
     // Verify chain B was NOT chosen (intermediate chain)
-    EXPECT_NE(victim.GetTipHash(), miner_b.GetTipHash());
+    CHECK(victim.GetTipHash() != miner_b.GetTipHash());
 
     // Verify chain A was abandoned (original chain)
-    EXPECT_NE(victim.GetTipHash(), common_ancestor);
+    CHECK(victim.GetTipHash() != common_ancestor);
 
     printf("[NestedReorg] Nested reorg test complete!\n");
 }
@@ -1119,7 +1117,7 @@ TEST(ReorgTest, ReorgDuringReorg) {
 // NETWORK PARTITION TESTS
 // ==============================================================================
 
-TEST(NetworkPartitionTest, SimpleSplit) {
+TEST_CASE("NetworkPartitionTest - SimpleSplit", "[networkpartitiontest][network]") {
     SimulatedNetwork network(12345);
     SetZeroLatency(network);
 
@@ -1141,12 +1139,12 @@ TEST(NetworkPartitionTest, SimpleSplit) {
     network.AdvanceTime(time_ms);
 
     // Should have different tips
-    EXPECT_NE(node1.GetTipHash(), node2.GetTipHash());
-    EXPECT_EQ(node1.GetTipHeight(), 1);
-    EXPECT_EQ(node2.GetTipHeight(), 1);
+    CHECK(node1.GetTipHash() != node2.GetTipHash());
+    CHECK(node1.GetTipHeight() == 1);
+    CHECK(node2.GetTipHeight() == 1);
 }
 
-TEST(NetworkPartitionTest, HealAndReorg) {
+TEST_CASE("NetworkPartitionTest - HealAndReorg", "[networkpartitiontest][network]") {
     SimulatedNetwork network(12345);
     SetZeroLatency(network);
 
@@ -1172,16 +1170,16 @@ TEST(NetworkPartitionTest, HealAndReorg) {
     network.AdvanceTime(time_ms);
 
     // Node 2 should reorg to Node 1's longer chain
-    EXPECT_EQ(node1.GetTipHeight(), 5);
-    EXPECT_EQ(node2.GetTipHeight(), 5);
-    EXPECT_EQ(node1.GetTipHash(), node2.GetTipHash());
+    CHECK(node1.GetTipHeight() == 5);
+    CHECK(node2.GetTipHeight() == 5);
+    CHECK(node1.GetTipHash() == node2.GetTipHash());
 }
 
 // ==============================================================================
 // NETWORK CONDITIONS TESTS
 // ==============================================================================
 
-TEST(NetworkConditionsTest, HighLatency) {
+TEST_CASE("NetworkConditionsTest - HighLatency", "[networkconditionstest][network]") {
     SimulatedNetwork network(12345);
     SetZeroLatency(network);  // Start with zero latency
 
@@ -1209,10 +1207,10 @@ TEST(NetworkConditionsTest, HighLatency) {
     }
 
     // After 4 seconds of propagation with 500ms latency, block should sync
-    EXPECT_EQ(node2.GetTipHeight(), 1);  // Now has block 1
+    CHECK(node2.GetTipHeight() == 1);  // Now has block 1
 }
 
-TEST(NetworkConditionsTest, PacketLoss) {
+TEST_CASE("NetworkConditionsTest - PacketLoss", "[networkconditionstest][network]") {
     SimulatedNetwork network(12345);
     SetZeroLatency(network);  // Start with zero latency/loss for handshake
 
@@ -1245,11 +1243,11 @@ TEST(NetworkConditionsTest, PacketLoss) {
 
     // With 50% loss, node2 should have gotten some but not all
     int node2_height = node2.GetTipHeight();
-    EXPECT_GT(node2_height, 0);      // Got some
-    EXPECT_LT(node2_height, 100);    // But not all
+    CHECK(node2_height > 0);      // Got some
+    CHECK(node2_height < 100);    // But not all
 }
 
-TEST(NetworkConditionsTest, BandwidthLimits) {
+TEST_CASE("NetworkConditionsTest - BandwidthLimits", "[networkconditionstest][network]") {
     SimulatedNetwork network(12345);
 
     // Low bandwidth (10 KB/s)
@@ -1264,7 +1262,7 @@ TEST(NetworkConditionsTest, BandwidthLimits) {
 // SCALE TESTS
 // ==============================================================================
 
-TEST(ScaleTest, HundredNodes) {
+TEST_CASE("ScaleTest - HundredNodes", "[scaletest][network]") {
     SimulatedNetwork network(12345);
     SetZeroLatency(network);
 
@@ -1304,7 +1302,7 @@ TEST(ScaleTest, HundredNodes) {
     }
 
     // Most nodes should have the block (>90%)
-    EXPECT_GT(synced, 90);
+    CHECK(synced > 90);
 
     // Print statistics
     auto stats = network.GetStats();
@@ -1313,11 +1311,11 @@ TEST(ScaleTest, HundredNodes) {
     std::cout << "Nodes synced: " << synced << "/100\n";
 }
 
-TEST(ScaleTest, ThousandNodeStressTest) {
+TEST_CASE("ScaleTest - ThousandNodeStressTest", "[scaletest][network]") {
     // This test verifies the harness can handle 1000+ nodes
     // Disabled by default (slow)
 
-    GTEST_SKIP() << "Skipping stress test (slow)";
+    SKIP("Skipping stress test (slow)");
 
     SimulatedNetwork network(12345);
     std::vector<std::unique_ptr<SimulatedNode>> nodes;
@@ -1346,14 +1344,14 @@ TEST(ScaleTest, ThousandNodeStressTest) {
         if (node->GetTipHeight() >= 1) synced++;
     }
 
-    EXPECT_GT(synced, 800);  // 80% should have it
+    CHECK(synced > 800);  // 80% should have it
 }
 
 // ==============================================================================
 // ATTACK SCENARIO TESTS
 // ==============================================================================
 
-TEST(AttackTest, OrphanSpamAttack) {
+TEST_CASE("AttackTest - OrphanSpamAttack", "[attacktest][network]") {
     // Test that a node rejects excessive orphan headers
     // Attacker sends many headers with unknown parents to consume memory
     // Defense: Limit orphan cache size and ban peers sending excessive orphans
@@ -1385,11 +1383,11 @@ TEST(AttackTest, OrphanSpamAttack) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(victim.GetPeerCount(), 1);
-    EXPECT_EQ(attacker.GetPeerCount(), 1);
+    CHECK(victim.GetPeerCount() == 1);
+    CHECK(attacker.GetPeerCount() == 1);
 
     // Both should be synced now
-    EXPECT_EQ(attacker.GetTipHeight(), 10);
+    CHECK(attacker.GetTipHeight() == 10);
 
     printf("[OrphanSpam] Launching attack: sending 1000 orphan headers...\n");
 
@@ -1409,7 +1407,7 @@ TEST(AttackTest, OrphanSpamAttack) {
     // 4. If orphan limit exceeded, attacker may be banned
 
     // Check that victim is still functional (didn't crash from memory exhaustion)
-    EXPECT_EQ(victim.GetTipHeight(), 10);
+    CHECK(victim.GetTipHeight() == 10);
 
     // Check if attacker got banned for sending too many orphans
     // (This depends on implementation - may need to send multiple batches)
@@ -1418,7 +1416,7 @@ TEST(AttackTest, OrphanSpamAttack) {
            victim.IsBanned(attacker.GetAddress()) ? "YES" : "NO");
 }
 
-TEST(AttackTest, OrphanChainGrinding) {
+TEST_CASE("AttackTest - OrphanChainGrinding", "[attacktest][network]") {
     // Test defense against "orphan chain grinding" attack
     // Attacker sends deep orphan chains to make victim waste CPU on validation
     // Defense: Limit orphan chain depth and validation work
@@ -1446,7 +1444,7 @@ TEST(AttackTest, OrphanChainGrinding) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(attacker.GetTipHeight(), 5);
+    CHECK(attacker.GetTipHeight() == 5);
 
     printf("[OrphanGrind] Attacker launching orphan chain grinding attack...\n");
 
@@ -1468,17 +1466,17 @@ TEST(AttackTest, OrphanChainGrinding) {
     // Expected defense: Reject orphan chains beyond certain depth/work threshold
     // Victim should:
     // 1. Still be functional (didn't crash)
-    EXPECT_EQ(victim.GetTipHeight(), 5);
+    CHECK(victim.GetTipHeight() == 5);
 
     // 2. Attacker should be disconnected for exceeding orphan limit (TOO_MANY_ORPHANS = 50 points)
-    EXPECT_EQ(victim.GetPeerCount(), 0);
+    CHECK(victim.GetPeerCount() == 0);
 
     printf("[OrphanGrind] ✓ Victim survived attack: height=%d, attacker disconnected=%s\n",
            victim.GetTipHeight(),
            victim.GetPeerCount() == 0 ? "YES" : "NO");
 }
 
-TEST(AttackTest, FakeOrphanParentAttack) {
+TEST_CASE("AttackTest - FakeOrphanParentAttack", "[attacktest][network]") {
     // Test that victim doesn't waste resources trying to fetch fake orphan parents
     // Attacker sends orphan headers claiming to extend victim's chain
     // When victim requests parents, attacker stalls or sends garbage
@@ -1506,7 +1504,7 @@ TEST(AttackTest, FakeOrphanParentAttack) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(attacker.GetTipHeight(), 10);
+    CHECK(attacker.GetTipHeight() == 10);
 
     printf("[FakeParent] Attacker enabling stall mode and sending orphan headers...\n");
 
@@ -1528,7 +1526,7 @@ TEST(AttackTest, FakeOrphanParentAttack) {
 
     // Expected defense:
     // 1. Victim remains functional (doesn't hang)
-    EXPECT_EQ(victim.GetTipHeight(), 10);
+    CHECK(victim.GetTipHeight() == 10);
 
     // 2. Victim should have handled the stalling attacker (disconnected or marked as slow)
     // Note: Depending on implementation, attacker may be disconnected for TOO_MANY_ORPHANS
@@ -1542,7 +1540,7 @@ TEST(AttackTest, FakeOrphanParentAttack) {
     attacker.EnableStalling(false);
 }
 
-TEST(AttackTest, OrphanStormAttack) {
+TEST_CASE("AttackTest - OrphanStormAttack", "[attacktest][network]") {
     // Test defense against "orphan storm" - multiple attackers coordinate
     // Each attacker sends different orphan headers to amplify resource usage
     // Defense: Global orphan limit (not just per-peer), coordinated ban
@@ -1575,12 +1573,12 @@ TEST(AttackTest, OrphanStormAttack) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(victim.GetPeerCount(), 3);
+    CHECK(victim.GetPeerCount() == 3);
 
     // All attackers synced
-    EXPECT_EQ(attacker_a.GetTipHeight(), 5);
-    EXPECT_EQ(attacker_b.GetTipHeight(), 5);
-    EXPECT_EQ(attacker_c.GetTipHeight(), 5);
+    CHECK(attacker_a.GetTipHeight() == 5);
+    CHECK(attacker_b.GetTipHeight() == 5);
+    CHECK(attacker_c.GetTipHeight() == 5);
 
     printf("[OrphanStorm] Launching coordinated orphan storm attack...\n");
 
@@ -1602,19 +1600,19 @@ TEST(AttackTest, OrphanStormAttack) {
     // Expected defense:
     // - Global orphan cache limit (e.g., 1000 total) prevents memory exhaustion
     // - Victim remains functional (didn't crash)
-    EXPECT_EQ(victim.GetTipHeight(), 5);
+    CHECK(victim.GetTipHeight() == 5);
 
     // - Attackers should be disconnected for exceeding orphan limit
     // With TOO_MANY_ORPHANS = 50 points, each attacker gets 50 points on first offense
     // Should be disconnected after sending 500 orphans
-    EXPECT_EQ(victim.GetPeerCount(), 0);
+    CHECK(victim.GetPeerCount() == 0);
 
     printf("[OrphanStorm] ✓ Victim survived coordinated attack: height=%d, all attackers disconnected=%s\n",
            victim.GetTipHeight(),
            victim.GetPeerCount() == 0 ? "YES" : "NO");
 }
 
-TEST(AttackTest, SelfishMining) {
+TEST_CASE("AttackTest - SelfishMining", "[attacktest][network]") {
     // Test selfish mining attack where attacker withholds blocks privately
     // then releases them strategically to orphan honest miner's blocks
     // This gives the attacker unfair mining advantage
@@ -1642,8 +1640,8 @@ TEST(AttackTest, SelfishMining) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(victim.GetPeerCount(), 1);
-    EXPECT_EQ(selfish_miner.GetTipHeight(), 50);
+    CHECK(victim.GetPeerCount() == 1);
+    CHECK(selfish_miner.GetTipHeight() == 50);
 
     // DISCONNECT selfish miner so private blocks don't auto-sync
     printf("[SelfishMining] Disconnecting selfish miner to mine privately...\n");
@@ -1659,8 +1657,8 @@ TEST(AttackTest, SelfishMining) {
         private_blocks[i] = selfish_miner.MineBlockPrivate();
     }
 
-    EXPECT_EQ(selfish_miner.GetTipHeight(), 53);  // Private chain is now 3 blocks ahead
-    EXPECT_EQ(victim.GetTipHeight(), 50);  // Victim still at 50 (didn't hear about private blocks)
+    CHECK(selfish_miner.GetTipHeight() == 53);  // Private chain is now 3 blocks ahead
+    CHECK(victim.GetTipHeight() == 50);  // Victim still at 50 (didn't hear about private blocks)
 
     // Victim mines one PUBLIC block
     printf("[SelfishMining] Victim mines public block 51...\n");
@@ -1673,7 +1671,7 @@ TEST(AttackTest, SelfishMining) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(victim.GetTipHeight(), 51);
+    CHECK(victim.GetTipHeight() == 51);
 
     // NOW selfish miner releases private chain by reconnecting
     printf("[SelfishMining] Selfish miner reconnecting and releasing private chain...\n");
@@ -1699,14 +1697,14 @@ TEST(AttackTest, SelfishMining) {
     }
 
     // Victim should reorg to selfish chain (53 blocks vs 51)
-    EXPECT_EQ(victim.GetTipHeight(), 53);
-    EXPECT_EQ(victim.GetTipHash(), selfish_miner.GetTipHash());
+    CHECK(victim.GetTipHeight() == 53);
+    CHECK(victim.GetTipHash() == selfish_miner.GetTipHash());
 
     // Honest block at 51 got orphaned - selfish miner gained unfair advantage
     printf("[SelfishMining] ✓ Attack successful: Victim reorged from 51 to 53, honest block orphaned\n");
 }
 
-TEST(AttackTest, ReorgSpam) {
+TEST_CASE("AttackTest - ReorgSpam", "[attacktest][network]") {
     // Test reorg spam attack where attacker forces repeated reorgs
     // by alternating between two competing chains
     // Defense: Rate limit reorgs or ban peers causing excessive reorgs
@@ -1736,8 +1734,8 @@ TEST(AttackTest, ReorgSpam) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(attacker_a.GetTipHeight(), 10);
-    EXPECT_EQ(attacker_b.GetTipHeight(), 10);
+    CHECK(attacker_a.GetTipHeight() == 10);
+    CHECK(attacker_b.GetTipHeight() == 10);
 
     // Disconnect attackers so they can build competing chains
     attacker_a.DisconnectFrom(1);
@@ -1787,10 +1785,10 @@ TEST(AttackTest, ReorgSpam) {
 
     // Victim survived 20 reorgs (2 per cycle)
     printf("[ReorgSpam] ✓ Victim survived 20 reorgs, still functional at height %d\n", victim.GetTipHeight());
-    EXPECT_GT(victim.GetTipHeight(), 10);  // Should have accepted longer chains
+    CHECK(victim.GetTipHeight() > 10);  // Should have accepted longer chains
 }
 
-TEST(AttackTest, MassiveReorgDoS) {
+TEST_CASE("AttackTest - MassiveReorgDoS", "[attacktest][network]") {
     // Test defense against massive reorg DoS attack
     // Attacker presents alternative chain from early block, forcing
     // reorg of thousands of blocks to consume CPU/memory
@@ -1813,7 +1811,7 @@ TEST(AttackTest, MassiveReorgDoS) {
         }
     }
 
-    EXPECT_EQ(victim.GetTipHeight(), 100);
+    CHECK(victim.GetTipHeight() == 100);
 
     // Attacker connects and syncs
     attacker.ConnectTo(1);
@@ -1825,7 +1823,7 @@ TEST(AttackTest, MassiveReorgDoS) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(attacker.GetTipHeight(), 100);
+    CHECK(attacker.GetTipHeight() == 100);
 
     // Save common ancestor
     uint256 common_ancestor = victim.GetTipHash();
@@ -1845,7 +1843,7 @@ TEST(AttackTest, MassiveReorgDoS) {
         }
     }
 
-    EXPECT_EQ(attacker.GetTipHeight(), 205);  // 100 original + 105 new chain
+    CHECK(attacker.GetTipHeight() == 205);  // 100 original + 105 new chain
 
     // Reconnect and try to force massive reorg
     printf("[MassiveReorg] Attacker reconnecting to force reorg...\n");
@@ -1861,10 +1859,10 @@ TEST(AttackTest, MassiveReorgDoS) {
     // Expected defense: Either accept reorg (if within limits) or reject (if beyond limits)
     // Either way, victim should still be functional
     printf("[MassiveReorg] ✓ Victim still functional at height %d\n", victim.GetTipHeight());
-    EXPECT_GT(victim.GetTipHeight(), 0);  // Still has a valid chain
+    CHECK(victim.GetTipHeight() > 0);  // Still has a valid chain
 }
 
-TEST(AttackTest, HeaderFloodingDifferentChains) {
+TEST_CASE("AttackTest - HeaderFloodingDifferentChains", "[attacktest][network]") {
     // Test header flooding with multiple competing chain headers
     // Attacker sends headers for many different chains to exhaust memory
     // Defense: Limit cached alternative chain headers
@@ -1892,8 +1890,8 @@ TEST(AttackTest, HeaderFloodingDifferentChains) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(victim.GetPeerCount(), 1);
-    EXPECT_EQ(attacker.GetTipHeight(), 10);
+    CHECK(victim.GetPeerCount() == 1);
+    CHECK(attacker.GetTipHeight() == 10);
 
     printf("[HeaderFlood] Launching header flooding attack (100 different chains)...\n");
 
@@ -1923,32 +1921,32 @@ TEST(AttackTest, HeaderFloodingDifferentChains) {
 
     // Expected defense:
     // - Victim should still be functional (didn't crash from memory exhaustion)
-    EXPECT_EQ(victim.GetTipHeight(), 10);
+    CHECK(victim.GetTipHeight() == 10);
 
     // - Attacker should be disconnected for excessive orphan spam
-    EXPECT_EQ(victim.GetPeerCount(), 0);
+    CHECK(victim.GetPeerCount() == 0);
 
     printf("[HeaderFlood] ✓ Victim survived 10,000 orphan headers across 100 chains\n");
 }
 
-TEST(AttackTest, EclipseAttackPrevention) {
+TEST_CASE("AttackTest - EclipseAttackPrevention", "[attacktest][network]") {
     // TODO: Test that nodes maintain diverse connections
     // and can't be eclipsed by a single attacker
 }
 
-TEST(AttackTest, InvalidHeaderRejection) {
+TEST_CASE("AttackTest - InvalidHeaderRejection", "[attacktest][network]") {
     // TODO: Test that invalid headers are rejected and peer is banned
 }
 
-TEST(AttackTest, DoSProtection) {
+TEST_CASE("AttackTest - DoSProtection", "[attacktest][network]") {
     // TODO: Test that excessive invalid messages lead to disconnect/ban
 }
 
-TEST(AttackTest, TimeDilationAttack) {
+TEST_CASE("AttackTest - TimeDilationAttack", "[attacktest][network]") {
     // TODO: Test protection against time-based attacks
 }
 
-TEST(MisbehaviorTest, InvalidPoWPenalty) {
+TEST_CASE("MisbehaviorTest - InvalidPoWPenalty", "[misbehaviortest][network]") {
     // Test INVALID_POW penalty (100 points - instant disconnect)
     printf("[Misbehavior] Testing INVALID_POW penalty (100 points)...\n");
 
@@ -1972,8 +1970,8 @@ TEST(MisbehaviorTest, InvalidPoWPenalty) {
         network.AdvanceTime(time_ms);
     }
 
-    EXPECT_EQ(victim.GetPeerCount(), 1);
-    EXPECT_EQ(attacker.GetTipHeight(), 5);
+    CHECK(victim.GetPeerCount() == 1);
+    CHECK(attacker.GetTipHeight() == 5);
 
     // Send headers with invalid PoW
     attacker.SendInvalidPoWHeaders(1, victim.GetTipHash(), 10);
@@ -1985,11 +1983,11 @@ TEST(MisbehaviorTest, InvalidPoWPenalty) {
     }
 
     // Attacker should be disconnected (100 >= DISCOURAGEMENT_THRESHOLD)
-    EXPECT_EQ(victim.GetPeerCount(), 0);
+    CHECK(victim.GetPeerCount() == 0);
     printf("[Misbehavior] ✓ INVALID_POW: Attacker disconnected instantly\n");
 }
 
-TEST(MisbehaviorTest, OversizedMessagePenalty) {
+TEST_CASE("MisbehaviorTest - OversizedMessagePenalty", "[misbehaviortest][network]") {
     // Test OVERSIZED_MESSAGE penalty (20 points per offense)
     // Should disconnect after 5 offenses (5 * 20 = 100)
     printf("[Misbehavior] Testing OVERSIZED_MESSAGE penalty (20 points)...\n");
@@ -2012,7 +2010,7 @@ TEST(MisbehaviorTest, OversizedMessagePenalty) {
         network.AdvanceTime(time_ms);
     }
 
-    ASSERT_EQ(victim.GetPeerCount(), 1);
+    REQUIRE(victim.GetPeerCount() == 1);
 
     // Send 5 oversized messages to reach threshold
     for (int j = 0; j < 5; j++) {
@@ -2024,11 +2022,11 @@ TEST(MisbehaviorTest, OversizedMessagePenalty) {
     }
 
     // Should be disconnected now (5 * 20 = 100)
-    EXPECT_EQ(victim.GetPeerCount(), 0);
+    CHECK(victim.GetPeerCount() == 0);
     printf("[Misbehavior] ✓ OVERSIZED_MESSAGE: Disconnected after 5 offenses\n");
 }
 
-TEST(MisbehaviorTest, NonContinuousHeadersPenalty) {
+TEST_CASE("MisbehaviorTest - NonContinuousHeadersPenalty", "[misbehaviortest][network]") {
     // Test NON_CONTINUOUS_HEADERS penalty (20 points per offense)
     // Should disconnect after 5 offenses (5 * 20 = 100)
     printf("[Misbehavior] Testing NON_CONTINUOUS_HEADERS penalty (20 points)...\n");
@@ -2051,7 +2049,7 @@ TEST(MisbehaviorTest, NonContinuousHeadersPenalty) {
         network.AdvanceTime(time_ms);
     }
 
-    ASSERT_EQ(victim.GetPeerCount(), 1);
+    REQUIRE(victim.GetPeerCount() == 1);
 
     // Send 5 non-continuous header messages to reach threshold
     for (int j = 0; j < 5; j++) {
@@ -2063,11 +2061,11 @@ TEST(MisbehaviorTest, NonContinuousHeadersPenalty) {
     }
 
     // Should be disconnected now (5 * 20 = 100)
-    EXPECT_EQ(victim.GetPeerCount(), 0);
+    CHECK(victim.GetPeerCount() == 0);
     printf("[Misbehavior] ✓ NON_CONTINUOUS_HEADERS: Disconnected after 5 offenses\n");
 }
 
-TEST(MisbehaviorTest, TooManyOrphansPenalty) {
+TEST_CASE("MisbehaviorTest - TooManyOrphansPenalty", "[misbehaviortest][network]") {
     // Test TOO_MANY_ORPHANS penalty (50 points per offense)
     // Should disconnect after 2 offenses (2 * 50 = 100)
     printf("[Misbehavior] Testing TOO_MANY_ORPHANS penalty (50 points)...\n");
@@ -2090,7 +2088,7 @@ TEST(MisbehaviorTest, TooManyOrphansPenalty) {
         network.AdvanceTime(time_ms);
     }
 
-    ASSERT_EQ(victim.GetPeerCount(), 1);
+    REQUIRE(victim.GetPeerCount() == 1);
 
     // Send 2 batches of orphan headers to reach threshold
     for (int j = 0; j < 2; j++) {
@@ -2102,11 +2100,11 @@ TEST(MisbehaviorTest, TooManyOrphansPenalty) {
     }
 
     // Should be disconnected now (2 * 50 = 100)
-    EXPECT_EQ(victim.GetPeerCount(), 0);
+    CHECK(victim.GetPeerCount() == 0);
     printf("[Misbehavior] ✓ TOO_MANY_ORPHANS: Disconnected after 2 offenses\n");
 }
 
-TEST(MisbehaviorTest, ScoreAccumulation) {
+TEST_CASE("MisbehaviorTest - ScoreAccumulation", "[misbehaviortest][network]") {
     // Test that misbehavior scores accumulate across different offense types
     printf("[Misbehavior] Testing misbehavior score accumulation...\n");
 
@@ -2128,7 +2126,7 @@ TEST(MisbehaviorTest, ScoreAccumulation) {
         network.AdvanceTime(time_ms);
     }
 
-    ASSERT_EQ(victim.GetPeerCount(), 1);
+    REQUIRE(victim.GetPeerCount() == 1);
 
     // Mix of different attack types:
     // 2x non-continuous (40 points)
@@ -2162,11 +2160,8 @@ TEST(MisbehaviorTest, ScoreAccumulation) {
     }
 
     // Should be disconnected now (40 + 50 + 20 = 110 >= 100)
-    EXPECT_EQ(victim.GetPeerCount(), 0);
+    CHECK(victim.GetPeerCount() == 0);
     printf("[Misbehavior] ✓ Score accumulation: Mixed offenses accumulated to threshold\n");
 }
 
-int main(int argc, char **argv) {
-    testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}
+
