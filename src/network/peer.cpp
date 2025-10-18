@@ -30,8 +30,9 @@ Peer::Peer(boost::asio::io_context &io_context,
       handshake_timer_(io_context), ping_timer_(io_context),
       inactivity_timer_(io_context), network_magic_(network_magic),
       is_inbound_(is_inbound), id_(next_id_++), local_nonce_(local_nonce),
-      state_(connection->is_open() ? PeerState::CONNECTED
-                                   : PeerState::DISCONNECTED) {}
+      state_(connection && connection->is_open()
+                 ? PeerState::CONNECTED
+                 : (connection ? PeerState::CONNECTING : PeerState::DISCONNECTED)) {}
 
 Peer::~Peer() { disconnect(); }
 
@@ -52,9 +53,26 @@ PeerPtr Peer::create_inbound(boost::asio::io_context &io_context,
 }
 
 void Peer::start() {
+  LOG_NET_DEBUG("Peer::start() called for peer {} (state: {}, is_inbound: {})",
+                id_, static_cast<int>(state_), is_inbound_);
+
   if (state_ == PeerState::DISCONNECTED) {
-    LOG_NET_ERROR("Cannot start disconnected peer");
+    LOG_NET_ERROR("Cannot start disconnected peer - id:{}, address:{}, connection:{}",
+                  id_, address(), connection_ ? "exists" : "null");
     return;
+  }
+
+  // Transition from CONNECTING to CONNECTED if connection is now open
+  if (state_ == PeerState::CONNECTING) {
+    bool conn_open = connection_ && connection_->is_open();
+    LOG_NET_DEBUG("Peer {} in CONNECTING state, connection_open={}", id_, conn_open);
+    if (conn_open) {
+      state_ = PeerState::CONNECTED;
+      LOG_NET_DEBUG("Peer {} transitioned to CONNECTED", id_);
+    } else {
+      LOG_NET_ERROR("Cannot start peer in CONNECTING state - connection not open");
+      return;
+    }
   }
 
   stats_.connected_time = util::GetSteadyTime();
@@ -69,12 +87,15 @@ void Peer::start() {
 
   // Start receiving data
   connection_->start();
+  LOG_NET_DEBUG("Started connection for peer {}", id_);
 
   if (is_inbound_) {
     // Inbound: wait for VERSION from peer
+    LOG_NET_DEBUG("Peer {} is inbound, waiting for VERSION", id_);
     start_handshake_timeout();
   } else {
     // Outbound: send our VERSION
+    LOG_NET_DEBUG("Peer {} is outbound, sending VERSION", id_);
     send_version();
     start_handshake_timeout();
   }
@@ -97,7 +118,10 @@ void Peer::disconnect() {
 }
 
 void Peer::send_message(std::unique_ptr<message::Message> msg) {
+  std::string command = msg->command();
+
   if (state_ == PeerState::DISCONNECTED || state_ == PeerState::DISCONNECTING) {
+    LOG_NET_DEBUG("Cannot send {} - peer state is {}", command, static_cast<int>(state_));
     return;
   }
 
@@ -113,14 +137,19 @@ void Peer::send_message(std::unique_ptr<message::Message> msg) {
                       header_bytes.end());
   full_message.insert(full_message.end(), payload.begin(), payload.end());
 
+  LOG_NET_DEBUG("Sending {} to {} (size: {} bytes, state: {})",
+                command, address(), full_message.size(), static_cast<int>(state_));
+
   // Send via transport
   bool send_result = connection_ && connection_->send(full_message);
+
   if (send_result) {
     stats_.messages_sent++;
     stats_.bytes_sent += full_message.size();
     stats_.last_send = util::GetSteadyTime();
+    LOG_NET_DEBUG("Successfully sent {} to {}", command, address());
   } else {
-    LOG_NET_ERROR("Failed to send message");
+    LOG_NET_ERROR("Failed to send {} to {}", command, address());
     disconnect();
   }
 }
@@ -164,6 +193,9 @@ void Peer::on_transport_receive(const std::vector<uint8_t> &data) {
 
   // Accumulate received data into buffer
   recv_buffer_.insert(recv_buffer_.end(), data.begin(), data.end());
+
+  LOG_NET_DEBUG("Peer {} buffer now {} bytes (added {}), processing messages",
+                address(), recv_buffer_.size(), data.size());
 
   // Update stats
   stats_.bytes_received += data.size();
@@ -331,6 +363,9 @@ void Peer::process_message(const protocol::MessageHeader &header,
   stats_.messages_received++;
 
   std::string command = header.get_command();
+
+  LOG_NET_DEBUG("Received {} from {} (payload size: {} bytes, peer_version: {})",
+                command, address(), payload.size(), peer_version_);
 
   // SECURITY: Enforce VERSION must be first message (critical)
   // Bitcoin Core: checks if (pfrom.nVersion == 0) and rejects all non-VERSION

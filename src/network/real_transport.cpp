@@ -65,8 +65,15 @@ void RealTransportConnection::do_connect(const std::string &address,
                  boost::asio::ip::tcp::resolver::results_type results) {
         if (ec) {
           LOG_DEBUG("Failed to resolve {}: {}", remote_addr_, ec.message());
-          if (callback)
-            callback(false);
+          if (callback) {
+            try {
+              callback(false);
+            } catch (const std::exception &e) {
+              LOG_WARN("Exception in connect callback: {}", e.what());
+            } catch (...) {
+              LOG_WARN("Unknown exception in connect callback");
+            }
+          }
           return;
         }
 
@@ -78,15 +85,29 @@ void RealTransportConnection::do_connect(const std::string &address,
               if (ec) {
                 LOG_DEBUG("Failed to connect to {}:{}: {}", remote_addr_,
                           remote_port_, ec.message());
-                if (callback)
-                  callback(false);
+                if (callback) {
+                  try {
+                    callback(false);
+                  } catch (const std::exception &e) {
+                    LOG_WARN("Exception in connect callback: {}", e.what());
+                  } catch (...) {
+                    LOG_WARN("Unknown exception in connect callback");
+                  }
+                }
                 return;
               }
 
               open_ = true;
               LOG_DEBUG("Connected to {}:{}", remote_addr_, remote_port_);
-              if (callback)
-                callback(true);
+              if (callback) {
+                try {
+                  callback(true);
+                } catch (const std::exception &e) {
+                  LOG_WARN("Exception in connect callback: {}", e.what());
+                } catch (...) {
+                  LOG_WARN("Unknown exception in connect callback");
+                }
+              }
             });
       });
 }
@@ -113,15 +134,31 @@ void RealTransportConnection::start_read() {
           }
           close();
           if (disconnect_callback_) {
-            disconnect_callback_();
+            try {
+              disconnect_callback_();
+            } catch (const std::exception &e) {
+              LOG_WARN("Exception in disconnect callback: {}", e.what());
+            } catch (...) {
+              LOG_WARN("Unknown exception in disconnect callback");
+            }
           }
           return;
         }
 
         if (bytes_transferred > 0 && receive_callback_) {
+          LOG_NET_DEBUG("TCP received {} bytes from {}:{}", bytes_transferred,
+                        remote_addr_, remote_port_);
           std::vector<uint8_t> data(recv_buffer_.begin(),
                                     recv_buffer_.begin() + bytes_transferred);
-          receive_callback_(data);
+          try {
+            receive_callback_(data);
+          } catch (const std::exception &e) {
+            LOG_WARN("Exception in receive callback from {}:{}: {}",
+                     remote_addr_, remote_port_, e.what());
+          } catch (...) {
+            LOG_WARN("Unknown exception in receive callback from {}:{}",
+                     remote_addr_, remote_port_);
+          }
         }
 
         // Continue reading
@@ -170,7 +207,13 @@ void RealTransportConnection::do_write() {
                     ec.message());
           close();
           if (disconnect_callback_) {
-            disconnect_callback_();
+            try {
+              disconnect_callback_();
+            } catch (const std::exception &e) {
+              LOG_WARN("Exception in disconnect callback: {}", e.what());
+            } catch (...) {
+              LOG_WARN("Unknown exception in disconnect callback");
+            }
           }
           return;
         }
@@ -179,8 +222,12 @@ void RealTransportConnection::do_write() {
         send_queue_.pop();
 
         // Continue writing if more queued
+        // IMPORTANT: Don't call do_write() directly here - that would cause
+        // a deadlock because we're already holding send_mutex_. Instead, post
+        // to io_context to call it after the lock is released.
         if (!send_queue_.empty()) {
-          do_write();
+          boost::asio::post(io_context_,
+                            [this, self = shared_from_this()]() { do_write(); });
         }
       });
 }
@@ -285,9 +332,15 @@ void RealTransport::handle_accept(const boost::system::error_code &ec,
   auto conn =
       RealTransportConnection::create_inbound(io_context_, std::move(socket));
 
-  // Notify callback
+  // Notify callback (wrap in try-catch to ensure accept loop continues)
   if (accept_callback_) {
-    accept_callback_(conn);
+    try {
+      accept_callback_(conn);
+    } catch (const std::exception &e) {
+      LOG_WARN("Exception in accept callback: {}", e.what());
+    } catch (...) {
+      LOG_WARN("Unknown exception in accept callback");
+    }
   }
 
   // Continue accepting

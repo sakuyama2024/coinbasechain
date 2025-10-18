@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <random>
 
 namespace coinbasechain {
@@ -183,35 +184,76 @@ bool NetworkManager::connect_to(const std::string &address, uint16_t port) {
     return false;
   }
 
-  // Create transport connection
-  auto connection =
-      transport_->connect(address, port, [this, address, port](bool success) {
-        if (!success) {
-          LOG_NET_DEBUG("Failed to connect to {}:{}", address, port);
-        }
+  // We need to capture the peer_id in the connection callback, but we don't
+  // have it yet. Create connection first (won't complete immediately), then
+  // create peer, add to manager, THEN store peer_id so callback can find it.
+  auto peer_id_ptr = std::make_shared<std::optional<int>>(std::nullopt);
+
+  // Create async transport connection with callback
+  // The connection will be in "not open" state until the callback fires
+  auto connection = transport_->connect(
+      address, port, [this, peer_id_ptr, address, port](bool success) {
+        // This callback fires when TCP connection completes (can be very fast!)
+        // We need to ensure the peer is in peer_manager before this fires
+        LOG_NET_DEBUG("CALLBACK FIRED for {}:{}, success={}", address, port, success);
+
+        // Wait briefly to ensure peer has been added to manager
+        // (This handles the race where connection completes before we add peer)
+        boost::asio::post(io_context_, [this, peer_id_ptr, address, port, success]() {
+          if (!peer_id_ptr->has_value()) {
+            LOG_NET_DEBUG("peer_id_ptr has no value, returning");
+            return;
+          }
+
+          int peer_id = peer_id_ptr->value();
+          LOG_NET_DEBUG("Got peer_id={}", peer_id);
+
+          auto peer_ptr = peer_manager_->get_peer(peer_id);
+          if (!peer_ptr) {
+            LOG_NET_DEBUG("Could not get peer {} from manager", peer_id);
+            return;
+          }
+
+          if (success) {
+            // Connection succeeded - now start the peer protocol
+            LOG_NET_DEBUG("Connected to {}:{}, starting peer {}", address, port,
+                          peer_id);
+            peer_ptr->start();
+          } else {
+            // Connection failed - remove the peer
+            LOG_NET_DEBUG("Failed to connect to {}:{}, removing peer {}", address,
+                          port, peer_id);
+            peer_manager_->remove_peer(peer_id);
+          }
+        });
       });
 
   if (!connection) {
+    LOG_NET_ERROR("Failed to create connection to {}:{}", address, port);
     return false;
   }
 
-  // Create outbound peer with connection
-  auto peer = Peer::create_outbound(io_context_, connection,
-                                    config_.network_magic, local_nonce_);
+  // Create outbound peer with the connection (will be in CONNECTING state)
+  auto peer = Peer::create_outbound(io_context_, connection, config_.network_magic,
+                                     local_nonce_);
   if (!peer) {
+    LOG_NET_ERROR("Failed to create peer for {}:{}", address, port);
     return false;
   }
 
-  // Setup message handler
+  // Setup message handler before adding to manager
   setup_peer_message_handler(peer.get());
 
-  // Start the peer (initiates handshake)
-  peer->start();
-
-  // Add to peer manager
-  if (!peer_manager_->add_peer(std::move(peer))) {
+  // Add to peer manager and get the assigned peer_id
+  int peer_id = peer_manager_->add_peer(std::move(peer));
+  if (peer_id < 0) {
+    LOG_NET_ERROR("Failed to add peer to peer manager");
     return false;
   }
+
+  // Store the peer_id so the callback can use it
+  *peer_id_ptr = peer_id;
+  LOG_NET_DEBUG("Added peer {} to manager, stored in callback ptr", peer_id);
 
   return true;
 }
@@ -329,7 +371,10 @@ void NetworkManager::handle_inbound_connection(
     peer->start();
 
     // Add to peer manager
-    peer_manager_->add_peer(std::move(peer));
+    int peer_id = peer_manager_->add_peer(std::move(peer));
+    if (peer_id < 0) {
+      LOG_NET_ERROR("Failed to add inbound peer to manager");
+    }
   }
 }
 

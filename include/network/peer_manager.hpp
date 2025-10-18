@@ -89,7 +89,8 @@ public:
   ~PeerManager();
 
   // Add a peer
-  bool add_peer(PeerPtr peer);
+  // Returns the assigned peer_id on success, -1 on failure
+  int add_peer(PeerPtr peer);
 
   // Remove a peer by ID
   void remove_peer(int peer_id);

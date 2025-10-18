@@ -13,9 +13,9 @@ PeerManager::~PeerManager() { disconnect_all(); }
 
 int PeerManager::allocate_peer_id() { return next_peer_id_++; }
 
-bool PeerManager::add_peer(PeerPtr peer) {
+int PeerManager::add_peer(PeerPtr peer) {
   if (!peer) {
-    return false;
+    return -1;
   }
 
   std::lock_guard<std::mutex> lock(mutex_);
@@ -35,7 +35,7 @@ bool PeerManager::add_peer(PeerPtr peer) {
 
   // Check outbound limit (no eviction for outbound)
   if (!is_inbound && current_outbound >= config_.max_outbound_peers) {
-    return false; // Too many outbound connections
+    return -1; // Too many outbound connections
   }
 
   // Check inbound limit - try eviction if at capacity
@@ -47,7 +47,7 @@ bool PeerManager::add_peer(PeerPtr peer) {
     mutex_.lock();
 
     if (!evicted) {
-      return false; // Couldn't evict anyone, reject connection
+      return -1; // Couldn't evict anyone, reject connection
     }
     // Successfully evicted a peer, continue with adding new peer
   }
@@ -56,7 +56,7 @@ bool PeerManager::add_peer(PeerPtr peer) {
   int peer_id = allocate_peer_id();
   peers_[peer_id] = std::move(peer);
 
-  return true;
+  return peer_id;  // Return the assigned ID
 }
 
 void PeerManager::remove_peer(int peer_id) {
