@@ -7,7 +7,7 @@
 #ifndef COINBASECHAIN_UINT_HPP
 #define COINBASECHAIN_UINT_HPP
 
-#include "../src/endian.h"
+#include "util/endian.hpp"
 
 #include <algorithm>
 #include <array>

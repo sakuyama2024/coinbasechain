@@ -6,7 +6,7 @@
 
 #include "arith_uint256.h"
 #include "uint.hpp"
-#include "../endian.h"
+#include "util/endian.hpp"
 
 #include <cassert>
 

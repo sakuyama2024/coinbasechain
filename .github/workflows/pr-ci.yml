@@ -1,0 +1,235 @@
+name: Pull Request CI
+
+on:
+  pull_request:
+    branches: [ main, master ]
+
+# Cancel in-progress runs when a new push is made
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast check - fail immediately if formatting is wrong
+  formatting:
+    name: Code Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
+          sudo apt-get install -y clang-format-18
+
+      - name: Check formatting
+        run: |
+          find include src -name '*.cpp' -o -name '*.hpp' | \
+            xargs clang-format-18 --dry-run --Werror
+
+  # Build and test matrix
+  build-test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux builds
+          - name: Linux Clang 18
+            os: ubuntu-22.04
+            compiler: clang
+            cc: clang-18
+            cxx: clang++-18
+            sanitizer: none
+
+          - name: Linux GCC 11
+            os: ubuntu-22.04
+            compiler: gcc
+            cc: gcc-11
+            cxx: g++-11
+            sanitizer: none
+
+          - name: Linux ASan+UBSan
+            os: ubuntu-22.04
+            compiler: clang
+            cc: clang-18
+            cxx: clang++-18
+            sanitizer: address
+
+          # macOS build (LLVM only)
+          - name: macOS LLVM
+            os: macos-14
+            compiler: clang
+            sanitizer: none
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Cache dependencies (speeds up builds significantly)
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/_deps
+          key: ${{ runner.os }}-cmake-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-cmake-
+
+      # Install dependencies - Linux
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libboost-system-dev libboost-filesystem-dev
+
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            wget https://apt.llvm.org/llvm.sh
+            chmod +x llvm.sh
+            sudo ./llvm.sh 18
+            sudo apt-get install -y clang-18 clang++-18
+          else
+            sudo apt-get install -y g++-11 gcc-11
+          fi
+
+      # Install dependencies - macOS
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm boost cmake
+
+      # Configure build
+      - name: Configure CMake
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            export CC=$(brew --prefix llvm)/bin/clang
+            export CXX=$(brew --prefix llvm)/bin/clang++
+            # Add Homebrew LLVM libc++ linker flags
+            LLVM_LDFLAGS="-L$(brew --prefix llvm)/lib/c++ -Wl,-rpath,$(brew --prefix llvm)/lib/c++"
+          else
+            export CC=${{ matrix.cc }}
+            export CXX=${{ matrix.cxx }}
+            LLVM_LDFLAGS=""
+          fi
+
+          if [ "${{ matrix.sanitizer }}" != "none" ]; then
+            cmake -B build \
+              -DCMAKE_CXX_COMPILER=$CXX \
+              -DCMAKE_C_COMPILER=$CC \
+              -DCMAKE_EXE_LINKER_FLAGS="$LLVM_LDFLAGS" \
+              -DCMAKE_SHARED_LINKER_FLAGS="$LLVM_LDFLAGS" \
+              -DSANITIZE=${{ matrix.sanitizer }} \
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          else
+            cmake -B build \
+              -DCMAKE_CXX_COMPILER=$CXX \
+              -DCMAKE_C_COMPILER=$CC \
+              -DCMAKE_EXE_LINKER_FLAGS="$LLVM_LDFLAGS" \
+              -DCMAKE_SHARED_LINKER_FLAGS="$LLVM_LDFLAGS" \
+              -DCMAKE_BUILD_TYPE=Release
+          fi
+
+      # Build
+      - name: Build
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            NPROC=$(sysctl -n hw.ncpu)
+          else
+            NPROC=$(nproc)
+          fi
+          cmake --build build -j$NPROC
+
+      # Run tests
+      - name: Run unit tests
+        run: ./build/coinbasechain_tests
+
+      # Upload test results on failure
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-${{ matrix.name }}
+          path: build/Testing/Temporary/
+
+  # Fuzzing smoke test (quick check that fuzz targets build and run)
+  fuzz-smoke:
+    name: Fuzz Smoke Test
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build-fuzz/_deps
+          key: ubuntu-fuzz-cmake-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libboost-system-dev libboost-filesystem-dev
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
+          sudo apt-get install -y clang-18 clang++-18
+
+      - name: Build fuzz targets
+        run: |
+          cmake -B build-fuzz \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_C_COMPILER=clang-18 \
+            -DENABLE_FUZZING=ON \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-fuzz -j$(nproc)
+
+      - name: Run fuzz targets (10k runs each)
+        run: |
+          cd build-fuzz
+          ./fuzz/fuzz_block_header -runs=10000
+          ./fuzz/fuzz_varint -runs=10000
+          ./fuzz/fuzz_messages -runs=10000
+          ./fuzz/fuzz_message_header -runs=10000
+
+          # Generate seed corpus and test chain reorg fuzzer
+          python3 ../fuzz/generate_chain_seeds.py
+          ./fuzz/fuzz_chain_reorg fuzz_chain_reorg_corpus/ -runs=10000
+
+      - name: Upload fuzz corpus on crash
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: build-fuzz/crash-*
+
+  # Summary job - required to pass before merge
+  all-checks-passed:
+    name: All Checks Passed
+    needs: [formatting, build-test, fuzz-smoke]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Check all jobs
+        run: |
+          if [ "${{ needs.formatting.result }}" != "success" ]; then
+            echo "❌ Formatting check failed"
+            exit 1
+          fi
+          if [ "${{ needs.build-test.result }}" != "success" ]; then
+            echo "❌ Build/test jobs failed"
+            exit 1
+          fi
+          if [ "${{ needs.fuzz-smoke.result }}" != "success" ]; then
+            echo "❌ Fuzz smoke test failed"
+            exit 1
+          fi
+          echo "✅ All checks passed!"
