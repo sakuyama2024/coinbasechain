@@ -116,7 +116,8 @@ uint256 GetSeedHash(uint32_t nEpoch) {
   return h2;
 }
 
-// Get or create VM for an epoch (light mode only)
+// Get or create VM for an epoch
+// VMs use RANDOMX_FLAG_SECURE (interpreter mode) for thread-safe operation with mutex
 std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   if (!g_randomx_initialized) {
     throw std::runtime_error("RandomX not initialized");
@@ -128,7 +129,11 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   }
 
   uint256 seedHash = GetSeedHash(nEpoch);
+
+  // Use RANDOMX_FLAG_SECURE to disable JIT and enable interpreter mode
+  // This makes the VM thread-safe when used with mutex protection
   randomx_flags flags = randomx_get_flags();
+  flags |= RANDOMX_FLAG_SECURE;  // Force interpreter mode (thread-safe with mutex)
 
   std::lock_guard<std::mutex> lock(g_randomx_mutex);
 
@@ -153,7 +158,7 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
     LOG_CRYPTO_INFO("Created RandomX cache for epoch {}", nEpoch);
   }
 
-  // Create light mode VM
+  // Create light mode VM with SECURE flag (interpreter mode)
   randomx_vm *myVM = randomx_create_vm(flags, myCache->cache, nullptr);
   if (!myVM) {
     throw std::runtime_error("Failed to create RandomX VM");
@@ -162,7 +167,7 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   auto vmWrapper = std::make_shared<RandomXVMWrapper>(myVM, myCache);
   g_cache_rx_vm_light->insert(nEpoch, vmWrapper);
 
-  LOG_CRYPTO_INFO("Created RandomX light mode VM for epoch {}", nEpoch);
+  LOG_CRYPTO_INFO("Created RandomX VM for epoch {} (secure interpreter mode)", nEpoch);
 
   return vmWrapper;
 }
@@ -197,8 +202,9 @@ void InitRandomX(int vmCacheSize, bool fastMode) {
 
   g_randomx_initialized = true;
 
-  LOG_CRYPTO_INFO("RandomX initialized (cache size: {}, light mode only)",
-                  vmCacheSize);
+  LOG_CRYPTO_INFO(
+      "RandomX initialized (cache size: {}, secure interpreter mode for thread safety)",
+      vmCacheSize);
 }
 
 void ShutdownRandomX() {

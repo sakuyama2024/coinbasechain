@@ -33,8 +33,8 @@ enum class POWVerifyMode {
 struct RandomXCacheWrapper;
 
 // RandomX VM Wrapper - Manages VM lifecycle and thread-safety
-// VMs are cached/shared between threads - MUST lock hashing_mutex when calling
-// randomx_calculate_hash
+// VMs use RANDOMX_FLAG_SECURE (interpreter mode) for thread-safe operation
+// MUST lock hashing_mutex when calling randomx_calculate_hash
 struct RandomXVMWrapper {
   randomx_vm *vm = nullptr;
   std::shared_ptr<RandomXCacheWrapper> cache;
@@ -81,9 +81,9 @@ void ShutdownRandomX();
 // Caller must destroy with randomx_destroy_vm
 randomx_vm *CreateVMForEpoch(uint32_t nEpoch);
 
-// Get cached RandomX VM for epoch (shared, multiple callers may get same VM)
-// IMPORTANT: Must lock vmRef->hashing_mutex before calling
-// randomx_calculate_hash
+// Get cached RandomX VM for epoch (thread-safe with RANDOMX_FLAG_SECURE)
+// VMs use interpreter mode (SECURE flag) which is safe with mutex protection
+// IMPORTANT: Must lock vmRef->hashing_mutex before calling randomx_calculate_hash
 std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch);
 
 } // namespace crypto
