@@ -637,13 +637,12 @@ bool NetworkManager::handle_headers_message(PeerPtr peer, message::HeadersMessag
     }
 
     // Check if we should request more headers
-    if (header_sync_->ShouldRequestMore()) {
-        LOG_NET_DEBUG("Requesting more headers (not synced yet)");
-        request_headers_from_peer(peer);
-    } else if (header_sync_->IsSynced()) {
-        LOG_NET_INFO("Header sync complete! Best height: {}", header_sync_->GetBestHeight());
-        LOG_NET_INFO("Sync progress: {:.2f}%", header_sync_->GetProgress() * 100.0);
+    bool should_request = header_sync_->ShouldRequestMore();
+    bool is_synced = header_sync_->IsSynced();
 
+    if (should_request) {
+        request_headers_from_peer(peer);
+    } else if (is_synced) {
         // Reset sync peer - we're done syncing (atomic store)
         sync_peer_id_.store(0, std::memory_order_release);
     }

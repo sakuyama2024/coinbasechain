@@ -9,7 +9,12 @@ namespace test {
 SimulatedNetwork::SimulatedNetwork(uint64_t seed)
     : rng_(seed),
       message_queue_([](const PendingMessage& a, const PendingMessage& b) {
-          return a.delivery_time_ms > b.delivery_time_ms;  // Min-heap
+          // Min-heap: smaller delivery_time has priority
+          // If delivery times are equal, use sequence number to maintain FIFO order
+          if (a.delivery_time_ms != b.delivery_time_ms) {
+              return a.delivery_time_ms > b.delivery_time_ms;
+          }
+          return a.sequence_number > b.sequence_number;
       })
 {
     // Initialize mock time to match simulated time (start at 1 second, not 0)
@@ -56,16 +61,17 @@ void SimulatedNetwork::SendMessage(int from_node, int to_node, const std::vector
     // Calculate delivery time
     uint64_t delivery_time = CalculateDeliveryTime(from_node, to_node, data.size());
 
-    // Enqueue message
+    // Enqueue message with sequence number for stable ordering
     PendingMessage msg;
     msg.from_node = from_node;
     msg.to_node = to_node;
     msg.data = data;
     msg.delivery_time_ms = delivery_time;
     msg.bytes = data.size();
+    msg.sequence_number = message_sequence_++;  // Assign unique sequence for FIFO ordering
 
-    printf("[DEBUG] SendMessage: from=%d, to=%d, delivery_time=%lu ms, QUEUED\n",
-           from_node, to_node, delivery_time);
+    printf("[DEBUG] SendMessage: from=%d, to=%d, delivery_time=%lu ms, seq=%lu, QUEUED\n",
+           from_node, to_node, delivery_time, msg.sequence_number);
 
     message_queue_.push(std::move(msg));
 }
@@ -91,7 +97,11 @@ void SimulatedNetwork::NotifyDisconnect(int from_node, int to_node) {
         std::vector<PendingMessage>,
         std::function<bool(const PendingMessage&, const PendingMessage&)>
     > new_queue([](const PendingMessage& a, const PendingMessage& b) {
-        return a.delivery_time_ms > b.delivery_time_ms;  // Min-heap
+        // Min-heap with sequence tiebreaker (same as constructor)
+        if (a.delivery_time_ms != b.delivery_time_ms) {
+            return a.delivery_time_ms > b.delivery_time_ms;
+        }
+        return a.sequence_number > b.sequence_number;
     });
 
     size_t purged_count = 0;
@@ -157,7 +167,9 @@ size_t SimulatedNetwork::AdvanceTime(uint64_t new_time_ms) {
 
     // Synchronize util::GetTime() with simulated time
     // Convert milliseconds to seconds for the time mock
-    util::SetMockTime(static_cast<int64_t>(current_time_ms_ / 1000));
+    // IMPORTANT: SetMockTime(0) means "disable mocking", so always use at least 1
+    int64_t mock_time_seconds = std::max(int64_t(1), static_cast<int64_t>(current_time_ms_ / 1000));
+    util::SetMockTime(mock_time_seconds);
 
     // Process messages and events in multiple rounds to handle message chains
     // (e.g., INV -> GETHEADERS -> HEADERS)

@@ -82,9 +82,9 @@ constexpr size_t MAX_VECTOR_ALLOCATE = 5 * 1000 * 1000;  // 5 MB - Incremental a
 
 // Network message limits (Bitcoin Core src/net.h)
 constexpr size_t MAX_PROTOCOL_MESSAGE_LENGTH = 4 * 1000 * 1000;  // 4 MB - Single message limit
-constexpr size_t DEFAULT_MAX_RECEIVE_BUFFER = 5 * 1000;  // 5 KB per peer
-constexpr size_t DEFAULT_MAX_SEND_BUFFER = 1 * 1000;  // 1 KB per peer
-constexpr size_t DEFAULT_RECV_FLOOD_SIZE = 5 * 1000 * 1000;  // 5 MB - Flood protection
+constexpr size_t DEFAULT_MAX_RECEIVE_BUFFER = 5 * 1000;  // 5 KB per peer (unused - we use RECV_FLOOD_SIZE)
+constexpr size_t DEFAULT_MAX_SEND_BUFFER = 1 * 1000;  // 1 KB per peer (unused - send queue unbounded)
+constexpr size_t DEFAULT_RECV_FLOOD_SIZE = 5 * 1000 * 1000;  // 5 MB - Flood protection (enforced)
 
 // Protocol-specific limits (Bitcoin Core src/net_processing.cpp)
 constexpr unsigned int MAX_LOCATOR_SZ = 101;  // GETHEADERS/GETBLOCKS locator limit
@@ -92,13 +92,12 @@ constexpr uint32_t MAX_INV_SIZE = 50000;  // Inventory items
 constexpr uint32_t MAX_HEADERS_SIZE = 2000;  // Headers per response
 constexpr uint32_t MAX_ADDR_SIZE = 1000;  // Addresses per ADDR message
 
-// Orphan management
-constexpr unsigned int MAX_ORPHAN_BLOCKS = 100;  // Orphan block count limit
-constexpr size_t MAX_ORPHAN_BLOCKS_SIZE = 5 * 1000 * 1000;  // 5 MB total
+// Orphan management (not applicable to headers-only chain - see chainstate_manager.hpp)
+constexpr unsigned int MAX_ORPHAN_BLOCKS = 100;  // Bitcoin Core value (unused - we track orphan headers instead)
+constexpr size_t MAX_ORPHAN_BLOCKS_SIZE = 5 * 1000 * 1000;  // 5 MB total (unused)
 
-// Connection limits
-constexpr unsigned int DEFAULT_MAX_PEER_CONNECTIONS = 125;  // Total connections
-constexpr int MAX_CONNECTIONS_PER_NETGROUP = 10;  // Per subnet limit
+// Connection limits (custom implementation in peer_manager.hpp: max_inbound_peers=125, max_outbound_peers=8)
+constexpr unsigned int DEFAULT_MAX_PEER_CONNECTIONS = 125;  // Bitcoin Core default (unused - see peer_manager.hpp)
 
 // Timeouts and intervals (in seconds)
 constexpr int VERSION_HANDSHAKE_TIMEOUT_SEC = 60;  // 1 minute for handshake

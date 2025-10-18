@@ -235,6 +235,10 @@ const chain::CBlockIndex* SimulatedNode::GetTip() const {
     return chainstate_->GetTip();
 }
 
+bool SimulatedNode::GetIsIBD() const {
+    return chainstate_->IsInitialBlockDownload();
+}
+
 size_t SimulatedNode::GetPeerCount() const {
     if (network_manager_) {
         return network_manager_->active_peer_count();

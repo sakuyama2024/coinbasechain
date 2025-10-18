@@ -9,6 +9,7 @@
 #include "consensus/pow.hpp"
 #include "notifications.hpp"
 #include "util/logging.hpp"
+#include "util/time.hpp"
 #include <cassert>
 #include <ctime>
 #include <iostream>
@@ -523,7 +524,7 @@ bool ChainstateManager::IsInitialBlockDownload() const
     }
 
     // Tip too old - still syncing (1 hour for 2-minute blocks)
-    int64_t now = std::time(nullptr);
+    int64_t now = util::GetTime();
     if (tip->nTime < now - 3600) {
         return true;
     }

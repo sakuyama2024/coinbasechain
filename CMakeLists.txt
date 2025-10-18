@@ -347,6 +347,7 @@ add_executable(coinbasechain_tests
     test/chain_tests.cpp
     test/chainparams_tests.cpp
     test/header_sync_tests.cpp
+    test/header_sync_adversarial_tests.cpp
     test/persistence_tests.cpp
     test/addr_manager_tests.cpp
     test/dos_protection_tests.cpp
@@ -369,7 +370,10 @@ add_executable(coinbasechain_tests
     test/network/network_bridged_transport.cpp
     test/network/attack_simulated_node.cpp
     test/network/network_tests.cpp
+    test/network/peer_tests.cpp
+    test/network/peer_adversarial_tests.cpp
     test/network/invalidateblock_functional_tests.cpp
+    test/banman_adversarial_tests.cpp
     test/security_attack_simulations.cpp
     test/security_quick_tests.cpp
 )

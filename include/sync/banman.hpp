@@ -74,6 +74,7 @@ private:
     static constexpr int64_t DISCOURAGEMENT_DURATION = 24 * 60 * 60;
 
     std::string GetBanlistPath() const;
+    bool SaveInternal();  // Internal save without lock (lock must already be held)
 };
 
 } // namespace sync

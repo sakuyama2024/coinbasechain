@@ -130,7 +130,8 @@ void Peer::send_message(std::unique_ptr<message::Message> msg) {
     full_message.insert(full_message.end(), payload.begin(), payload.end());
 
     // Send via transport
-    if (connection_ && connection_->send(full_message)) {
+    bool send_result = connection_ && connection_->send(full_message);
+    if (send_result) {
         stats_.messages_sent++;
         stats_.bytes_sent += full_message.size();
         stats_.last_send = util::GetSteadyTime();
@@ -165,8 +166,7 @@ void Peer::on_disconnect() {
 }
 
 void Peer::on_transport_receive(const std::vector<uint8_t>& data) {
-    // SECURITY: Enforce DEFAULT_RECV_FLOOD_SIZE to prevent unbounded receive buffer DoS
-    // Bitcoin Core: src/net.cpp CNode::ReceiveMsgBytes() enforces receive buffer limits
+    // Enforce DEFAULT_RECV_FLOOD_SIZE to prevent unbounded receive buffer DoS
     // Prevents attackers from sending data faster than we can process, exhausting memory
     if (recv_buffer_.size() + data.size() > protocol::DEFAULT_RECV_FLOOD_SIZE) {
         LOG_NET_WARN("Receive buffer overflow (current: {} bytes, incoming: {} bytes, limit: {} bytes), disconnecting from {}",
@@ -213,6 +213,15 @@ void Peer::send_version() {
 }
 
 void Peer::handle_version(const message::VersionMessage& msg) {
+    // SECURITY: Reject duplicate VERSION messages (CVE-like issue)
+    // Bitcoin Core: checks if (pfrom.nVersion != 0) and ignores duplicates
+    // Prevents: time manipulation via multiple AddTimeData() calls, protocol violations
+    if (peer_version_ != 0) {
+        LOG_NET_WARN("Duplicate VERSION from peer {} (already have version {}), ignoring",
+                     address(), peer_version_);
+        return;
+    }
+
     peer_version_ = msg.version;
     peer_services_ = msg.services;
     peer_start_height_ = msg.start_height;
@@ -236,20 +245,29 @@ void Peer::handle_version(const message::VersionMessage& msg) {
     int64_t time_offset = msg.timestamp - now;
     util::AddTimeData(address(), time_offset);
 
-    // Send VERACK
-    send_message(std::make_unique<message::VerackMessage>());
-
-    // If we're inbound, also send our VERSION
+    // If we're inbound, send our VERSION first (BEFORE VERACK)
+    // This is critical: peer must receive VERSION before VERACK to avoid protocol violation
     if (is_inbound_ && state_ == PeerState::CONNECTED) {
         send_version();
     }
+
+    // Send VERACK
+    send_message(std::make_unique<message::VerackMessage>());
 }
 
 void Peer::handle_verack() {
+    // SECURITY: Reject duplicate VERACK messages
+    // Bitcoin Core: checks if (pfrom.fSuccessfullyConnected) and ignores duplicates
+    // Prevents: timer churn from repeated schedule_ping() and start_inactivity_timeout() calls
+    if (successfully_connected_) {
+        LOG_NET_WARN("Duplicate VERACK from peer {}, ignoring", address());
+        return;
+    }
+
     LOG_NET_DEBUG("Received VERACK from {}", address());
 
     state_ = PeerState::READY;
-    successfully_connected_ = true;  // Mark handshake as complete (matches Bitcoins's fSuccessfullyConnected)
+    successfully_connected_ = true;  // Mark handshake as complete
     handshake_timer_.cancel();
 
     // Start ping timer and inactivity timeout
@@ -318,6 +336,16 @@ void Peer::process_message(const protocol::MessageHeader& header,
 
     std::string command = header.get_command();
 
+    // SECURITY: Enforce VERSION must be first message (critical)
+    // Bitcoin Core: checks if (pfrom.nVersion == 0) and rejects all non-VERSION messages
+    // Prevents: protocol state violations, handshake bypass attacks
+    if (peer_version_ == 0 && command != protocol::commands::VERSION) {
+        LOG_NET_WARN("Received {} before VERSION from peer {}, disconnecting (protocol violation)",
+                     command, address());
+        disconnect();
+        return;
+    }
+
     // Create message object
     auto msg = message::create_message(command);
     if (!msg) {
@@ -329,7 +357,6 @@ void Peer::process_message(const protocol::MessageHeader& header,
     if (!msg->deserialize(payload.data(), payload.size())) {
         LOG_NET_ERROR("Failed to deserialize message: {} - disconnecting peer (protocol violation)", command);
         // Malformed messages indicate protocol violation or malicious peer
-        // Bitcoin Core disconnect immediately for such violations
         disconnect();
         return;
     }

@@ -12,7 +12,7 @@ TEST_CASE("ChainParams creation", "[chainparams]") {
         REQUIRE(params != nullptr);
         REQUIRE(params->GetChainType() == ChainType::MAIN);
         REQUIRE(params->GetChainTypeString() == "main");
-        REQUIRE(params->GetDefaultPort() == 9333);
+        REQUIRE(params->GetDefaultPort() == 9590);
 
         const auto& consensus = params->GetConsensus();
         REQUIRE(consensus.nPowTargetSpacing == 120);  // 2 minutes

@@ -46,7 +46,7 @@ struct PeerStats {
 using MessageHandler = std::function<bool(PeerPtr peer, std::unique_ptr<message::Message> msg)>;
 
 // Peer class - Represents a single peer connection
-// Handles async TCP connection, Bitcoin protocol handshake (VERSION/VERACK),
+// Handles async TCP connection, protocol handshake (VERSION/VERACK),
 // message framing/parsing, send/receive queuing, ping/pong keepalive, lifecycle management
 class Peer : public std::enable_shared_from_this<Peer> {
 public:
@@ -82,7 +82,7 @@ public:
     // Getters
     PeerState state() const { return state_; }
     bool is_connected() const { return state_ != PeerState::DISCONNECTED && state_ != PeerState::DISCONNECTING; }
-    bool successfully_connected() const { return successfully_connected_; }  // Handshake complete (like Bitcoin's fSuccessfullyConnected)
+    bool successfully_connected() const { return successfully_connected_; }  // Handshake complete 
     const PeerStats& stats() const { return stats_; }
     std::string address() const;
     uint16_t port() const;
@@ -148,7 +148,7 @@ private:
     PeerState state_;
     PeerStats stats_;
     MessageHandler message_handler_;
-    bool successfully_connected_{false};  // Set to true after VERACK (matches Bitcoin's fSuccessfullyConnected)
+    bool successfully_connected_{false};  // Set to true after VERACK received
 
     // Peer info from VERSION
     int32_t peer_version_ = 0;

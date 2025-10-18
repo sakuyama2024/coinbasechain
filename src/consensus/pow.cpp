@@ -155,7 +155,8 @@ uint32_t GetNextWorkRequired(const chain::CBlockIndex* pindexPrev, const chain::
     assert(pindexAnchorParent != nullptr);
 
     // Get reference target from anchor block
-    const arith_uint256 refTarget = arith_uint256().SetCompact(pindexAnchor->nBits);
+    arith_uint256 refTarget;
+    refTarget.SetCompact(pindexAnchor->nBits);
     const arith_uint256 powLimit = UintToArith256(consensus.powLimit);
 
     // Calculate time and height differences from anchor
