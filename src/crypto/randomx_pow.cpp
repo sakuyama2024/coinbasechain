@@ -134,8 +134,11 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   // Use RANDOMX_FLAG_SECURE to disable JIT and enable interpreter mode
   // This makes the VM thread-safe when used with mutex protection
   randomx_flags flags = randomx_get_flags();
-  flags |=
-      RANDOMX_FLAG_SECURE; // Force interpreter mode (thread-safe with mutex)
+  flags = static_cast<randomx_flags>(
+      flags & ~RANDOMX_FLAG_JIT); // Disable JIT (not thread-safe)
+  flags = static_cast<randomx_flags>(
+      flags |
+      RANDOMX_FLAG_SECURE); // Force interpreter mode (thread-safe with mutex)
 
   std::lock_guard<std::mutex> lock(g_randomx_mutex);
 
@@ -235,7 +238,10 @@ randomx_vm *CreateVMForEpoch(uint32_t nEpoch) {
 
   uint256 seedHash = GetSeedHash(nEpoch);
   randomx_flags flags = randomx_get_flags();
-  flags |= RANDOMX_FLAG_SECURE; // Use secure mode for thread safety
+  flags = static_cast<randomx_flags>(
+      flags & ~RANDOMX_FLAG_JIT); // Disable JIT (not thread-safe)
+  flags = static_cast<randomx_flags>(
+      flags | RANDOMX_FLAG_SECURE); // Use secure mode for thread safety
 
   // Get or create cache for this epoch
   std::shared_ptr<RandomXCacheWrapper> myCache;
