@@ -83,7 +83,8 @@ randomx_vm *CreateVMForEpoch(uint32_t nEpoch);
 
 // Get cached RandomX VM for epoch (thread-safe with RANDOMX_FLAG_SECURE)
 // VMs use interpreter mode (SECURE flag) which is safe with mutex protection
-// IMPORTANT: Must lock vmRef->hashing_mutex before calling randomx_calculate_hash
+// IMPORTANT: Must lock vmRef->hashing_mutex before calling
+// randomx_calculate_hash
 std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch);
 
 } // namespace crypto

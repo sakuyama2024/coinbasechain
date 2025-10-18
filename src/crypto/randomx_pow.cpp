@@ -117,7 +117,8 @@ uint256 GetSeedHash(uint32_t nEpoch) {
 }
 
 // Get or create VM for an epoch
-// VMs use RANDOMX_FLAG_SECURE (interpreter mode) for thread-safe operation with mutex
+// VMs use RANDOMX_FLAG_SECURE (interpreter mode) for thread-safe operation with
+// mutex
 std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   if (!g_randomx_initialized) {
     throw std::runtime_error("RandomX not initialized");
@@ -133,7 +134,8 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   // Use RANDOMX_FLAG_SECURE to disable JIT and enable interpreter mode
   // This makes the VM thread-safe when used with mutex protection
   randomx_flags flags = randomx_get_flags();
-  flags |= RANDOMX_FLAG_SECURE;  // Force interpreter mode (thread-safe with mutex)
+  flags |=
+      RANDOMX_FLAG_SECURE; // Force interpreter mode (thread-safe with mutex)
 
   std::lock_guard<std::mutex> lock(g_randomx_mutex);
 
@@ -167,7 +169,8 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   auto vmWrapper = std::make_shared<RandomXVMWrapper>(myVM, myCache);
   g_cache_rx_vm_light->insert(nEpoch, vmWrapper);
 
-  LOG_CRYPTO_INFO("Created RandomX VM for epoch {} (secure interpreter mode)", nEpoch);
+  LOG_CRYPTO_INFO("Created RandomX VM for epoch {} (secure interpreter mode)",
+                  nEpoch);
 
   return vmWrapper;
 }
@@ -202,9 +205,9 @@ void InitRandomX(int vmCacheSize, bool fastMode) {
 
   g_randomx_initialized = true;
 
-  LOG_CRYPTO_INFO(
-      "RandomX initialized (cache size: {}, secure interpreter mode for thread safety)",
-      vmCacheSize);
+  LOG_CRYPTO_INFO("RandomX initialized (cache size: {}, secure interpreter "
+                  "mode for thread safety)",
+                  vmCacheSize);
 }
 
 void ShutdownRandomX() {
@@ -232,6 +235,7 @@ randomx_vm *CreateVMForEpoch(uint32_t nEpoch) {
 
   uint256 seedHash = GetSeedHash(nEpoch);
   randomx_flags flags = randomx_get_flags();
+  flags |= RANDOMX_FLAG_SECURE; // Use secure mode for thread safety
 
   // Get or create cache for this epoch
   std::shared_ptr<RandomXCacheWrapper> myCache;
