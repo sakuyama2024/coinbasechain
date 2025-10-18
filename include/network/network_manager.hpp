@@ -3,6 +3,7 @@
 
 #include "chain/chainparams.hpp"
 #include "network/addr_manager.hpp"
+#include "network/nat_manager.hpp"
 #include "network/peer_manager.hpp"
 #include "network/transport.hpp"
 #include "sync/banman.hpp"
@@ -30,6 +31,7 @@ public:
     uint32_t network_magic; // Network magic bytes
     uint16_t listen_port;   // Port to listen on (0 = don't listen)
     bool listen_enabled;    // Enable inbound connections
+    bool enable_nat;        // Enable UPnP NAT traversal
     size_t io_threads;      // Number of IO threads
     std::string datadir;    // Data directory (for banlist.json)
 
@@ -40,6 +42,7 @@ public:
         : network_magic(protocol::magic::MAINNET) // Mainnet by default
           ,
           listen_port(protocol::ports::MAINNET), listen_enabled(false),
+          enable_nat(true), // Enable NAT traversal by default
           io_threads(4), datadir("") // Empty = no persistent bans
           ,
           connect_interval(std::chrono::seconds(5)),
@@ -110,6 +113,7 @@ private:
       &chainstate_manager_; // Reference to Application's ChainstateManager
   std::unique_ptr<sync::HeaderSync> header_sync_;
   std::unique_ptr<sync::BanMan> ban_man_;
+  std::unique_ptr<NATManager> nat_manager_;
 
   // Periodic tasks
   std::unique_ptr<boost::asio::steady_timer> connect_timer_;

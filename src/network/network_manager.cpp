@@ -51,6 +51,11 @@ NetworkManager::NetworkManager(
   if (!config_.datadir.empty()) {
     ban_man_->Load(); // Load existing bans from disk
   }
+
+  // Create NAT manager if enabled
+  if (config_.enable_nat) {
+    nat_manager_ = std::make_unique<NATManager>();
+  }
 }
 
 NetworkManager::~NetworkManager() { stop(); }
@@ -92,6 +97,13 @@ bool NetworkManager::start() {
 
     if (success) {
       LOG_NET_INFO("Listening on port {}", config_.listen_port);
+
+      // Start NAT traversal if enabled
+      if (nat_manager_ && nat_manager_->Start(config_.listen_port)) {
+        LOG_NET_INFO("UPnP NAT traversal enabled - External: {}:{}",
+                     nat_manager_->GetExternalIP(),
+                     nat_manager_->GetExternalPort());
+      }
     } else {
       LOG_NET_ERROR("Failed to start listener");
       // Continue anyway - we can still make outbound connections
@@ -129,6 +141,11 @@ void NetworkManager::stop() {
     if (SaveAnchors(anchors_path)) {
       LOG_NET_INFO("Saved anchor peers for next startup");
     }
+  }
+
+  // Stop NAT traversal
+  if (nat_manager_) {
+    nat_manager_->Stop();
   }
 
   // Stop transport (stops listening and closes connections)

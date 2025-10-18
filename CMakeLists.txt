@@ -120,6 +120,22 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(json)
 
+# miniupnpc for UPnP NAT traversal
+message(STATUS "Fetching miniupnpc v2.2.5...")
+FetchContent_Declare(
+  miniupnpc
+  GIT_REPOSITORY https://github.com/miniupnp/miniupnp.git
+  GIT_TAG        miniupnpc_2_2_5
+  GIT_SHALLOW    TRUE
+  SOURCE_SUBDIR  miniupnpc
+)
+
+# Disable miniupnpc tests
+set(UPNPC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(UPNPC_BUILD_SAMPLE OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(miniupnpc)
+
 # Create util library (file utilities + logging + locking + thread pool + time + timedata)
 add_library(util STATIC
     src/util/files.cpp
@@ -190,6 +206,7 @@ add_library(network STATIC
     src/network/network_manager.cpp
     src/network/real_transport.cpp
     src/network/simulated_transport.cpp
+    src/network/nat_manager.cpp
 )
 
 target_include_directories(network PUBLIC
@@ -205,6 +222,7 @@ target_link_libraries(network PUBLIC
     util
     Boost::system
     nlohmann_json::nlohmann_json
+    libminiupnpc-static
 )
 
 # Create consensus library (PoW, difficulty adjustment)
@@ -419,6 +437,7 @@ add_executable(coinbasechain_tests
     test/network/network_bridged_transport.cpp
     test/network/attack_simulated_node.cpp
     test/network/network_tests.cpp
+    test/network/nat_manager_tests.cpp
     test/network/peer_tests.cpp
     test/network/peer_adversarial_tests.cpp
     test/network/invalidateblock_functional_tests.cpp
