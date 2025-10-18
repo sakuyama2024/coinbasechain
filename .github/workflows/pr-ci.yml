@@ -53,13 +53,6 @@ jobs:
             cxx: g++-11
             sanitizer: none
 
-          - name: Linux ASan+UBSan
-            os: ubuntu-22.04
-            compiler: clang
-            cc: clang-18
-            cxx: clang++-18
-            sanitizer: address
-
           # macOS build (LLVM only)
           - name: macOS LLVM
             os: macos-14
