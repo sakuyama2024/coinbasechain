@@ -6,7 +6,6 @@
 #include "crypto/sha256.h"
 #include "util/logging.hpp"
 #include <cstring>
-#include <list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -31,68 +30,9 @@ struct RandomXCacheWrapper {
   }
 };
 
-// Simple LRU cache implementation
-template <typename K, typename V> class LRUCache {
-public:
-  explicit LRUCache(size_t capacity) : capacity_(capacity) {}
-
-  bool contains(const K &key) const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return cache_.find(key) != cache_.end();
-  }
-
-  V get(const K &key) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = cache_.find(key);
-    if (it == cache_.end()) {
-      throw std::runtime_error("Key not found in cache");
-    }
-    // Move to front (most recently used)
-    access_order_.remove(key);
-    access_order_.push_front(key);
-    return it->second;
-  }
-
-  void insert(const K &key, V value) {
-    std::lock_guard<std::mutex> lock(mutex_);
-
-    // If key exists, update it
-    auto it = cache_.find(key);
-    if (it != cache_.end()) {
-      access_order_.remove(key);
-      access_order_.push_front(key);
-      it->second = value;
-      return;
-    }
-
-    // Evict oldest if at capacity
-    if (cache_.size() >= capacity_ && capacity_ > 0) {
-      K oldest = access_order_.back();
-      access_order_.pop_back();
-      cache_.erase(oldest);
-    }
-
-    // Insert new entry
-    cache_[key] = value;
-    access_order_.push_front(key);
-  }
-
-  void clear() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    cache_.clear();
-    access_order_.clear();
-  }
-
-private:
-  size_t capacity_;
-  mutable std::mutex mutex_;
-  std::map<K, V> cache_;
-  std::list<K> access_order_;
-};
-
-// Global cache (shared across threads, read-only after initialization)
-static std::unique_ptr<LRUCache<uint32_t, std::shared_ptr<RandomXCacheWrapper>>>
-    g_cache_rx_cache;
+// Thread-local cache storage (each thread gets its own cache AND VM for JIT safety)
+static thread_local std::map<uint32_t, std::shared_ptr<RandomXCacheWrapper>>
+    t_cache_storage;
 
 // Thread-local VM storage (each thread gets its own VM)
 static thread_local std::map<uint32_t, std::shared_ptr<RandomXVMWrapper>>
@@ -134,27 +74,24 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   uint256 seedHash = GetSeedHash(nEpoch);
   randomx_flags flags = randomx_get_flags();
 
-  // Get or create shared cache (protected by mutex)
+  // Get or create thread-local cache (JIT VMs cannot safely share cache across threads)
   std::shared_ptr<RandomXCacheWrapper> myCache;
-  {
-    std::lock_guard<std::mutex> lock(g_randomx_mutex);
-
-    if (g_cache_rx_cache->contains(nEpoch)) {
-      myCache = g_cache_rx_cache->get(nEpoch);
-    } else {
-      randomx_cache *pCache = randomx_alloc_cache(flags);
-      if (!pCache) {
-        throw std::runtime_error("Failed to allocate RandomX cache");
-      }
-      randomx_init_cache(pCache, seedHash.data(), seedHash.size());
-      myCache = std::make_shared<RandomXCacheWrapper>(pCache);
-      g_cache_rx_cache->insert(nEpoch, myCache);
-
-      LOG_CRYPTO_INFO("Created RandomX cache for epoch {}", nEpoch);
+  auto cache_it = t_cache_storage.find(nEpoch);
+  if (cache_it != t_cache_storage.end()) {
+    myCache = cache_it->second;
+  } else {
+    randomx_cache *pCache = randomx_alloc_cache(flags);
+    if (!pCache) {
+      throw std::runtime_error("Failed to allocate RandomX cache");
     }
+    randomx_init_cache(pCache, seedHash.data(), seedHash.size());
+    myCache = std::make_shared<RandomXCacheWrapper>(pCache);
+    t_cache_storage[nEpoch] = myCache;
+
+    LOG_CRYPTO_INFO("Created thread-local RandomX cache for epoch {}", nEpoch);
   }
 
-  // Create thread-local VM (no lock needed, each thread has its own)
+  // Create thread-local VM (no lock needed, each thread has its own cache and VM)
   randomx_vm *myVM = randomx_create_vm(flags, myCache->cache, nullptr);
   if (!myVM) {
     throw std::runtime_error("Failed to create RandomX VM");
@@ -163,7 +100,7 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   auto vmWrapper = std::make_shared<RandomXVMWrapper>(myVM, myCache);
   t_vm_cache[nEpoch] = vmWrapper;
 
-  LOG_CRYPTO_INFO("Created thread-local RandomX VM for epoch {} (JIT enabled)",
+  LOG_CRYPTO_INFO("Created thread-local RandomX VM for epoch {} (JIT enabled, isolated cache)",
                   nEpoch);
 
   return vmWrapper;
@@ -191,14 +128,10 @@ void InitRandomX(int vmCacheSize, bool fastMode) {
     return;
   }
 
-  g_cache_rx_cache = std::make_unique<
-      LRUCache<uint32_t, std::shared_ptr<RandomXCacheWrapper>>>(vmCacheSize);
-
   g_randomx_initialized = true;
 
-  LOG_CRYPTO_INFO("RandomX initialized with thread-local VMs (cache size: {}, "
-                  "JIT enabled for performance)",
-                  vmCacheSize);
+  LOG_CRYPTO_INFO("RandomX initialized with thread-local caches and VMs "
+                  "(JIT enabled, fully isolated per thread)");
 }
 
 void ShutdownRandomX() {
@@ -208,13 +141,10 @@ void ShutdownRandomX() {
     return;
   }
 
-  g_cache_rx_cache->clear();
-  g_cache_rx_cache.reset();
-
   g_randomx_initialized = false;
 
-  LOG_CRYPTO_INFO("RandomX shutdown complete (thread-local VMs cleaned up "
-                  "automatically)");
+  LOG_CRYPTO_INFO("RandomX shutdown complete (thread-local caches and VMs "
+                  "cleaned up automatically)");
 }
 
 randomx_vm *CreateVMForEpoch(uint32_t nEpoch) {
@@ -224,31 +154,27 @@ randomx_vm *CreateVMForEpoch(uint32_t nEpoch) {
 
   uint256 seedHash = GetSeedHash(nEpoch);
   randomx_flags flags = randomx_get_flags();
-  flags |= RANDOMX_FLAG_SECURE; // Use secure mode for thread safety
 
-  // Get or create cache for this epoch
+  // Get or create thread-local cache (JIT VMs cannot safely share cache across threads)
   std::shared_ptr<RandomXCacheWrapper> myCache;
-  {
-    std::lock_guard<std::mutex> lock(g_randomx_mutex);
-
-    if (g_cache_rx_cache->contains(nEpoch)) {
-      myCache = g_cache_rx_cache->get(nEpoch);
-    } else {
-      randomx_cache *pCache = randomx_alloc_cache(flags);
-      if (!pCache) {
-        throw std::runtime_error("Failed to allocate RandomX cache");
-      }
-      randomx_init_cache(pCache, seedHash.data(), seedHash.size());
-      myCache = std::make_shared<RandomXCacheWrapper>(pCache);
-      g_cache_rx_cache->insert(nEpoch, myCache);
-
-      LOG_CRYPTO_INFO(
-          "Created RandomX cache for epoch {} (for parallel verification)",
-          nEpoch);
+  auto cache_it = t_cache_storage.find(nEpoch);
+  if (cache_it != t_cache_storage.end()) {
+    myCache = cache_it->second;
+  } else {
+    randomx_cache *pCache = randomx_alloc_cache(flags);
+    if (!pCache) {
+      throw std::runtime_error("Failed to allocate RandomX cache");
     }
+    randomx_init_cache(pCache, seedHash.data(), seedHash.size());
+    myCache = std::make_shared<RandomXCacheWrapper>(pCache);
+    t_cache_storage[nEpoch] = myCache;
+
+    LOG_CRYPTO_INFO(
+        "Created thread-local RandomX cache for epoch {} (for parallel verification)",
+        nEpoch);
   }
 
-  // Create a new VM from the cache (cheap operation, no lock needed)
+  // Create a new VM from the thread-local cache
   randomx_vm *vm = randomx_create_vm(flags, myCache->cache, nullptr);
   if (!vm) {
     throw std::runtime_error(
