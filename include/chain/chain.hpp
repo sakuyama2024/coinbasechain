@@ -20,81 +20,77 @@ namespace chain {
 
 class CChain {
 private:
-    std::vector<CBlockIndex*> vChain;
+  std::vector<CBlockIndex *> vChain;
 
 public:
-    CChain() = default;
+  CChain() = default;
 
-    // Prevent copying (chains should be owned, not copied)
-    CChain(const CChain&) = delete;
-    CChain& operator=(const CChain&) = delete;
+  // Prevent copying (chains should be owned, not copied)
+  CChain(const CChain &) = delete;
+  CChain &operator=(const CChain &) = delete;
 
-    CBlockIndex* Genesis() const
-    {
-        return vChain.size() > 0 ? vChain[0] : nullptr;
+  CBlockIndex *Genesis() const {
+    return vChain.size() > 0 ? vChain[0] : nullptr;
+  }
+
+  CBlockIndex *Tip() const {
+    return vChain.size() > 0 ? vChain[vChain.size() - 1] : nullptr;
+  }
+
+  CBlockIndex *operator[](int nHeight) const {
+    if (nHeight < 0 || nHeight >= (int)vChain.size())
+      return nullptr;
+    return vChain[nHeight];
+  }
+
+  // Check whether block is present in this chain
+  bool Contains(const CBlockIndex *pindex) const {
+    if (!pindex)
+      return false; // Null check to prevent segfault
+    if (pindex->nHeight < 0 || pindex->nHeight >= (int)vChain.size()) {
+      return false; // Height out of bounds
     }
+    return vChain[pindex->nHeight] == pindex;
+  }
 
-    CBlockIndex* Tip() const
-    {
-        return vChain.size() > 0 ? vChain[vChain.size() - 1] : nullptr;
-    }
+  // Find successor of block in this chain (nullptr if not found or is tip)
+  CBlockIndex *Next(const CBlockIndex *pindex) const {
+    if (Contains(pindex))
+      return (*this)[pindex->nHeight + 1];
+    else
+      return nullptr;
+  }
 
-    CBlockIndex* operator[](int nHeight) const
-    {
-        if (nHeight < 0 || nHeight >= (int)vChain.size())
-            return nullptr;
-        return vChain[nHeight];
-    }
+  // Return maximal height in chain (equal to chain.Tip() ? chain.Tip()->nHeight
+  // : -1)
+  int Height() const { return int(vChain.size()) - 1; }
 
-    // Check whether block is present in this chain
-    bool Contains(const CBlockIndex* pindex) const
-    {
-        if (!pindex) return false;  // Null check to prevent segfault
-        if (pindex->nHeight < 0 || pindex->nHeight >= (int)vChain.size()) {
-            return false;  // Height out of bounds
-        }
-        return vChain[pindex->nHeight] == pindex;
-    }
+  // Set/initialize chain with given tip (walks backwards using pprev to
+  // populate entire vector)
+  void SetTip(CBlockIndex &block);
 
-    // Find successor of block in this chain (nullptr if not found or is tip)
-    CBlockIndex* Next(const CBlockIndex* pindex) const
-    {
-        if (Contains(pindex))
-            return (*this)[pindex->nHeight + 1];
-        else
-            return nullptr;
-    }
+  void Clear() { vChain.clear(); }
 
-    // Return maximal height in chain (equal to chain.Tip() ? chain.Tip()->nHeight : -1)
-    int Height() const
-    {
-        return int(vChain.size()) - 1;
-    }
+  // Return CBlockLocator that refers to tip of this chain (used for GETHEADERS
+  // messages)
+  CBlockLocator GetLocator() const;
 
-    // Set/initialize chain with given tip (walks backwards using pprev to populate entire vector)
-    void SetTip(CBlockIndex& block);
+  // Find last common block between this chain and block index entry (fork
+  // point)
+  const CBlockIndex *FindFork(const CBlockIndex *pindex) const;
 
-    void Clear()
-    {
-        vChain.clear();
-    }
-
-    // Return CBlockLocator that refers to tip of this chain (used for GETHEADERS messages)
-    CBlockLocator GetLocator() const;
-
-    // Find last common block between this chain and block index entry (fork point)
-    const CBlockIndex* FindFork(const CBlockIndex* pindex) const;
-
-    // Find earliest block with timestamp >= nTime and height >= height
-    CBlockIndex* FindEarliestAtLeast(int64_t nTime, int height) const;
+  // Find earliest block with timestamp >= nTime and height >= height
+  CBlockIndex *FindEarliestAtLeast(int64_t nTime, int height) const;
 };
 
-// Get locator for block index entry (returns exponentially spaced hashes for efficient sync)
-CBlockLocator GetLocator(const CBlockIndex* index);
+// Get locator for block index entry (returns exponentially spaced hashes for
+// efficient sync)
+CBlockLocator GetLocator(const CBlockIndex *index);
 
-// Construct list of hash entries for locator (exponentially increasing intervals)
-// Example for height 1000: [1000, 999, 998, 996, 992, 984, 968, 936, 872, 744, 488, 0]
-std::vector<uint256> LocatorEntries(const CBlockIndex* index);
+// Construct list of hash entries for locator (exponentially increasing
+// intervals) Example for height 1000: [1000, 999, 998, 996, 992, 984, 968, 936,
+// 872, 744, 488, 0]
+std::vector<uint256> LocatorEntries(const CBlockIndex *index);
 
 } // namespace chain
 } // namespace coinbasechain

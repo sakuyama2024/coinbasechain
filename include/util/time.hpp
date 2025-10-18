@@ -4,9 +4,9 @@
 #ifndef COINBASECHAIN_UTIL_TIME_HPP
 #define COINBASECHAIN_UTIL_TIME_HPP
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <atomic>
 
 namespace coinbasechain {
 namespace util {
@@ -18,7 +18,8 @@ namespace util {
  * control time passage without waiting for real time to elapse.
  *
  * Usage:
- * - Production code calls GetTime() or GetSteadyTime() instead of direct system calls
+ * - Production code calls GetTime() or GetSteadyTime() instead of direct system
+ * calls
  * - Tests call SetMockTime() to control the current time
  * - When mock time is set, all time functions return the mocked value
  * - When mock time is 0 (default), time functions return real system time
@@ -34,7 +35,8 @@ int64_t GetTime();
  * Get current time as steady clock time point
  * Returns mock time if set, otherwise returns real steady clock time
  *
- * Note: When mock time is active, steady clock is simulated using the mock value
+ * Note: When mock time is active, steady clock is simulated using the mock
+ * value
  */
 std::chrono::steady_clock::time_point GetSteadyTime();
 
@@ -69,16 +71,14 @@ int64_t GetMockTime();
  */
 class MockTimeScope {
 public:
-    explicit MockTimeScope(int64_t time) : previous_time_(GetMockTime()) {
-        SetMockTime(time);
-    }
+  explicit MockTimeScope(int64_t time) : previous_time_(GetMockTime()) {
+    SetMockTime(time);
+  }
 
-    ~MockTimeScope() {
-        SetMockTime(previous_time_);
-    }
+  ~MockTimeScope() { SetMockTime(previous_time_); }
 
 private:
-    int64_t previous_time_;
+  int64_t previous_time_;
 };
 
 } // namespace util

@@ -1,12 +1,12 @@
 #ifndef COINBASECHAIN_PEER_MANAGER_HPP
 #define COINBASECHAIN_PEER_MANAGER_HPP
 
-#include "network/peer.hpp"
 #include "network/addr_manager.hpp"
-#include <memory>
-#include <map>
-#include <mutex>
+#include "network/peer.hpp"
 #include <functional>
+#include <map>
+#include <memory>
+#include <mutex>
 
 namespace coinbasechain {
 namespace network {
@@ -21,9 +21,9 @@ namespace network {
  * - Manages connection limits
  * - Handles peer disconnections
  *
- * Note: This is a simplified version. Bitcoin's PeerManager (net_processing.cpp)
- * is much more complex with 82+ methods. We intentionally split responsibilities
- * across multiple components for better modularity.
+ * Note: This is a simplified version. Bitcoin's PeerManager
+ * (net_processing.cpp) is much more complex with 82+ methods. We intentionally
+ * split responsibilities across multiple components for better modularity.
  *
  * TODO: Features from Bitcoin's PeerManager we may need:
  *
@@ -72,80 +72,82 @@ namespace network {
  */
 class PeerManager {
 public:
-    struct Config {
-        size_t max_outbound_peers;     // Max outbound connections
-        size_t max_inbound_peers;      // Max inbound connections
-        size_t target_outbound_peers;  // Try to maintain this many outbound
+  struct Config {
+    size_t max_outbound_peers;    // Max outbound connections
+    size_t max_inbound_peers;     // Max inbound connections
+    size_t target_outbound_peers; // Try to maintain this many outbound
 
-        Config() : max_outbound_peers(8), max_inbound_peers(125), target_outbound_peers(8) {}
-    };
+    Config()
+        : max_outbound_peers(8), max_inbound_peers(125),
+          target_outbound_peers(8) {}
+  };
 
-    explicit PeerManager(boost::asio::io_context& io_context,
-                        AddressManager& addr_manager,
-                        const Config& config = Config{});
+  explicit PeerManager(boost::asio::io_context &io_context,
+                       AddressManager &addr_manager,
+                       const Config &config = Config{});
 
-    ~PeerManager();
+  ~PeerManager();
 
-    // Add a peer
-    bool add_peer(PeerPtr peer);
+  // Add a peer
+  bool add_peer(PeerPtr peer);
 
-    // Remove a peer by ID
-    void remove_peer(int peer_id);
+  // Remove a peer by ID
+  void remove_peer(int peer_id);
 
-    // Get a peer by ID
-    PeerPtr get_peer(int peer_id);
+  // Get a peer by ID
+  PeerPtr get_peer(int peer_id);
 
-    // Find peer ID by address:port (thread-safe)
-    // Returns -1 if not found
-    int find_peer_by_address(const std::string& address, uint16_t port);
+  // Find peer ID by address:port (thread-safe)
+  // Returns -1 if not found
+  int find_peer_by_address(const std::string &address, uint16_t port);
 
-    // Get all active peers
-    std::vector<PeerPtr> get_all_peers();
+  // Get all active peers
+  std::vector<PeerPtr> get_all_peers();
 
-    // Get outbound peers only
-    std::vector<PeerPtr> get_outbound_peers();
+  // Get outbound peers only
+  std::vector<PeerPtr> get_outbound_peers();
 
-    // Get inbound peers only
-    std::vector<PeerPtr> get_inbound_peers();
+  // Get inbound peers only
+  std::vector<PeerPtr> get_inbound_peers();
 
-    // Get count of active peers
-    size_t peer_count() const;
-    size_t outbound_count() const;
-    size_t inbound_count() const;
+  // Get count of active peers
+  size_t peer_count() const;
+  size_t outbound_count() const;
+  size_t inbound_count() const;
 
-    // Check if we need more outbound connections
-    bool needs_more_outbound() const;
+  // Check if we need more outbound connections
+  bool needs_more_outbound() const;
 
-    // Check if we can accept more inbound connections
-    bool can_accept_inbound() const;
+  // Check if we can accept more inbound connections
+  bool can_accept_inbound() const;
 
-    // Try to evict a peer to make room for a new inbound connection
-    // Returns true if a peer was evicted
-    bool evict_inbound_peer();
+  // Try to evict a peer to make room for a new inbound connection
+  // Returns true if a peer was evicted
+  bool evict_inbound_peer();
 
-    // Disconnect and remove all peers
-    void disconnect_all();
+  // Disconnect and remove all peers
+  void disconnect_all();
 
-    // Process periodic tasks (cleanup, connection maintenance)
-    void process_periodic();
+  // Process periodic tasks (cleanup, connection maintenance)
+  void process_periodic();
 
-    // Set callback for when a peer is removed
-    using PeerRemovedCallback = std::function<void(int peer_id)>;
-    void set_peer_removed_callback(PeerRemovedCallback callback);
+  // Set callback for when a peer is removed
+  using PeerRemovedCallback = std::function<void(int peer_id)>;
+  void set_peer_removed_callback(PeerRemovedCallback callback);
 
 private:
-    boost::asio::io_context& io_context_;
-    AddressManager& addr_manager_;
-    Config config_;
+  boost::asio::io_context &io_context_;
+  AddressManager &addr_manager_;
+  Config config_;
 
-    mutable std::mutex mutex_;
-    std::map<int, PeerPtr> peers_;
+  mutable std::mutex mutex_;
+  std::map<int, PeerPtr> peers_;
 
-    PeerRemovedCallback peer_removed_callback_;
+  PeerRemovedCallback peer_removed_callback_;
 
-    // Get next available peer ID
-    int next_peer_id_ = 0;
-    int allocate_peer_id();
+  // Get next available peer ID
+  int next_peer_id_ = 0;
+  int allocate_peer_id();
 };
 
 } // namespace network

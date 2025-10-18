@@ -1,14 +1,14 @@
 #ifndef COINBASECHAIN_THREADPOOL_HPP
 #define COINBASECHAIN_THREADPOOL_HPP
 
-#include <vector>
-#include <queue>
-#include <thread>
-#include <mutex>
 #include <condition_variable>
 #include <functional>
 #include <future>
+#include <mutex>
+#include <queue>
 #include <stdexcept>
+#include <thread>
+#include <vector>
 
 namespace coinbasechain {
 namespace util {
@@ -23,66 +23,64 @@ namespace util {
  */
 class ThreadPool {
 public:
-    /**
-     * Constructor - create pool with specified number of threads
-     * If num_threads == 0, uses hardware concurrency
-     */
-    explicit ThreadPool(size_t num_threads = 0);
+  /**
+   * Constructor - create pool with specified number of threads
+   * If num_threads == 0, uses hardware concurrency
+   */
+  explicit ThreadPool(size_t num_threads = 0);
 
-    /**
-     * Destructor - waits for all tasks to complete
-     */
-    ~ThreadPool();
+  /**
+   * Destructor - waits for all tasks to complete
+   */
+  ~ThreadPool();
 
-    /**
-     * Enqueue a task for execution
-     * Returns a future that will contain the result
-     */
-    template<class F, class... Args>
-    auto enqueue(F&& f, Args&&... args)
-        -> std::future<typename std::invoke_result<F, Args...>::type>;
+  /**
+   * Enqueue a task for execution
+   * Returns a future that will contain the result
+   */
+  template <class F, class... Args>
+  auto enqueue(F &&f, Args &&...args)
+      -> std::future<typename std::invoke_result<F, Args...>::type>;
 
-    /**
-     * Get number of worker threads
-     */
-    size_t size() const { return workers_.size(); }
+  /**
+   * Get number of worker threads
+   */
+  size_t size() const { return workers_.size(); }
 
 private:
-    // Worker threads
-    std::vector<std::thread> workers_;
+  // Worker threads
+  std::vector<std::thread> workers_;
 
-    // Task queue
-    std::queue<std::function<void()>> tasks_;
+  // Task queue
+  std::queue<std::function<void()>> tasks_;
 
-    // Synchronization
-    std::mutex queue_mutex_;
-    std::condition_variable condition_;
-    bool stop_;
+  // Synchronization
+  std::mutex queue_mutex_;
+  std::condition_variable condition_;
+  bool stop_;
 };
 
 // Implementation of enqueue (must be in header for template)
-template<class F, class... Args>
-auto ThreadPool::enqueue(F&& f, Args&&... args)
-    -> std::future<typename std::invoke_result<F, Args...>::type>
-{
-    using return_type = typename std::invoke_result<F, Args...>::type;
+template <class F, class... Args>
+auto ThreadPool::enqueue(F &&f, Args &&...args)
+    -> std::future<typename std::invoke_result<F, Args...>::type> {
+  using return_type = typename std::invoke_result<F, Args...>::type;
 
-    auto task = std::make_shared<std::packaged_task<return_type()>>(
-        std::bind(std::forward<F>(f), std::forward<Args>(args)...)
-    );
+  auto task = std::make_shared<std::packaged_task<return_type()>>(
+      std::bind(std::forward<F>(f), std::forward<Args>(args)...));
 
-    std::future<return_type> res = task->get_future();
-    {
-        std::unique_lock<std::mutex> lock(queue_mutex_);
+  std::future<return_type> res = task->get_future();
+  {
+    std::unique_lock<std::mutex> lock(queue_mutex_);
 
-        // Don't allow enqueueing after stopping the pool
-        if(stop_)
-            throw std::runtime_error("enqueue on stopped ThreadPool");
+    // Don't allow enqueueing after stopping the pool
+    if (stop_)
+      throw std::runtime_error("enqueue on stopped ThreadPool");
 
-        tasks_.emplace([task](){ (*task)(); });
-    }
-    condition_.notify_one();
-    return res;
+    tasks_.emplace([task]() { (*task)(); });
+  }
+  condition_.notify_one();
+  return res;
 }
 
 } // namespace util

@@ -4,20 +4,20 @@
 #ifndef COINBASECHAIN_CONSENSUS_POW_HPP
 #define COINBASECHAIN_CONSENSUS_POW_HPP
 
-#include "primitives/block.h"
 #include "arith_uint256.h"
+#include "primitives/block.h"
 #include <cstdint>
 
 namespace coinbasechain {
 
 // Forward declarations
 namespace chain {
-    class CBlockIndex;
-    class ChainParams;
-}
+class CBlockIndex;
+class ChainParams;
+} // namespace chain
 
 namespace crypto {
-    enum class POWVerifyMode;
+enum class POWVerifyMode;
 }
 
 namespace consensus {
@@ -27,23 +27,21 @@ namespace consensus {
 // Responsive to hashrate changes while maintaining predictable block times
 // Difficulty doubles/halves every nASERTHalfLife seconds ahead/behind schedule
 
-uint32_t GetNextWorkRequired(const chain::CBlockIndex* pindexLast, const chain::ChainParams& params);
+uint32_t GetNextWorkRequired(const chain::CBlockIndex *pindexLast,
+                             const chain::ChainParams &params);
 
-// Returns difficulty as floating point: max_target / current_target (1.0 = genesis)
-double GetDifficulty(uint32_t nBits, const chain::ChainParams& params);
+// Returns difficulty as floating point: max_target / current_target (1.0 =
+// genesis)
+double GetDifficulty(uint32_t nBits, const chain::ChainParams &params);
 
 arith_uint256 GetTargetFromBits(uint32_t nBits);
 
 // CONSENSUS-CRITICAL: Validates proof-of-work meets difficulty target
 // Wrapper around crypto::CheckProofOfWorkRandomX with chain parameters
 // In MINING mode, outHash must be non-null to receive computed RandomX hash
-bool CheckProofOfWork(
-    const CBlockHeader& block,
-    uint32_t nBits,
-    const chain::ChainParams& params,
-    crypto::POWVerifyMode mode,
-    uint256* outHash = nullptr
-);
+bool CheckProofOfWork(const CBlockHeader &block, uint32_t nBits,
+                      const chain::ChainParams &params,
+                      crypto::POWVerifyMode mode, uint256 *outHash = nullptr);
 
 } // namespace consensus
 } // namespace coinbasechain

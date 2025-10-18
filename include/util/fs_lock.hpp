@@ -23,30 +23,30 @@ namespace fs = std::filesystem;
  */
 class FileLock {
 public:
-    FileLock() = delete;
-    FileLock(const FileLock&) = delete;
-    FileLock(FileLock&&) = delete;
+  FileLock() = delete;
+  FileLock(const FileLock &) = delete;
+  FileLock(FileLock &&) = delete;
 
-    explicit FileLock(const fs::path& file);
-    ~FileLock();
+  explicit FileLock(const fs::path &file);
+  ~FileLock();
 
-    /**
-     * Try to acquire exclusive lock on file
-     * @return true if lock acquired, false otherwise
-     */
-    bool TryLock();
+  /**
+   * Try to acquire exclusive lock on file
+   * @return true if lock acquired, false otherwise
+   */
+  bool TryLock();
 
-    /**
-     * Get reason for lock failure
-     */
-    std::string GetReason() const { return reason_; }
+  /**
+   * Get reason for lock failure
+   */
+  std::string GetReason() const { return reason_; }
 
 private:
-    std::string reason_;
+  std::string reason_;
 #ifndef _WIN32
-    int fd_{-1};
+  int fd_{-1};
 #else
-    void* hFile_{(void*)-1}; // INVALID_HANDLE_VALUE
+  void *hFile_{(void *)-1}; // INVALID_HANDLE_VALUE
 #endif
 };
 
@@ -54,9 +54,9 @@ private:
  * Result of directory lock attempt
  */
 enum class LockResult {
-    Success,     // Lock acquired successfully
-    ErrorWrite,  // Could not create lock file
-    ErrorLock,   // Lock already held by another process
+  Success,    // Lock acquired successfully
+  ErrorWrite, // Could not create lock file
+  ErrorLock,  // Lock already held by another process
 };
 
 /**
@@ -71,9 +71,9 @@ enum class LockResult {
  * @param probe_only If true, only test if lock can be acquired (don't hold it)
  * @return LockResult indicating success or failure
  */
-LockResult LockDirectory(const fs::path& directory,
-                        const std::string& lockfile_name = ".lock",
-                        bool probe_only = false);
+LockResult LockDirectory(const fs::path &directory,
+                         const std::string &lockfile_name = ".lock",
+                         bool probe_only = false);
 
 /**
  * Release a directory lock
@@ -81,8 +81,8 @@ LockResult LockDirectory(const fs::path& directory,
  * @param directory Directory to unlock
  * @param lockfile_name Name of lock file (default: ".lock")
  */
-void UnlockDirectory(const fs::path& directory,
-                    const std::string& lockfile_name = ".lock");
+void UnlockDirectory(const fs::path &directory,
+                     const std::string &lockfile_name = ".lock");
 
 /**
  * Release all directory locks

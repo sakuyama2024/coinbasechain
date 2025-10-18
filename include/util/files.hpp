@@ -1,10 +1,10 @@
 #ifndef COINBASECHAIN_UTIL_FILES_HPP
 #define COINBASECHAIN_UTIL_FILES_HPP
 
-#include <filesystem>
-#include <vector>
-#include <string>
 #include <cstdint>
+#include <filesystem>
+#include <string>
+#include <vector>
 
 namespace coinbasechain {
 namespace util {
@@ -26,32 +26,32 @@ namespace util {
  * Write data to file atomically
  * Returns true on success, false on failure
  */
-bool atomic_write_file(const std::filesystem::path& path,
-                       const std::vector<uint8_t>& data);
+bool atomic_write_file(const std::filesystem::path &path,
+                       const std::vector<uint8_t> &data);
 
 /**
  * Write string to file atomically
  */
-bool atomic_write_file(const std::filesystem::path& path,
-                       const std::string& data);
+bool atomic_write_file(const std::filesystem::path &path,
+                       const std::string &data);
 
 /**
  * Read entire file into vector
  * Returns empty vector on failure
  */
-std::vector<uint8_t> read_file(const std::filesystem::path& path);
+std::vector<uint8_t> read_file(const std::filesystem::path &path);
 
 /**
  * Read entire file into string
  * Returns empty string on failure
  */
-std::string read_file_string(const std::filesystem::path& path);
+std::string read_file_string(const std::filesystem::path &path);
 
 /**
  * Create directory if it doesn't exist (recursive)
  * Returns true on success or if already exists
  */
-bool ensure_directory(const std::filesystem::path& dir);
+bool ensure_directory(const std::filesystem::path &dir);
 
 /**
  * Get default data directory for the application
