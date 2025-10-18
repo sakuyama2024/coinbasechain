@@ -108,13 +108,11 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   auto vmWrapper = std::make_shared<RandomXVMWrapper>(myVM, myCache);
   t_vm_cache[nEpoch] = vmWrapper;
 
-  LOG_CRYPTO_INFO(
-      "Created thread-local RandomX VM for epoch {} ({})",
-      nEpoch,
+  LOG_CRYPTO_INFO("Created thread-local RandomX VM for epoch {} ({})", nEpoch,
 #ifdef __SANITIZE_ADDRESS__
-      "JIT disabled under ASan, isolated cache"
+                  "JIT disabled under ASan, isolated cache"
 #else
-      "JIT enabled, isolated cache"
+                  "JIT enabled, isolated cache"
 #endif
   );
 
