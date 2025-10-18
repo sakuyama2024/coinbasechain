@@ -1,0 +1,119 @@
+---
+# Simplified Ansible Playbook: Deploy CoinbaseChain using Docker CLI
+# No Python dependencies required - uses direct shell commands
+
+- name: Deploy CoinbaseChain Docker Network (Simple)
+  hosts: coinbasechain_nodes
+  become: true
+
+  vars:
+    container_name: "coinbasechain-{{ coinbasechain_network }}"
+
+  tasks:
+    # =========================================================================
+    # 1. Transfer project files
+    # =========================================================================
+    - name: Create temporary build directory
+      file:
+        path: /tmp/coinbasechain-build
+        state: directory
+        mode: '0755'
+      tags: [build]
+
+    - name: Copy project files to server
+      synchronize:
+        src: "{{ playbook_dir }}/../"
+        dest: /tmp/coinbasechain-build/
+        delete: yes
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=build"
+          - "--exclude=build_*"
+          - "--exclude=.vscode"
+          - "--exclude=*.o"
+          - "--exclude=*.a"
+          - "--exclude=ansible"
+      tags: [build]
+
+    # =========================================================================
+    # 2. Build Docker image
+    # =========================================================================
+    - name: Build Docker image
+      shell: |
+        cd /tmp/coinbasechain-build
+        docker build -t coinbasechain:latest .
+      tags: [build]
+
+    - name: Clean up build directory
+      file:
+        path: /tmp/coinbasechain-build
+        state: absent
+      tags: [build]
+
+    # =========================================================================
+    # 3. Deploy Container
+    # =========================================================================
+    - name: Create data directory
+      file:
+        path: "{{ docker_data_dir }}"
+        state: directory
+        mode: '0755'
+      tags: [deploy]
+
+    - name: Set data directory ownership for container user
+      file:
+        path: "{{ docker_data_dir }}"
+        owner: 1000
+        group: 1000
+        recurse: yes
+      tags: [deploy]
+
+    - name: Stop and remove existing container (if any)
+      shell: |
+        docker stop {{ container_name }} 2>/dev/null || true
+        docker rm {{ container_name }} 2>/dev/null || true
+      tags: [deploy]
+
+    - name: Start CoinbaseChain container
+      shell: |
+        docker run -d \
+          --name {{ container_name }} \
+          --restart unless-stopped \
+          -p {{ p2p_port }}:{{ p2p_port }} \
+          -p {{ rpc_port }}:{{ rpc_port }} \
+          -v {{ docker_data_dir }}:/home/coinbasechain/.coinbasechain \
+          -e COINBASECHAIN_NETWORK={{ coinbasechain_network }} \
+          -e COINBASECHAIN_LISTEN=1 \
+          -e COINBASECHAIN_SERVER=1 \
+          -e COINBASECHAIN_THREADS=2 \
+          -e COINBASECHAIN_MAXCONNECTIONS=10 \
+          coinbasechain:latest
+      tags: [deploy]
+
+    - name: Wait for container to start
+      pause:
+        seconds: 10
+      tags: [deploy]
+
+    - name: Check container status
+      shell: docker ps -f name={{ container_name }} --format "{{{{.Names}}}}\t{{{{.Status}}}}\t{{{{.Ports}}}}"
+      register: container_status
+      tags: [deploy, info]
+
+    - name: Display container status
+      debug:
+        msg: "{{ container_status.stdout_lines }}"
+      tags: [deploy, info]
+
+    # =========================================================================
+    # 4. Display node info
+    # =========================================================================
+    - name: Get container logs (last 20 lines)
+      shell: docker logs {{ container_name }} --tail 20
+      register: container_logs
+      tags: [info]
+
+    - name: Display logs
+      debug:
+        msg: "{{ container_logs.stdout_lines }}"
+      tags: [info]

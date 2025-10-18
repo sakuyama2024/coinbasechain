@@ -71,6 +71,28 @@ A simplified, headers-only blockchain implementation inspired by Bitcoin/Unicity
 
 ## Building
 
+### Building with Docker (Recommended)
+
+The easiest way to get started is using Docker:
+
+```bash
+# Quick start with docker-compose
+docker-compose up -d
+
+# Or using the Makefile
+make -f Makefile.docker up
+
+# Check logs
+docker-compose logs -f node
+
+# Use CLI
+docker-compose exec node coinbasechain-cli getinfo
+```
+
+See **[DOCKER.md](DOCKER.md)** for complete Docker documentation.
+
+### Building from Source
+
 ```bash
 # Configure
 cmake -B build -S .

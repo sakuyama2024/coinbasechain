@@ -1,0 +1,54 @@
+# Dockerfile for CoinbaseChain Test Suite
+# Builds and runs the comprehensive test suite
+
+FROM ubuntu:22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    libboost-system-dev \
+    libssl-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy project files
+COPY CMakeLists.txt ./
+COPY cmake/ ./cmake/
+COPY include/ ./include/
+COPY src/ ./src/
+COPY test/ ./test/
+
+# Configure CMake with tests enabled
+RUN cmake -B build -S . \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_CXX_STANDARD=20
+
+# Build the test suite
+RUN cmake --build build --target coinbasechain_tests -j$(nproc)
+
+# Runtime stage
+FROM ubuntu:22.04
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libboost-system1.74.0 \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# Copy test executable
+COPY --from=builder /build/build/coinbasechain_tests ./
+
+# Copy test data if exists
+COPY --from=builder /build/test/data/ ./test/data/ 2>/dev/null || true
+
+# Default command: run all tests with verbose output
+ENTRYPOINT ["./coinbasechain_tests"]
+CMD ["-v"]
