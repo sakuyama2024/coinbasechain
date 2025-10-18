@@ -7,6 +7,8 @@
 #include "primitives/block.h"
 #include "crypto/randomx_pow.hpp"
 #include "consensus/pow.hpp"
+#include "arith_uint256.h"
+#include <randomx.h>
 #include <thread>
 #include <vector>
 #include <atomic>
@@ -39,6 +41,11 @@ TEST_CASE("ChainstateManager thread safety", "[validation][threading]") {
         std::vector<std::thread> threads;
 
         auto worker = [&](int thread_id) {
+            // Create thread-local RandomX VM for mining
+            uint32_t nEpoch = crypto::GetEpoch(static_cast<uint32_t>(std::time(nullptr)),
+                                               params->GetConsensus().nRandomXEpochDuration);
+            randomx_vm* threadVM = crypto::CreateVMForEpoch(nEpoch);
+
             for (int i = 0; i < BLOCKS_PER_THREAD; i++) {
                 // Create a block extending current tip
                 CBlockHeader header;
@@ -52,10 +59,19 @@ TEST_CASE("ChainstateManager thread safety", "[validation][threading]") {
                 REQUIRE(tip != nullptr);
                 header.hashPrevBlock = tip->GetBlockHash();
 
-                // Mine the block using RandomX
+                // Mine the block using thread-local RandomX VM
                 uint256 randomx_hash;
-                while (!consensus::CheckProofOfWork(header, header.nBits, *params,
-                        crypto::POWVerifyMode::MINING, &randomx_hash)) {
+                char rx_hash[RANDOMX_HASH_SIZE];
+                while (true) {
+                    CBlockHeader tmp(header);
+                    tmp.hashRandomX.SetNull();
+                    randomx_calculate_hash(threadVM, &tmp, sizeof(tmp), rx_hash);
+                    randomx_hash = uint256(std::vector<unsigned char>(rx_hash, rx_hash + RANDOMX_HASH_SIZE));
+
+                    if (UintToArith256(crypto::GetRandomXCommitment(header, &randomx_hash)) <=
+                        UintToArith256(params->GetConsensus().powLimit)) {
+                        break;
+                    }
                     header.nNonce++;
                 }
                 header.hashRandomX = randomx_hash;
@@ -71,6 +87,9 @@ TEST_CASE("ChainstateManager thread safety", "[validation][threading]") {
                     failed_accepts++;
                 }
             }
+
+            // Clean up thread-local VM
+            randomx_destroy_vm(threadVM);
         };
 
         // Launch threads
