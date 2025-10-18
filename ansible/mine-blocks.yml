@@ -1,0 +1,34 @@
+---
+# Ansible Playbook: Mine blocks on CoinbaseChain nodes
+# Usage: ansible-playbook -i inventory.yml mine-blocks.yml -e "blocks=10"
+
+- name: Mine blocks on CoinbaseChain nodes
+  hosts: coinbasechain_nodes
+  become: true
+
+  vars:
+    container_name: "coinbasechain-{{ coinbasechain_network }}"
+    blocks: 1  # Default to 1 block, can be overridden with -e blocks=N
+
+  tasks:
+    - name: Mine {{ blocks }} block(s) on {{ inventory_hostname }}
+      shell: |
+        docker exec {{ container_name }} coinbasechain-cli -regtest generate {{ blocks }}
+      register: mine_result
+      tags: [mine]
+
+    - name: Display mining result
+      debug:
+        msg: "{{ inventory_hostname }}: Mined {{ blocks }} blocks - {{ mine_result.stdout_lines }}"
+      tags: [mine]
+
+    - name: Get blockchain info
+      shell: |
+        docker exec {{ container_name }} coinbasechain-cli -regtest getblockchaininfo
+      register: blockchain_info
+      tags: [info]
+
+    - name: Display blockchain height
+      debug:
+        msg: "{{ inventory_hostname }}: {{ blockchain_info.stdout_lines }}"
+      tags: [info]
