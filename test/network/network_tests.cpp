@@ -1438,11 +1438,10 @@ TEST_CASE("ScaleTest - HundredNodes", "[scaletest][network]") {
     std::cout << "Nodes synced: " << synced << "/100\n";
 }
 
-TEST_CASE("ScaleTest - ThousandNodeStressTest", "[scaletest][network]") {
+TEST_CASE("ScaleTest - ThousandNodeStressTest", "[.][scaletest][network]") {
     // This test verifies the harness can handle 1000+ nodes
-    // Disabled by default (slow)
-
-    SKIP("Skipping stress test (slow)");
+    // Disabled by default (slow) - hidden from default runs with [.] tag
+    // Run explicitly with: ./coinbasechain_tests "[scaletest]"
 
     SimulatedNetwork network(12345);
     std::vector<std::unique_ptr<SimulatedNode>> nodes;
