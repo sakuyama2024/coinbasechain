@@ -34,8 +34,6 @@ void NetworkBridgedTransport::BridgedConnection::start() {
 bool NetworkBridgedTransport::BridgedConnection::send(const std::vector<uint8_t>& data) {
     if (!open_) return false;
 
-           transport_->node_id_, peer_node_id_, data.size(), (void*)transport_, (void*)(transport_ ? transport_->sim_network_ : nullptr));
-
     // Route through SimulatedNetwork
     if (transport_ && transport_->sim_network_) {
         transport_->sim_network_->SendMessage(
@@ -43,7 +41,6 @@ bool NetworkBridgedTransport::BridgedConnection::send(const std::vector<uint8_t>
             peer_node_id_,
             data
         );
-    } else {
     }
 
     return true;
@@ -53,8 +50,6 @@ void NetworkBridgedTransport::BridgedConnection::close() {
     if (!open_.exchange(false)) {
         return;  // Already closed
     }
-
-           transport_->node_id_, peer_node_id_);
 
     // Notify local side
     if (disconnect_callback_) {
@@ -97,8 +92,6 @@ void NetworkBridgedTransport::BridgedConnection::close_from_remote() {
     if (!open_.exchange(false)) {
         return;  // Already closed
     }
-
-           transport_->node_id_, peer_node_id_);
 
     // Notify local side only (don't notify remote - they initiated the close)
     if (disconnect_callback_) {
@@ -274,8 +267,6 @@ void NetworkBridgedTransport::deliver_message(
 }
 
 void NetworkBridgedTransport::notify_peer_disconnect(int peer_node_id, int disconnecting_node_id) {
-           node_id_, peer_node_id);
-
     // Route through SimulatedNetwork to notify the remote peer
     if (sim_network_) {
         sim_network_->NotifyDisconnect(node_id_, peer_node_id);
@@ -283,8 +274,6 @@ void NetworkBridgedTransport::notify_peer_disconnect(int peer_node_id, int disco
 }
 
 void NetworkBridgedTransport::handle_remote_disconnect(int disconnecting_node_id) {
-           node_id_, disconnecting_node_id);
-
     // Find the connection for this peer
     uint64_t conn_id = 0;
     {

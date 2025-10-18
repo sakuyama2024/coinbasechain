@@ -4,9 +4,14 @@
 import struct
 import os
 
+CORPUS_DIR = "fuzz_chain_reorg_corpus"
+
 def write_seed(filename, data):
     """Write seed file to corpus directory"""
-    path = os.path.join("fuzz_chain_reorg_corpus", filename)
+    # Create corpus directory if it doesn't exist
+    os.makedirs(CORPUS_DIR, exist_ok=True)
+
+    path = os.path.join(CORPUS_DIR, filename)
     with open(path, "wb") as f:
         f.write(data)
     print(f"Created {path} ({len(data)} bytes)")
@@ -208,5 +213,5 @@ write_seed("all_zeros", b"\x00" * 100)
 write_seed("all_ones", b"\xFF" * 100)
 write_seed("alternating", bytes([i % 256 for i in range(200)]))
 
-print(f"\nCreated {8} seed files in fuzz_chain_reorg_corpus/")
-print("Run with: ./fuzz/fuzz_chain_reorg fuzz_chain_reorg_corpus/")
+print(f"\nCreated 8 seed files in {CORPUS_DIR}/")
+print(f"Run with: ./fuzz/fuzz_chain_reorg {CORPUS_DIR}/")

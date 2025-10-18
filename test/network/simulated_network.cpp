@@ -37,8 +37,6 @@ void SimulatedNetwork::SetLinkConditions(int from_node, int to_node, const Netwo
 }
 
 void SimulatedNetwork::SendMessage(int from_node, int to_node, const std::vector<uint8_t>& data) {
-           (void*)this, from_node, to_node, data.size());
-
     stats_.total_messages_sent++;
     stats_.total_bytes_sent += data.size();
     stats_.messages_per_node[from_node]++;
@@ -67,19 +65,14 @@ void SimulatedNetwork::SendMessage(int from_node, int to_node, const std::vector
     msg.bytes = data.size();
     msg.sequence_number = message_sequence_++;  // Assign unique sequence for FIFO ordering
 
-           from_node, to_node, delivery_time, msg.sequence_number);
-
     message_queue_.push(std::move(msg));
 }
 
 void SimulatedNetwork::RegisterConnection(int from_node, int to_node) {
     active_connections_.insert({from_node, to_node});
-           from_node, to_node, active_connections_.size());
 }
 
 void SimulatedNetwork::NotifyDisconnect(int from_node, int to_node) {
-           from_node, to_node);
-
     // Remove from active connections (both directions)
     active_connections_.erase({from_node, to_node});
     active_connections_.erase({to_node, from_node});
@@ -108,7 +101,6 @@ void SimulatedNetwork::NotifyDisconnect(int from_node, int to_node) {
             new_queue.push(msg);
         } else {
             purged_count++;
-                   msg.from_node, msg.to_node);
         }
 
         message_queue_.pop();
@@ -121,7 +113,6 @@ void SimulatedNetwork::NotifyDisconnect(int from_node, int to_node) {
     if (it != transports_.end() && it->second) {
         // Call handle_remote_disconnect on the remote transport
         it->second->handle_remote_disconnect(from_node);
-    } else {
     }
 }
 

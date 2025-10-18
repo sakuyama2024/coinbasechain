@@ -132,8 +132,6 @@ void SimulatedNode::DisconnectFrom(int peer_node_id) {
     oss << "127.0.0." << (peer_node_id % 255);
     std::string peer_addr = oss.str();
 
-           node_id_, peer_node_id, peer_addr.c_str());
-
     // Get peer ID by address (this returns the PeerManager map key)
     auto& peer_mgr = network_manager_->peer_manager();
 
@@ -147,10 +145,8 @@ void SimulatedNode::DisconnectFrom(int peer_node_id) {
     // Note: peer->port() returns the remote listen port (8333), not the connection port
     // So we search by address only
     int peer_manager_id = peer_mgr.find_peer_by_address(peer_addr, 8333);
-           peer_addr.c_str(), peer_manager_id);
 
     if (peer_manager_id >= 0) {
-               peer_manager_id, peer_addr.c_str());
         network_manager_->disconnect_from(peer_manager_id);
         stats_.disconnections++;
 
@@ -194,8 +190,6 @@ uint256 SimulatedNode::MineBlock(const std::string& miner_address) {
         chainstate_->TryAddBlockIndexCandidate(pindex);
         chainstate_->ActivateBestChain();
         stats_.blocks_mined++;
-
-               node_id_, GetTipHeight(), pindex->nHeight);
 
         // Broadcast the block to peers via NetworkManager
         uint256 block_hash = header.GetHash();

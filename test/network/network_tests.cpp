@@ -637,7 +637,6 @@ TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
     // Therefore IBD should be true
     CHECK(node1.GetIsIBD() == true);
     CHECK(node2.GetIsIBD() == true);
-           node1.GetIsIBD(), node2.GetIsIBD(), time_ms / 1000);
 
     // Mine several blocks on node1 to exit IBD
     // IBD requires: (1) recent tip timestamp, (2) sufficient chainwork
@@ -651,7 +650,6 @@ TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
     // Node1 should now be out of IBD
     // (tip is recent, chainwork is sufficient)
     bool node1_ibd = node1.GetIsIBD();
-           node1.GetTipHeight(), node1_ibd);
 
     // Note: IBD may still be true if chainwork threshold not met
     // Check what happened
@@ -663,7 +661,6 @@ TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
             network.AdvanceTime(time_ms);
         }
         node1_ibd = node1.GetIsIBD();
-               node1.GetTipHeight(), node1_ibd);
     }
 
     // Node1 should definitely be out of IBD now
@@ -671,7 +668,6 @@ TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
 
     // Node2 is still at genesis with old timestamp, should still be in IBD
     CHECK(node2.GetIsIBD() == true);
-           node2.GetTipHeight(), node2.GetIsIBD());
 
     // Connect nodes and sync
     node2.ConnectTo(1);
@@ -685,7 +681,6 @@ TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
     }
 
     CHECK(node2.GetPeerCount() == 1);
-           node1.GetPeerCount(), node2.GetPeerCount());
 
     // Advance time to allow sync
     // Headers should propagate and node2 should sync
@@ -695,7 +690,6 @@ TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
     }
 
     // Node2 should now be synced
-           node2.GetTipHeight(), node1.GetTipHeight());
     CHECK(node2.GetTipHeight() == node1.GetTipHeight());
 
     // Node2 should now be out of IBD (synced with recent blocks)
