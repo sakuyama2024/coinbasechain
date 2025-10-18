@@ -132,7 +132,6 @@ void SimulatedNode::DisconnectFrom(int peer_node_id) {
     oss << "127.0.0." << (peer_node_id % 255);
     std::string peer_addr = oss.str();
 
-    printf("[DEBUG] DisconnectFrom: node %d disconnecting from node %d (addr=%s)\n",
            node_id_, peer_node_id, peer_addr.c_str());
 
     // Get peer ID by address (this returns the PeerManager map key)
@@ -140,36 +139,28 @@ void SimulatedNode::DisconnectFrom(int peer_node_id) {
 
     // Debug: print all peers
     auto all_peers = peer_mgr.get_all_peers();
-    printf("[DEBUG] DisconnectFrom: Current peers:\n");
     for (const auto& p : all_peers) {
         if (p) {
-            printf("[DEBUG]   Peer: addr=%s, port=%u\n", p->address().c_str(), p->port());
         }
     }
 
     // Note: peer->port() returns the remote listen port (8333), not the connection port
     // So we search by address only
     int peer_manager_id = peer_mgr.find_peer_by_address(peer_addr, 8333);
-    printf("[DEBUG] DisconnectFrom: Looking for addr=%s port=8333, find_peer returned %d\n",
            peer_addr.c_str(), peer_manager_id);
 
     if (peer_manager_id >= 0) {
-        printf("[DEBUG] DisconnectFrom: MATCH! Found peer with manager_id=%d for addr=%s\n",
                peer_manager_id, peer_addr.c_str());
-        printf("[DEBUG] DisconnectFrom: Before disconnect - peer_count=%zu\n", network_manager_->active_peer_count());
         network_manager_->disconnect_from(peer_manager_id);
-        printf("[DEBUG] DisconnectFrom: After disconnect - peer_count=%zu\n", network_manager_->active_peer_count());
         stats_.disconnections++;
 
         // Process events to ensure disconnect is processed locally
         ProcessEvents();
-        printf("[DEBUG] DisconnectFrom: After ProcessEvents - peer_count=%zu\n", network_manager_->active_peer_count());
 
         // NOTE: The remote node won't know about the disconnect until it processes
         // the connection close event. The test should call AdvanceTime() and ProcessEvents()
         // on the remote node after calling DisconnectFrom().
     } else {
-        printf("[DEBUG] DisconnectFrom: No matching peer found for addr=%s\n", peer_addr.c_str());
     }
 }
 
@@ -204,14 +195,12 @@ uint256 SimulatedNode::MineBlock(const std::string& miner_address) {
         chainstate_->ActivateBestChain();
         stats_.blocks_mined++;
 
-        printf("[DEBUG] Node %d: After ActivateBestChain, tip height=%d, mined height=%d\n",
                node_id_, GetTipHeight(), pindex->nHeight);
 
         // Broadcast the block to peers via NetworkManager
         uint256 block_hash = header.GetHash();
         if (network_manager_) {
             size_t peer_count = network_manager_->active_peer_count();
-            printf("[DEBUG] Node %d: MineBlock calling relay_block, peers=%zu\n", node_id_, peer_count);
             network_manager_->relay_block(block_hash);
         }
 

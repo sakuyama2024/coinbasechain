@@ -637,7 +637,6 @@ TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
     // Therefore IBD should be true
     CHECK(node1.GetIsIBD() == true);
     CHECK(node2.GetIsIBD() == true);
-    printf("[DEBUG] At genesis: node1 IBD=%d, node2 IBD=%d (genesis time=1296688602, current time=%lu s)\n",
            node1.GetIsIBD(), node2.GetIsIBD(), time_ms / 1000);
 
     // Mine several blocks on node1 to exit IBD
@@ -652,13 +651,11 @@ TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
     // Node1 should now be out of IBD
     // (tip is recent, chainwork is sufficient)
     bool node1_ibd = node1.GetIsIBD();
-    printf("[DEBUG] After mining 10 blocks: node1 height=%d, IBD=%d\n",
            node1.GetTipHeight(), node1_ibd);
 
     // Note: IBD may still be true if chainwork threshold not met
     // Check what happened
     if (node1_ibd) {
-        printf("[DEBUG] Node1 still in IBD after 10 blocks (chainwork threshold not met yet)\n");
         // Mine more blocks
         for (int i = 0; i < 20; i++) {
             node1.MineBlock();
@@ -666,7 +663,6 @@ TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
             network.AdvanceTime(time_ms);
         }
         node1_ibd = node1.GetIsIBD();
-        printf("[DEBUG] After mining 30 total blocks: node1 height=%d, IBD=%d\n",
                node1.GetTipHeight(), node1_ibd);
     }
 
@@ -675,11 +671,9 @@ TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
 
     // Node2 is still at genesis with old timestamp, should still be in IBD
     CHECK(node2.GetIsIBD() == true);
-    printf("[DEBUG] node2 still at genesis: height=%d, IBD=%d\n",
            node2.GetTipHeight(), node2.GetIsIBD());
 
     // Connect nodes and sync
-    printf("[DEBUG] Connecting nodes...\n");
     node2.ConnectTo(1);
     time_ms += 200;
     network.AdvanceTime(time_ms);
@@ -691,7 +685,6 @@ TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
     }
 
     CHECK(node2.GetPeerCount() == 1);
-    printf("[DEBUG] Nodes connected, peers: node1=%zu, node2=%zu\n",
            node1.GetPeerCount(), node2.GetPeerCount());
 
     // Advance time to allow sync
@@ -702,13 +695,11 @@ TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
     }
 
     // Node2 should now be synced
-    printf("[DEBUG] After sync: node2 height=%d, node1 height=%d\n",
            node2.GetTipHeight(), node1.GetTipHeight());
     CHECK(node2.GetTipHeight() == node1.GetTipHeight());
 
     // Node2 should now be out of IBD (synced with recent blocks)
     bool node2_ibd = node2.GetIsIBD();
-    printf("[DEBUG] node2 after sync: IBD=%d\n", node2_ibd);
     CHECK(node2_ibd == false);
 
     // Verify IBD flag is latched (doesn't flip back)
@@ -717,7 +708,6 @@ TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
     CHECK(node1.GetIsIBD() == false);
     CHECK(node2.GetIsIBD() == false);
 
-    printf("[DEBUG] IBD test complete - flag correctly transitions from true->false and latches\n");
 }
 
 TEST_CASE("IBDTest - ReorgDuringSync", "[ibdtest][network]") {

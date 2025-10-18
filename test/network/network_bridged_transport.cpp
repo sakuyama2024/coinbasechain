@@ -34,20 +34,16 @@ void NetworkBridgedTransport::BridgedConnection::start() {
 bool NetworkBridgedTransport::BridgedConnection::send(const std::vector<uint8_t>& data) {
     if (!open_) return false;
 
-    printf("[DEBUG] BridgedConnection::send from node %d to node %d, size=%zu bytes (transport=%p, sim_network=%p)\n",
            transport_->node_id_, peer_node_id_, data.size(), (void*)transport_, (void*)(transport_ ? transport_->sim_network_ : nullptr));
 
     // Route through SimulatedNetwork
     if (transport_ && transport_->sim_network_) {
-        printf("[DEBUG] BridgedConnection::send: INSIDE if block, calling SendMessage on sim_network=%p\n", (void*)transport_->sim_network_);
         transport_->sim_network_->SendMessage(
             transport_->node_id_,
             peer_node_id_,
             data
         );
-        printf("[DEBUG] BridgedConnection::send: SendMessage returned successfully\n");
     } else {
-        printf("[DEBUG] BridgedConnection::send FAILED: transport or sim_network is null!\n");
     }
 
     return true;
@@ -58,7 +54,6 @@ void NetworkBridgedTransport::BridgedConnection::close() {
         return;  // Already closed
     }
 
-    printf("[DEBUG] BridgedConnection::close from node %d to node %d\n",
            transport_->node_id_, peer_node_id_);
 
     // Notify local side
@@ -103,7 +98,6 @@ void NetworkBridgedTransport::BridgedConnection::close_from_remote() {
         return;  // Already closed
     }
 
-    printf("[DEBUG] BridgedConnection::close_from_remote from node %d to node %d\n",
            transport_->node_id_, peer_node_id_);
 
     // Notify local side only (don't notify remote - they initiated the close)
@@ -280,7 +274,6 @@ void NetworkBridgedTransport::deliver_message(
 }
 
 void NetworkBridgedTransport::notify_peer_disconnect(int peer_node_id, int disconnecting_node_id) {
-    printf("[DEBUG] NetworkBridgedTransport::notify_peer_disconnect: node %d notifying node %d of disconnect\n",
            node_id_, peer_node_id);
 
     // Route through SimulatedNetwork to notify the remote peer
@@ -290,7 +283,6 @@ void NetworkBridgedTransport::notify_peer_disconnect(int peer_node_id, int disco
 }
 
 void NetworkBridgedTransport::handle_remote_disconnect(int disconnecting_node_id) {
-    printf("[DEBUG] NetworkBridgedTransport::handle_remote_disconnect: node %d handling disconnect from node %d\n",
            node_id_, disconnecting_node_id);
 
     // Find the connection for this peer
@@ -315,7 +307,6 @@ void NetworkBridgedTransport::handle_remote_disconnect(int disconnecting_node_id
 
         // Close the connection from the remote side
         if (connection && connection->is_open()) {
-            printf("[DEBUG] NetworkBridgedTransport::handle_remote_disconnect: closing connection and calling callback\n");
 
             // Clean up from maps
             {
