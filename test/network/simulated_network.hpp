@@ -71,6 +71,7 @@ public:
         std::vector<uint8_t> data;
         uint64_t delivery_time_ms;  // When to deliver this message
         size_t bytes;
+        uint64_t sequence_number;   // For stable ordering when delivery_time is equal
     };
 
     SimulatedNetwork(uint64_t seed = 0);
@@ -152,6 +153,9 @@ private:
 
     // Current simulation time
     uint64_t current_time_ms_ = 0;
+
+    // Message sequence counter (for stable ordering when delivery_time is equal)
+    uint64_t message_sequence_ = 0;
 
     // Global network conditions
     NetworkConditions global_conditions_;

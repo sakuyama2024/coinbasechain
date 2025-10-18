@@ -28,6 +28,9 @@ set(RANDOMX_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(randomx)
 
+# Get randomx include directory
+FetchContent_GetProperties(randomx)
+
 # spdlog for logging
 message(STATUS "Fetching spdlog v1.12.0...")
 FetchContent_Declare(
@@ -56,6 +59,14 @@ add_executable(genesis_miner
     ${COINBASE_ROOT}/src/primitives/block.cpp
     ${COINBASE_ROOT}/src/util/logging.cpp
 )
+
+# Add randomx include directory
+if(randomx_POPULATED)
+    target_include_directories(genesis_miner PRIVATE ${randomx_SOURCE_DIR}/src)
+endif()
+
+# Disable optimized SHA256 (SSE4/AVX2/SHANI) since we don't have implementation files
+target_compile_definitions(genesis_miner PRIVATE DISABLE_OPTIMIZED_SHA256)
 
 target_link_libraries(genesis_miner PRIVATE
     Threads::Threads

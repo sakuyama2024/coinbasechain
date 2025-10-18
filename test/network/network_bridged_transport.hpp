@@ -3,6 +3,7 @@
 
 #include "network/transport.hpp"
 #include "simulated_network.hpp"
+#include <atomic>
 #include <map>
 #include <mutex>
 #include <memory>

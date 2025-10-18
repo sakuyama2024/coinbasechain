@@ -1,0 +1,28 @@
+# OSS-Fuzz project configuration for CoinbaseChain
+homepage: "https://github.com/unicitynetwork/coinbasechain"
+language: c++
+primary_contact: "security@unicity.network"
+auto_ccs:
+  - "dev@unicity.network"
+
+# Sanitizers to run
+sanitizers:
+  - address
+  - undefined
+  - memory
+
+# Fuzzing engines
+fuzzing_engines:
+  - libfuzzer
+  - afl
+  - honggfuzz
+
+# Main language
+main_repo: "https://github.com/unicitynetwork/coinbasechain.git"
+
+# File issue tracker
+file_github_issue: true
+
+# Vendor ccs (optional - add specific maintainer emails)
+vendor_ccs:
+  - "maintainer@unicity.network"

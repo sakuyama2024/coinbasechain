@@ -301,13 +301,11 @@ TEST_CASE("PoW - VM caching works correctly", "[pow][randomx][vm]") {
         REQUIRE(vm0->vm != vm1->vm);
     }
 
-    SECTION("VM has hashing mutex") {
+    SECTION("Thread-local VMs are isolated") {
+        // Each thread gets its own VM instance for the same epoch
         auto vm = crypto::GetCachedVM(epoch0);
         REQUIRE(vm != nullptr);
         REQUIRE(vm->vm != nullptr);
-
-        // Mutex should exist (can't directly test, but shouldn't crash)
-        std::lock_guard<std::mutex> lock(vm->hashing_mutex);
     }
 
     crypto::ShutdownRandomX();

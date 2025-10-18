@@ -320,7 +320,8 @@ TEST_CASE("arith_uint256 compact format", "[arith_uint]")
         bool negative = false;
         bool overflow = false;
 
-        value.SetCompact(0x01800000, &negative, &overflow);
+        // 0x03803f00 = size:3, sign bit set, mantissa:0x003f00
+        value.SetCompact(0x03803f00, &negative, &overflow);
 
         REQUIRE(negative);
         REQUIRE_FALSE(overflow);
@@ -332,8 +333,8 @@ TEST_CASE("arith_uint256 compact format", "[arith_uint]")
         bool negative = false;
         bool overflow = false;
 
-        // Size > 34 bytes causes overflow
-        value.SetCompact(0x23000000, &negative, &overflow);
+        // Size > 34 bytes causes overflow (size=35, mantissa=0x01)
+        value.SetCompact(0x23010000, &negative, &overflow);
 
         REQUIRE(overflow);
     }

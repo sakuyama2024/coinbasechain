@@ -3,11 +3,11 @@
 
 #include "network/protocol.hpp"
 #include "primitives/block.h"
-#include <vector>
-#include <memory>
-#include <cstdint>
-#include <string>
 #include <array>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
 
 namespace coinbasechain {
 namespace message {
@@ -22,19 +22,19 @@ class MessageDeserializer;
  */
 class VarInt {
 public:
-    uint64_t value;
+  uint64_t value;
 
-    VarInt() : value(0) {}
-    explicit VarInt(uint64_t v) : value(v) {}
+  VarInt() : value(0) {}
+  explicit VarInt(uint64_t v) : value(v) {}
 
-    // Get encoded size in bytes
-    size_t encoded_size() const;
+  // Get encoded size in bytes
+  size_t encoded_size() const;
 
-    // Encode to buffer
-    size_t encode(uint8_t* buffer) const;
+  // Encode to buffer
+  size_t encode(uint8_t *buffer) const;
 
-    // Decode from buffer, returns bytes consumed
-    size_t decode(const uint8_t* buffer, size_t available);
+  // Decode from buffer, returns bytes consumed
+  size_t decode(const uint8_t *buffer, size_t available);
 };
 
 /**
@@ -42,36 +42,37 @@ public:
  */
 class MessageSerializer {
 public:
-    MessageSerializer();
+  MessageSerializer();
 
-    // Write primitives
-    void write_uint8(uint8_t value);
-    void write_uint16(uint16_t value);
-    void write_uint32(uint32_t value);
-    void write_uint64(uint64_t value);
-    void write_int32(int32_t value);
-    void write_int64(int64_t value);
-    void write_bool(bool value);
+  // Write primitives
+  void write_uint8(uint8_t value);
+  void write_uint16(uint16_t value);
+  void write_uint32(uint32_t value);
+  void write_uint64(uint64_t value);
+  void write_int32(int32_t value);
+  void write_int64(int64_t value);
+  void write_bool(bool value);
 
-    // Write variable-length
-    void write_varint(uint64_t value);
-    void write_string(const std::string& str);
-    void write_bytes(const uint8_t* data, size_t len);
-    void write_bytes(const std::vector<uint8_t>& data);
+  // Write variable-length
+  void write_varint(uint64_t value);
+  void write_string(const std::string &str);
+  void write_bytes(const uint8_t *data, size_t len);
+  void write_bytes(const std::vector<uint8_t> &data);
 
-    // Write protocol structures
-    void write_network_address(const protocol::NetworkAddress& addr, bool include_timestamp = false);
-    void write_inventory_vector(const protocol::InventoryVector& inv);
+  // Write protocol structures
+  void write_network_address(const protocol::NetworkAddress &addr,
+                             bool include_timestamp = false);
+  void write_inventory_vector(const protocol::InventoryVector &inv);
 
-    // Get serialized data
-    const std::vector<uint8_t>& data() const { return buffer_; }
-    size_t size() const { return buffer_.size(); }
+  // Get serialized data
+  const std::vector<uint8_t> &data() const { return buffer_; }
+  size_t size() const { return buffer_.size(); }
 
-    // Clear buffer
-    void clear() { buffer_.clear(); }
+  // Clear buffer
+  void clear() { buffer_.clear(); }
 
 private:
-    std::vector<uint8_t> buffer_;
+  std::vector<uint8_t> buffer_;
 };
 
 /**
@@ -79,40 +80,40 @@ private:
  */
 class MessageDeserializer {
 public:
-    MessageDeserializer(const uint8_t* data, size_t size);
-    MessageDeserializer(const std::vector<uint8_t>& data);
+  MessageDeserializer(const uint8_t *data, size_t size);
+  MessageDeserializer(const std::vector<uint8_t> &data);
 
-    // Read primitives
-    uint8_t read_uint8();
-    uint16_t read_uint16();
-    uint32_t read_uint32();
-    uint64_t read_uint64();
-    int32_t read_int32();
-    int64_t read_int64();
-    bool read_bool();
+  // Read primitives
+  uint8_t read_uint8();
+  uint16_t read_uint16();
+  uint32_t read_uint32();
+  uint64_t read_uint64();
+  int32_t read_int32();
+  int64_t read_int64();
+  bool read_bool();
 
-    // Read variable-length
-    uint64_t read_varint();
-    std::string read_string();
-    std::vector<uint8_t> read_bytes(size_t count);
+  // Read variable-length
+  uint64_t read_varint();
+  std::string read_string();
+  std::vector<uint8_t> read_bytes(size_t count);
 
-    // Read protocol structures
-    protocol::NetworkAddress read_network_address(bool has_timestamp = false);
-    protocol::TimestampedAddress read_timestamped_address();
-    protocol::InventoryVector read_inventory_vector();
+  // Read protocol structures
+  protocol::NetworkAddress read_network_address(bool has_timestamp = false);
+  protocol::TimestampedAddress read_timestamped_address();
+  protocol::InventoryVector read_inventory_vector();
 
-    // State
-    size_t bytes_remaining() const { return size_ - position_; }
-    size_t position() const { return position_; }
-    bool has_error() const { return error_; }
+  // State
+  size_t bytes_remaining() const { return size_ - position_; }
+  size_t position() const { return position_; }
+  bool has_error() const { return error_; }
 
 private:
-    const uint8_t* data_;
-    size_t size_;
-    size_t position_;
-    bool error_;
+  const uint8_t *data_;
+  size_t size_;
+  size_t position_;
+  bool error_;
 
-    void check_available(size_t bytes);
+  void check_available(size_t bytes);
 };
 
 /**
@@ -120,16 +121,16 @@ private:
  */
 class Message {
 public:
-    virtual ~Message() = default;
+  virtual ~Message() = default;
 
-    // Get command name for this message type
-    virtual std::string command() const = 0;
+  // Get command name for this message type
+  virtual std::string command() const = 0;
 
-    // Serialize message payload
-    virtual std::vector<uint8_t> serialize() const = 0;
+  // Serialize message payload
+  virtual std::vector<uint8_t> serialize() const = 0;
 
-    // Deserialize message payload (returns true on success)
-    virtual bool deserialize(const uint8_t* data, size_t size) = 0;
+  // Deserialize message payload (returns true on success)
+  virtual bool deserialize(const uint8_t *data, size_t size) = 0;
 };
 
 /**
@@ -137,21 +138,21 @@ public:
  */
 class VersionMessage : public Message {
 public:
-    int32_t version;
-    uint64_t services;
-    int64_t timestamp;
-    protocol::NetworkAddress addr_recv;
-    protocol::NetworkAddress addr_from;
-    uint64_t nonce;
-    std::string user_agent;
-    int32_t start_height;
-    bool relay;  // BIP37 - relay transactions
+  int32_t version;
+  uint64_t services;
+  int64_t timestamp;
+  protocol::NetworkAddress addr_recv;
+  protocol::NetworkAddress addr_from;
+  uint64_t nonce;
+  std::string user_agent;
+  int32_t start_height;
+  bool relay; // BIP37 - relay transactions
 
-    VersionMessage();
+  VersionMessage();
 
-    std::string command() const override { return protocol::commands::VERSION; }
-    std::vector<uint8_t> serialize() const override;
-    bool deserialize(const uint8_t* data, size_t size) override;
+  std::string command() const override { return protocol::commands::VERSION; }
+  std::vector<uint8_t> serialize() const override;
+  bool deserialize(const uint8_t *data, size_t size) override;
 };
 
 /**
@@ -159,11 +160,11 @@ public:
  */
 class VerackMessage : public Message {
 public:
-    VerackMessage() = default;
+  VerackMessage() = default;
 
-    std::string command() const override { return protocol::commands::VERACK; }
-    std::vector<uint8_t> serialize() const override;
-    bool deserialize(const uint8_t* data, size_t size) override;
+  std::string command() const override { return protocol::commands::VERACK; }
+  std::vector<uint8_t> serialize() const override;
+  bool deserialize(const uint8_t *data, size_t size) override;
 };
 
 /**
@@ -171,14 +172,14 @@ public:
  */
 class PingMessage : public Message {
 public:
-    uint64_t nonce;
+  uint64_t nonce;
 
-    PingMessage() : nonce(0) {}
-    explicit PingMessage(uint64_t n) : nonce(n) {}
+  PingMessage() : nonce(0) {}
+  explicit PingMessage(uint64_t n) : nonce(n) {}
 
-    std::string command() const override { return protocol::commands::PING; }
-    std::vector<uint8_t> serialize() const override;
-    bool deserialize(const uint8_t* data, size_t size) override;
+  std::string command() const override { return protocol::commands::PING; }
+  std::vector<uint8_t> serialize() const override;
+  bool deserialize(const uint8_t *data, size_t size) override;
 };
 
 /**
@@ -186,14 +187,14 @@ public:
  */
 class PongMessage : public Message {
 public:
-    uint64_t nonce;
+  uint64_t nonce;
 
-    PongMessage() : nonce(0) {}
-    explicit PongMessage(uint64_t n) : nonce(n) {}
+  PongMessage() : nonce(0) {}
+  explicit PongMessage(uint64_t n) : nonce(n) {}
 
-    std::string command() const override { return protocol::commands::PONG; }
-    std::vector<uint8_t> serialize() const override;
-    bool deserialize(const uint8_t* data, size_t size) override;
+  std::string command() const override { return protocol::commands::PONG; }
+  std::vector<uint8_t> serialize() const override;
+  bool deserialize(const uint8_t *data, size_t size) override;
 };
 
 /**
@@ -201,13 +202,13 @@ public:
  */
 class AddrMessage : public Message {
 public:
-    std::vector<protocol::TimestampedAddress> addresses;
+  std::vector<protocol::TimestampedAddress> addresses;
 
-    AddrMessage() = default;
+  AddrMessage() = default;
 
-    std::string command() const override { return protocol::commands::ADDR; }
-    std::vector<uint8_t> serialize() const override;
-    bool deserialize(const uint8_t* data, size_t size) override;
+  std::string command() const override { return protocol::commands::ADDR; }
+  std::vector<uint8_t> serialize() const override;
+  bool deserialize(const uint8_t *data, size_t size) override;
 };
 
 /**
@@ -215,11 +216,11 @@ public:
  */
 class GetAddrMessage : public Message {
 public:
-    GetAddrMessage() = default;
+  GetAddrMessage() = default;
 
-    std::string command() const override { return protocol::commands::GETADDR; }
-    std::vector<uint8_t> serialize() const override;
-    bool deserialize(const uint8_t* data, size_t size) override;
+  std::string command() const override { return protocol::commands::GETADDR; }
+  std::vector<uint8_t> serialize() const override;
+  bool deserialize(const uint8_t *data, size_t size) override;
 };
 
 /**
@@ -227,13 +228,13 @@ public:
  */
 class InvMessage : public Message {
 public:
-    std::vector<protocol::InventoryVector> inventory;
+  std::vector<protocol::InventoryVector> inventory;
 
-    InvMessage() = default;
+  InvMessage() = default;
 
-    std::string command() const override { return protocol::commands::INV; }
-    std::vector<uint8_t> serialize() const override;
-    bool deserialize(const uint8_t* data, size_t size) override;
+  std::string command() const override { return protocol::commands::INV; }
+  std::vector<uint8_t> serialize() const override;
+  bool deserialize(const uint8_t *data, size_t size) override;
 };
 
 /**
@@ -241,13 +242,13 @@ public:
  */
 class GetDataMessage : public Message {
 public:
-    std::vector<protocol::InventoryVector> inventory;
+  std::vector<protocol::InventoryVector> inventory;
 
-    GetDataMessage() = default;
+  GetDataMessage() = default;
 
-    std::string command() const override { return protocol::commands::GETDATA; }
-    std::vector<uint8_t> serialize() const override;
-    bool deserialize(const uint8_t* data, size_t size) override;
+  std::string command() const override { return protocol::commands::GETDATA; }
+  std::vector<uint8_t> serialize() const override;
+  bool deserialize(const uint8_t *data, size_t size) override;
 };
 
 /**
@@ -255,13 +256,13 @@ public:
  */
 class NotFoundMessage : public Message {
 public:
-    std::vector<protocol::InventoryVector> inventory;
+  std::vector<protocol::InventoryVector> inventory;
 
-    NotFoundMessage() = default;
+  NotFoundMessage() = default;
 
-    std::string command() const override { return protocol::commands::NOTFOUND; }
-    std::vector<uint8_t> serialize() const override;
-    bool deserialize(const uint8_t* data, size_t size) override;
+  std::string command() const override { return protocol::commands::NOTFOUND; }
+  std::vector<uint8_t> serialize() const override;
+  bool deserialize(const uint8_t *data, size_t size) override;
 };
 
 /**
@@ -269,15 +270,17 @@ public:
  */
 class GetHeadersMessage : public Message {
 public:
-    uint32_t version;
-    std::vector<std::array<uint8_t, 32>> block_locator_hashes;
-    std::array<uint8_t, 32> hash_stop;
+  uint32_t version;
+  std::vector<std::array<uint8_t, 32>> block_locator_hashes;
+  std::array<uint8_t, 32> hash_stop;
 
-    GetHeadersMessage();
+  GetHeadersMessage();
 
-    std::string command() const override { return protocol::commands::GETHEADERS; }
-    std::vector<uint8_t> serialize() const override;
-    bool deserialize(const uint8_t* data, size_t size) override;
+  std::string command() const override {
+    return protocol::commands::GETHEADERS;
+  }
+  std::vector<uint8_t> serialize() const override;
+  bool deserialize(const uint8_t *data, size_t size) override;
 };
 
 /**
@@ -286,13 +289,13 @@ public:
  */
 class HeadersMessage : public Message {
 public:
-    std::vector<::CBlockHeader> headers;
+  std::vector<::CBlockHeader> headers;
 
-    HeadersMessage() = default;
+  HeadersMessage() = default;
 
-    std::string command() const override { return protocol::commands::HEADERS; }
-    std::vector<uint8_t> serialize() const override;
-    bool deserialize(const uint8_t* data, size_t size) override;
+  std::string command() const override { return protocol::commands::HEADERS; }
+  std::vector<uint8_t> serialize() const override;
+  bool deserialize(const uint8_t *data, size_t size) override;
 };
 
 /**
@@ -300,28 +303,30 @@ public:
  */
 
 // Compute SHA-256 hash
-std::array<uint8_t, 32> sha256(const uint8_t* data, size_t size);
-std::array<uint8_t, 32> sha256(const std::vector<uint8_t>& data);
+std::array<uint8_t, 32> sha256(const uint8_t *data, size_t size);
+std::array<uint8_t, 32> sha256(const std::vector<uint8_t> &data);
 
 // Compute double SHA-256 (hash of hash)
-std::array<uint8_t, 32> double_sha256(const uint8_t* data, size_t size);
-std::array<uint8_t, 32> double_sha256(const std::vector<uint8_t>& data);
+std::array<uint8_t, 32> double_sha256(const uint8_t *data, size_t size);
+std::array<uint8_t, 32> double_sha256(const std::vector<uint8_t> &data);
 
 // Compute message checksum (first 4 bytes of double SHA-256)
-std::array<uint8_t, 4> compute_checksum(const std::vector<uint8_t>& payload);
+std::array<uint8_t, 4> compute_checksum(const std::vector<uint8_t> &payload);
 
 // Create message header with checksum
-protocol::MessageHeader create_header(uint32_t magic, const std::string& command,
-                                      const std::vector<uint8_t>& payload);
+protocol::MessageHeader create_header(uint32_t magic,
+                                      const std::string &command,
+                                      const std::vector<uint8_t> &payload);
 
 // Serialize header to bytes
-std::vector<uint8_t> serialize_header(const protocol::MessageHeader& header);
+std::vector<uint8_t> serialize_header(const protocol::MessageHeader &header);
 
 // Deserialize header from bytes
-bool deserialize_header(const uint8_t* data, size_t size, protocol::MessageHeader& header);
+bool deserialize_header(const uint8_t *data, size_t size,
+                        protocol::MessageHeader &header);
 
 // Factory function to create message from command name
-std::unique_ptr<Message> create_message(const std::string& command);
+std::unique_ptr<Message> create_message(const std::string &command);
 
 } // namespace message
 } // namespace coinbasechain

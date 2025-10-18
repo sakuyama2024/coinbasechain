@@ -54,6 +54,7 @@ public:
     int GetTipHeight() const;
     uint256 GetTipHash() const;
     const chain::CBlockIndex* GetTip() const;
+    bool GetIsIBD() const;
 
     // Network state
     size_t GetPeerCount() const;

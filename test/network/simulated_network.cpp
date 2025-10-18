@@ -9,7 +9,12 @@ namespace test {
 SimulatedNetwork::SimulatedNetwork(uint64_t seed)
     : rng_(seed),
       message_queue_([](const PendingMessage& a, const PendingMessage& b) {
-          return a.delivery_time_ms > b.delivery_time_ms;  // Min-heap
+          // Min-heap: smaller delivery_time has priority
+          // If delivery times are equal, use sequence number to maintain FIFO order
+          if (a.delivery_time_ms != b.delivery_time_ms) {
+              return a.delivery_time_ms > b.delivery_time_ms;
+          }
+          return a.sequence_number > b.sequence_number;
       })
 {
     // Initialize mock time to match simulated time (start at 1 second, not 0)
@@ -32,9 +37,6 @@ void SimulatedNetwork::SetLinkConditions(int from_node, int to_node, const Netwo
 }
 
 void SimulatedNetwork::SendMessage(int from_node, int to_node, const std::vector<uint8_t>& data) {
-    printf("[DEBUG] SendMessage ENTRY: this=%p, from=%d, to=%d, size=%zu\n",
-           (void*)this, from_node, to_node, data.size());
-
     stats_.total_messages_sent++;
     stats_.total_bytes_sent += data.size();
     stats_.messages_per_node[from_node]++;
@@ -42,44 +44,35 @@ void SimulatedNetwork::SendMessage(int from_node, int to_node, const std::vector
     // Check network partition
     if (partition_.active && IsPartitioned(from_node, to_node)) {
         stats_.total_messages_dropped++;
-        printf("[DEBUG] SendMessage: DROPPED by partition\n");
         return;  // Message blocked by partition
     }
 
     // Check packet loss
     if (ShouldDropMessage(from_node, to_node)) {
         stats_.total_messages_dropped++;
-        printf("[DEBUG] SendMessage: DROPPED by packet loss\n");
         return;
     }
 
     // Calculate delivery time
     uint64_t delivery_time = CalculateDeliveryTime(from_node, to_node, data.size());
 
-    // Enqueue message
+    // Enqueue message with sequence number for stable ordering
     PendingMessage msg;
     msg.from_node = from_node;
     msg.to_node = to_node;
     msg.data = data;
     msg.delivery_time_ms = delivery_time;
     msg.bytes = data.size();
-
-    printf("[DEBUG] SendMessage: from=%d, to=%d, delivery_time=%lu ms, QUEUED\n",
-           from_node, to_node, delivery_time);
+    msg.sequence_number = message_sequence_++;  // Assign unique sequence for FIFO ordering
 
     message_queue_.push(std::move(msg));
 }
 
 void SimulatedNetwork::RegisterConnection(int from_node, int to_node) {
     active_connections_.insert({from_node, to_node});
-    printf("[DEBUG] SimulatedNetwork::RegisterConnection: %d -> %d (total connections: %zu)\n",
-           from_node, to_node, active_connections_.size());
 }
 
 void SimulatedNetwork::NotifyDisconnect(int from_node, int to_node) {
-    printf("[DEBUG] SimulatedNetwork::NotifyDisconnect: node %d disconnecting from node %d\n",
-           from_node, to_node);
-
     // Remove from active connections (both directions)
     active_connections_.erase({from_node, to_node});
     active_connections_.erase({to_node, from_node});
@@ -91,7 +84,11 @@ void SimulatedNetwork::NotifyDisconnect(int from_node, int to_node) {
         std::vector<PendingMessage>,
         std::function<bool(const PendingMessage&, const PendingMessage&)>
     > new_queue([](const PendingMessage& a, const PendingMessage& b) {
-        return a.delivery_time_ms > b.delivery_time_ms;  // Min-heap
+        // Min-heap with sequence tiebreaker (same as constructor)
+        if (a.delivery_time_ms != b.delivery_time_ms) {
+            return a.delivery_time_ms > b.delivery_time_ms;
+        }
+        return a.sequence_number > b.sequence_number;
     });
 
     size_t purged_count = 0;
@@ -104,24 +101,18 @@ void SimulatedNetwork::NotifyDisconnect(int from_node, int to_node) {
             new_queue.push(msg);
         } else {
             purged_count++;
-            printf("[DEBUG] SimulatedNetwork::NotifyDisconnect: Purging queued message from %d to %d\n",
-                   msg.from_node, msg.to_node);
         }
 
         message_queue_.pop();
     }
 
     message_queue_ = std::move(new_queue);
-    printf("[DEBUG] SimulatedNetwork::NotifyDisconnect: Purged %zu queued messages\n", purged_count);
 
     // Find the transport for the target node and notify
     auto it = transports_.find(to_node);
     if (it != transports_.end() && it->second) {
-        printf("[DEBUG] SimulatedNetwork::NotifyDisconnect: Found transport for node %d, calling handle_remote_disconnect\n", to_node);
         // Call handle_remote_disconnect on the remote transport
         it->second->handle_remote_disconnect(from_node);
-    } else {
-        printf("[DEBUG] SimulatedNetwork::NotifyDisconnect: No transport found for node %d\n", to_node);
     }
 }
 
@@ -157,7 +148,9 @@ size_t SimulatedNetwork::AdvanceTime(uint64_t new_time_ms) {
 
     // Synchronize util::GetTime() with simulated time
     // Convert milliseconds to seconds for the time mock
-    util::SetMockTime(static_cast<int64_t>(current_time_ms_ / 1000));
+    // IMPORTANT: SetMockTime(0) means "disable mocking", so always use at least 1
+    int64_t mock_time_seconds = std::max(int64_t(1), static_cast<int64_t>(current_time_ms_ / 1000));
+    util::SetMockTime(mock_time_seconds);
 
     // Process messages and events in multiple rounds to handle message chains
     // (e.g., INV -> GETHEADERS -> HEADERS)
@@ -172,7 +165,6 @@ size_t SimulatedNetwork::AdvanceTime(uint64_t new_time_ms) {
 
         // DEBUG: Log round activity
         if (delivered > 0) {
-            printf("[DEBUG] AdvanceTime round %d: delivered %zu messages\n", round, delivered);
         }
 
         // Process io_context events on all nodes
@@ -206,11 +198,9 @@ void SimulatedNetwork::CreatePartition(const std::vector<int>& group_a, const st
 }
 
 void SimulatedNetwork::HealPartition() {
-    printf("[DEBUG] SimulatedNetwork::HealPartition: partition healing, setting active=false\n");
     partition_.active = false;
     partition_.group_a.clear();
     partition_.group_b.clear();
-    printf("[DEBUG] SimulatedNetwork::HealPartition: partition healed\n");
 }
 
 bool SimulatedNetwork::IsPartitioned(int node_a, int node_b) const {

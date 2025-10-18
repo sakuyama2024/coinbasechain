@@ -387,8 +387,13 @@ TEST_CASE("IBDTest - LargeChainSync", "[ibdtest][network]") {
     SimulatedNode syncing_node(2, &network);
 
     // Build a 2500 block chain (exceeds single HEADERS message limit of 2000)
+    // Advance time by 1 second per block to satisfy timestamp validation
+    // (each block must have timestamp > median of previous 11 blocks)
     printf("[IBD] Building 2500 block chain (this will take a moment)...\n");
+    uint64_t time_ms = 1000;  // Start at 1 second
     for (int i = 0; i < 2500; i++) {
+        time_ms += 1000;  // 1 second per block
+        network.AdvanceTime(time_ms);
         miner.MineBlock();
         if (i % 500 == 0) {
             printf("[IBD] ...mined %d blocks\n", i);
@@ -396,23 +401,35 @@ TEST_CASE("IBDTest - LargeChainSync", "[ibdtest][network]") {
     }
     CHECK(miner.GetTipHeight() == 2500);
 
+    // Jump forward in time to make the mined blocks appear "old"
+    // Blocks 0-2500 have timestamps 1-2501 seconds
+    // We need tip to appear >3600 seconds old for IsSynced() to return false
+    time_ms = 10000000;  // Jump to ~10000 seconds
+    network.AdvanceTime(time_ms);
+
     // Connect and sync
     printf("[IBD] Syncing node connecting...\n");
     syncing_node.ConnectTo(1);
 
-    uint64_t time_ms = 100;
+    time_ms += 100;
     network.AdvanceTime(time_ms);  // Handshake
 
     // Need more time for multiple GETHEADERS/HEADERS round trips
     // 2500 blocks = 2 batches (2000 + 500)
-    for (int i = 0; i < 100; i++) {  // More iterations for larger sync
-        time_ms += 200;
-        network.AdvanceTime(time_ms);
+    // Note: announce_tip_to_peers() throttles to 30 seconds, so we need >= 30s per iteration
+    // Also: AdvanceTime processes messages in rounds, and multi-batch sync needs extra time
+    for (int i = 0; i < 10; i++) {  // Fewer, longer iterations for multi-batch sync
+        time_ms += 35000;  // 35 seconds per iteration (exceeds 30s throttle)
+        size_t delivered = network.AdvanceTime(time_ms);
 
         // Log progress
-        if (i % 20 == 0) {
-            printf("[IBD] Sync progress: %d/%d blocks\n",
-                   syncing_node.GetTipHeight(), miner.GetTipHeight());
+        printf("[IBD] Iteration %d: delivered %zu messages, height %d/%d\n",
+               i, delivered, syncing_node.GetTipHeight(), miner.GetTipHeight());
+
+        // Break early if fully synced
+        if (syncing_node.GetTipHeight() == miner.GetTipHeight()) {
+            printf("[IBD] Sync complete at iteration %d\n", i);
+            break;
         }
     }
 
@@ -432,29 +449,44 @@ TEST_CASE("IBDTest - SyncWhileMining", "[ibdtest][network]") {
     SimulatedNode syncing_node(2, &network);
 
     // Miner starts with 100 blocks
+    // Advance time by 1 second per block to satisfy timestamp validation
+    uint64_t time_ms = 1000;  // Start at 1 second
     for (int i = 0; i < 100; i++) {
+        time_ms += 1000;  // 1 second per block
+        network.AdvanceTime(time_ms);
         miner.MineBlock();
     }
 
+    // Jump forward in time to make blocks appear old
+    time_ms = 10000000;  // Jump to ~10000 seconds
+    network.AdvanceTime(time_ms);
+
     // Start sync
     syncing_node.ConnectTo(1);
-    uint64_t time_ms = 100;
+    time_ms += 100;
     network.AdvanceTime(time_ms);
 
     // Interleave: advance time for sync, miner mines more blocks
+    // Note: announce_tip_to_peers() throttles to 30 seconds, so we need >= 30s total per round
     for (int round = 0; round < 20; round++) {
-        // Advance sync
+        // Advance sync (need at least 30s to bypass throttle)
         for (int i = 0; i < 5; i++) {
-            time_ms += 100;
+            time_ms += 7000;  // 7 seconds each = 35s total per round
             network.AdvanceTime(time_ms);
         }
 
         // Miner mines 5 more blocks
         for (int i = 0; i < 5; i++) {
-            miner.MineBlock();
-            time_ms += 50;
+            time_ms += 1000;  // 1 second per block
             network.AdvanceTime(time_ms);
+            miner.MineBlock();
         }
+    }
+
+    // Final sync round to process last messages
+    for (int i = 0; i < 5; i++) {
+        time_ms += 7000;
+        network.AdvanceTime(time_ms);
     }
 
     // Syncing node should eventually catch up to moving target
@@ -572,9 +604,104 @@ TEST_CASE("IBDTest - SyncAfterDisconnect", "[ibdtest][network]") {
 
 TEST_CASE("IBDTest - IsInitialBlockDownloadFlag", "[ibdtest][network]") {
     // Test that IsInitialBlockDownload() flag is set correctly during sync
-    // This would require exposing IBD status from SimulatedNode
-    // TODO: Add GetIsIBD() method to SimulatedNode if needed
-    SKIP("Requires GetIsIBD() method on SimulatedNode");
+    //
+    // IBD flag should be:
+    // - true at genesis (no tip or old tip)
+    // - false after syncing sufficient blocks with recent timestamp
+    // - latched to false (doesn't flip back to true)
+
+    printf("\n=== TEST: IBDTest - IsInitialBlockDownloadFlag ===\n");
+
+    // Create simulated network
+    SimulatedNetwork network(12345);
+
+    // Zero latency for this test
+    SimulatedNetwork::NetworkConditions conditions;
+    conditions.latency_min = std::chrono::milliseconds(0);
+    conditions.latency_max = std::chrono::milliseconds(0);
+    conditions.jitter_max = std::chrono::milliseconds(0);
+    network.SetNetworkConditions(conditions);
+
+    // RegTest genesis has timestamp 1296688602 (Feb 2, 2011)
+    // Start simulation at a much later time (2024) to make genesis appear "old"
+    // This simulates a node starting up many years after genesis
+    uint64_t time_ms = 1700000000000ULL;  // ~2023 in Unix time (milliseconds)
+    network.AdvanceTime(time_ms);
+
+    SimulatedNode node1(1, &network);
+    SimulatedNode node2(2, &network);
+
+    // At genesis, the tip is from 2011 (~1296688602 seconds)
+    // Current time is ~2023 (~1700000000 seconds)
+    // Genesis is VERY old: 1296688602 < 1700000000 - 3600 = true
+    // Therefore IBD should be true
+    CHECK(node1.GetIsIBD() == true);
+    CHECK(node2.GetIsIBD() == true);
+
+    // Mine several blocks on node1 to exit IBD
+    // IBD requires: (1) recent tip timestamp, (2) sufficient chainwork
+    // Mining 10 blocks should be sufficient
+    for (int i = 0; i < 10; i++) {
+        node1.MineBlock();
+        time_ms += 200;
+        network.AdvanceTime(time_ms);
+    }
+
+    // Node1 should now be out of IBD
+    // (tip is recent, chainwork is sufficient)
+    bool node1_ibd = node1.GetIsIBD();
+
+    // Note: IBD may still be true if chainwork threshold not met
+    // Check what happened
+    if (node1_ibd) {
+        // Mine more blocks
+        for (int i = 0; i < 20; i++) {
+            node1.MineBlock();
+            time_ms += 200;
+            network.AdvanceTime(time_ms);
+        }
+        node1_ibd = node1.GetIsIBD();
+    }
+
+    // Node1 should definitely be out of IBD now
+    CHECK(node1_ibd == false);
+
+    // Node2 is still at genesis with old timestamp, should still be in IBD
+    CHECK(node2.GetIsIBD() == true);
+
+    // Connect nodes and sync
+    node2.ConnectTo(1);
+    time_ms += 200;
+    network.AdvanceTime(time_ms);
+
+    // Wait for handshake
+    for (int i = 0; i < 10 && node2.GetPeerCount() == 0; i++) {
+        time_ms += 200;
+        network.AdvanceTime(time_ms);
+    }
+
+    CHECK(node2.GetPeerCount() == 1);
+
+    // Advance time to allow sync
+    // Headers should propagate and node2 should sync
+    for (int i = 0; i < 50; i++) {
+        time_ms += 200;
+        network.AdvanceTime(time_ms);
+    }
+
+    // Node2 should now be synced
+    CHECK(node2.GetTipHeight() == node1.GetTipHeight());
+
+    // Node2 should now be out of IBD (synced with recent blocks)
+    bool node2_ibd = node2.GetIsIBD();
+    CHECK(node2_ibd == false);
+
+    // Verify IBD flag is latched (doesn't flip back)
+    // Even if we advance time significantly, IBD should stay false
+    // because the latch is permanent once set
+    CHECK(node1.GetIsIBD() == false);
+    CHECK(node2.GetIsIBD() == false);
+
 }
 
 TEST_CASE("IBDTest - ReorgDuringSync", "[ibdtest][network]") {
@@ -1311,11 +1438,10 @@ TEST_CASE("ScaleTest - HundredNodes", "[scaletest][network]") {
     std::cout << "Nodes synced: " << synced << "/100\n";
 }
 
-TEST_CASE("ScaleTest - ThousandNodeStressTest", "[scaletest][network]") {
+TEST_CASE("ScaleTest - ThousandNodeStressTest", "[.][scaletest][network]") {
     // This test verifies the harness can handle 1000+ nodes
-    // Disabled by default (slow)
-
-    SKIP("Skipping stress test (slow)");
+    // Disabled by default (slow) - hidden from default runs with [.] tag
+    // Run explicitly with: ./coinbasechain_tests "[scaletest]"
 
     SimulatedNetwork network(12345);
     std::vector<std::unique_ptr<SimulatedNode>> nodes;
