@@ -74,6 +74,11 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
 
   uint256 seedHash = GetSeedHash(nEpoch);
   randomx_flags flags = randomx_get_flags();
+#ifdef __SANITIZE_ADDRESS__
+  // Disable JIT under AddressSanitizer - incompatible with ASan instrumentation
+  flags = static_cast<randomx_flags>(flags & ~RANDOMX_FLAG_JIT);
+  flags |= RANDOMX_FLAG_SECURE;
+#endif
 
   // Get or create thread-local cache (JIT VMs cannot safely share cache across
   // threads)
@@ -103,9 +108,15 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   auto vmWrapper = std::make_shared<RandomXVMWrapper>(myVM, myCache);
   t_vm_cache[nEpoch] = vmWrapper;
 
-  LOG_CRYPTO_INFO("Created thread-local RandomX VM for epoch {} (JIT enabled, "
-                  "isolated cache)",
-                  nEpoch);
+  LOG_CRYPTO_INFO(
+      "Created thread-local RandomX VM for epoch {} ({})",
+      nEpoch,
+#ifdef __SANITIZE_ADDRESS__
+      "JIT disabled under ASan, isolated cache"
+#else
+      "JIT enabled, isolated cache"
+#endif
+  );
 
   return vmWrapper;
 }
@@ -158,6 +169,11 @@ randomx_vm *CreateVMForEpoch(uint32_t nEpoch) {
 
   uint256 seedHash = GetSeedHash(nEpoch);
   randomx_flags flags = randomx_get_flags();
+#ifdef __SANITIZE_ADDRESS__
+  // Disable JIT under AddressSanitizer - incompatible with ASan instrumentation
+  flags = static_cast<randomx_flags>(flags & ~RANDOMX_FLAG_JIT);
+  flags |= RANDOMX_FLAG_SECURE;
+#endif
 
   // Get or create thread-local cache (JIT VMs cannot safely share cache across
   // threads)
