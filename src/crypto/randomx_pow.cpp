@@ -90,11 +90,13 @@ private:
   std::list<K> access_order_;
 };
 
-// Global caches
+// Global cache (shared across threads, read-only after initialization)
 static std::unique_ptr<LRUCache<uint32_t, std::shared_ptr<RandomXCacheWrapper>>>
     g_cache_rx_cache;
-static std::unique_ptr<LRUCache<uint32_t, std::shared_ptr<RandomXVMWrapper>>>
-    g_cache_rx_vm_light;
+
+// Thread-local VM storage (each thread gets its own VM)
+static thread_local std::map<uint32_t, std::shared_ptr<RandomXVMWrapper>>
+    t_vm_cache;
 
 static bool g_randomx_initialized = false;
 
@@ -116,60 +118,52 @@ uint256 GetSeedHash(uint32_t nEpoch) {
   return h2;
 }
 
-// Get or create VM for an epoch
-// VMs use RANDOMX_FLAG_SECURE (interpreter mode) for thread-safe operation with
-// mutex
+// Get or create thread-local VM for an epoch
+// Each thread gets its own VM instance for thread safety with JIT
 std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   if (!g_randomx_initialized) {
     throw std::runtime_error("RandomX not initialized");
   }
 
-  // Check if light mode VM exists
-  if (g_cache_rx_vm_light->contains(nEpoch)) {
-    return g_cache_rx_vm_light->get(nEpoch);
+  // Check if this thread already has a VM for this epoch
+  auto it = t_vm_cache.find(nEpoch);
+  if (it != t_vm_cache.end()) {
+    return it->second;
   }
 
   uint256 seedHash = GetSeedHash(nEpoch);
-
-  // Use RANDOMX_FLAG_SECURE to disable JIT and enable interpreter mode
-  // This makes the VM thread-safe when used with mutex protection
   randomx_flags flags = randomx_get_flags();
-  flags |=
-      RANDOMX_FLAG_SECURE; // Force interpreter mode (thread-safe with mutex)
 
-  std::lock_guard<std::mutex> lock(g_randomx_mutex);
-
-  // Double-check after acquiring lock
-  if (g_cache_rx_vm_light->contains(nEpoch)) {
-    return g_cache_rx_vm_light->get(nEpoch);
-  }
-
-  // Create or get cache
+  // Get or create shared cache (protected by mutex)
   std::shared_ptr<RandomXCacheWrapper> myCache;
-  if (g_cache_rx_cache->contains(nEpoch)) {
-    myCache = g_cache_rx_cache->get(nEpoch);
-  } else {
-    randomx_cache *pCache = randomx_alloc_cache(flags);
-    if (!pCache) {
-      throw std::runtime_error("Failed to allocate RandomX cache");
-    }
-    randomx_init_cache(pCache, seedHash.data(), seedHash.size());
-    myCache = std::make_shared<RandomXCacheWrapper>(pCache);
-    g_cache_rx_cache->insert(nEpoch, myCache);
+  {
+    std::lock_guard<std::mutex> lock(g_randomx_mutex);
 
-    LOG_CRYPTO_INFO("Created RandomX cache for epoch {}", nEpoch);
+    if (g_cache_rx_cache->contains(nEpoch)) {
+      myCache = g_cache_rx_cache->get(nEpoch);
+    } else {
+      randomx_cache *pCache = randomx_alloc_cache(flags);
+      if (!pCache) {
+        throw std::runtime_error("Failed to allocate RandomX cache");
+      }
+      randomx_init_cache(pCache, seedHash.data(), seedHash.size());
+      myCache = std::make_shared<RandomXCacheWrapper>(pCache);
+      g_cache_rx_cache->insert(nEpoch, myCache);
+
+      LOG_CRYPTO_INFO("Created RandomX cache for epoch {}", nEpoch);
+    }
   }
 
-  // Create light mode VM with SECURE flag (interpreter mode)
+  // Create thread-local VM (no lock needed, each thread has its own)
   randomx_vm *myVM = randomx_create_vm(flags, myCache->cache, nullptr);
   if (!myVM) {
     throw std::runtime_error("Failed to create RandomX VM");
   }
 
   auto vmWrapper = std::make_shared<RandomXVMWrapper>(myVM, myCache);
-  g_cache_rx_vm_light->insert(nEpoch, vmWrapper);
+  t_vm_cache[nEpoch] = vmWrapper;
 
-  LOG_CRYPTO_INFO("Created RandomX VM for epoch {} (secure interpreter mode)",
+  LOG_CRYPTO_INFO("Created thread-local RandomX VM for epoch {} (JIT enabled)",
                   nEpoch);
 
   return vmWrapper;
@@ -199,14 +193,11 @@ void InitRandomX(int vmCacheSize, bool fastMode) {
 
   g_cache_rx_cache = std::make_unique<
       LRUCache<uint32_t, std::shared_ptr<RandomXCacheWrapper>>>(vmCacheSize);
-  g_cache_rx_vm_light =
-      std::make_unique<LRUCache<uint32_t, std::shared_ptr<RandomXVMWrapper>>>(
-          vmCacheSize);
 
   g_randomx_initialized = true;
 
-  LOG_CRYPTO_INFO("RandomX initialized (cache size: {}, secure interpreter "
-                  "mode for thread safety)",
+  LOG_CRYPTO_INFO("RandomX initialized with thread-local VMs (cache size: {}, "
+                  "JIT enabled for performance)",
                   vmCacheSize);
 }
 
@@ -217,15 +208,13 @@ void ShutdownRandomX() {
     return;
   }
 
-  g_cache_rx_vm_light->clear();
   g_cache_rx_cache->clear();
-
-  g_cache_rx_vm_light.reset();
   g_cache_rx_cache.reset();
 
   g_randomx_initialized = false;
 
-  LOG_CRYPTO_INFO("RandomX shutdown complete");
+  LOG_CRYPTO_INFO("RandomX shutdown complete (thread-local VMs cleaned up "
+                  "automatically)");
 }
 
 randomx_vm *CreateVMForEpoch(uint32_t nEpoch) {

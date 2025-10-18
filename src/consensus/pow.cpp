@@ -293,11 +293,8 @@ bool CheckProofOfWork(const CBlockHeader &block, uint32_t nBits,
     CBlockHeader tmp(block);
     tmp.hashRandomX.SetNull();
 
-    // Calculate hash (thread-safe with mutex)
-    {
-      std::lock_guard<std::mutex> lock(vmRef->hashing_mutex);
-      randomx_calculate_hash(vmRef->vm, &tmp, sizeof(tmp), rx_hash);
-    }
+    // Calculate hash (thread-safe via thread-local VM)
+    randomx_calculate_hash(vmRef->vm, &tmp, sizeof(tmp), rx_hash);
 
     // If not mining, compare hash in block header with our computed value
     if (mode != crypto::POWVerifyMode::MINING) {
