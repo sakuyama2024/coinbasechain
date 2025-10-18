@@ -74,9 +74,14 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
 
   uint256 seedHash = GetSeedHash(nEpoch);
   randomx_flags flags = randomx_get_flags();
-#if defined(__SANITIZE_ADDRESS__) || defined(__has_feature)
-#if defined(__SANITIZE_ADDRESS__) || __has_feature(address_sanitizer)
-  // Disable JIT under AddressSanitizer - incompatible with ASan instrumentation
+// Detect AddressSanitizer (both GCC and Clang)
+#if defined(__SANITIZE_ADDRESS__)
+  // GCC AddressSanitizer
+  flags = static_cast<randomx_flags>(flags & ~RANDOMX_FLAG_JIT);
+  flags |= RANDOMX_FLAG_SECURE;
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+  // Clang AddressSanitizer
   flags = static_cast<randomx_flags>(flags & ~RANDOMX_FLAG_JIT);
   flags |= RANDOMX_FLAG_SECURE;
 #endif
@@ -111,9 +116,14 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   t_vm_cache[nEpoch] = vmWrapper;
 
   LOG_CRYPTO_INFO("Created thread-local RandomX VM for epoch {} ({})", nEpoch,
-#if defined(__SANITIZE_ADDRESS__) ||                                           \
-    (defined(__has_feature) && __has_feature(address_sanitizer))
+#if defined(__SANITIZE_ADDRESS__)
                   "JIT disabled under ASan, isolated cache"
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+                  "JIT disabled under ASan, isolated cache"
+#else
+                  "JIT enabled, isolated cache"
+#endif
 #else
                   "JIT enabled, isolated cache"
 #endif
@@ -170,9 +180,14 @@ randomx_vm *CreateVMForEpoch(uint32_t nEpoch) {
 
   uint256 seedHash = GetSeedHash(nEpoch);
   randomx_flags flags = randomx_get_flags();
-#if defined(__SANITIZE_ADDRESS__) || defined(__has_feature)
-#if defined(__SANITIZE_ADDRESS__) || __has_feature(address_sanitizer)
-  // Disable JIT under AddressSanitizer - incompatible with ASan instrumentation
+// Detect AddressSanitizer (both GCC and Clang)
+#if defined(__SANITIZE_ADDRESS__)
+  // GCC AddressSanitizer
+  flags = static_cast<randomx_flags>(flags & ~RANDOMX_FLAG_JIT);
+  flags |= RANDOMX_FLAG_SECURE;
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+  // Clang AddressSanitizer
   flags = static_cast<randomx_flags>(flags & ~RANDOMX_FLAG_JIT);
   flags |= RANDOMX_FLAG_SECURE;
 #endif
