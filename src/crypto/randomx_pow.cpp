@@ -30,7 +30,8 @@ struct RandomXCacheWrapper {
   }
 };
 
-// Thread-local cache storage (each thread gets its own cache AND VM for JIT safety)
+// Thread-local cache storage (each thread gets its own cache AND VM for JIT
+// safety)
 static thread_local std::map<uint32_t, std::shared_ptr<RandomXCacheWrapper>>
     t_cache_storage;
 
@@ -74,7 +75,8 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   uint256 seedHash = GetSeedHash(nEpoch);
   randomx_flags flags = randomx_get_flags();
 
-  // Get or create thread-local cache (JIT VMs cannot safely share cache across threads)
+  // Get or create thread-local cache (JIT VMs cannot safely share cache across
+  // threads)
   std::shared_ptr<RandomXCacheWrapper> myCache;
   auto cache_it = t_cache_storage.find(nEpoch);
   if (cache_it != t_cache_storage.end()) {
@@ -91,7 +93,8 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
     LOG_CRYPTO_INFO("Created thread-local RandomX cache for epoch {}", nEpoch);
   }
 
-  // Create thread-local VM (no lock needed, each thread has its own cache and VM)
+  // Create thread-local VM (no lock needed, each thread has its own cache and
+  // VM)
   randomx_vm *myVM = randomx_create_vm(flags, myCache->cache, nullptr);
   if (!myVM) {
     throw std::runtime_error("Failed to create RandomX VM");
@@ -100,7 +103,8 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   auto vmWrapper = std::make_shared<RandomXVMWrapper>(myVM, myCache);
   t_vm_cache[nEpoch] = vmWrapper;
 
-  LOG_CRYPTO_INFO("Created thread-local RandomX VM for epoch {} (JIT enabled, isolated cache)",
+  LOG_CRYPTO_INFO("Created thread-local RandomX VM for epoch {} (JIT enabled, "
+                  "isolated cache)",
                   nEpoch);
 
   return vmWrapper;
@@ -155,7 +159,8 @@ randomx_vm *CreateVMForEpoch(uint32_t nEpoch) {
   uint256 seedHash = GetSeedHash(nEpoch);
   randomx_flags flags = randomx_get_flags();
 
-  // Get or create thread-local cache (JIT VMs cannot safely share cache across threads)
+  // Get or create thread-local cache (JIT VMs cannot safely share cache across
+  // threads)
   std::shared_ptr<RandomXCacheWrapper> myCache;
   auto cache_it = t_cache_storage.find(nEpoch);
   if (cache_it != t_cache_storage.end()) {
@@ -169,9 +174,9 @@ randomx_vm *CreateVMForEpoch(uint32_t nEpoch) {
     myCache = std::make_shared<RandomXCacheWrapper>(pCache);
     t_cache_storage[nEpoch] = myCache;
 
-    LOG_CRYPTO_INFO(
-        "Created thread-local RandomX cache for epoch {} (for parallel verification)",
-        nEpoch);
+    LOG_CRYPTO_INFO("Created thread-local RandomX cache for epoch {} (for "
+                    "parallel verification)",
+                    nEpoch);
   }
 
   // Create a new VM from the thread-local cache
