@@ -41,10 +41,10 @@ TEST_CASE("ChainstateManager thread safety", "[validation][threading]") {
         std::vector<std::thread> threads;
 
         auto worker = [&](int thread_id) {
-            // Create thread-local RandomX VM for mining
+            // Get thread-local RandomX VM for mining (JIT-enabled, thread-safe)
             uint32_t nEpoch = crypto::GetEpoch(static_cast<uint32_t>(std::time(nullptr)),
                                                params->GetConsensus().nRandomXEpochDuration);
-            randomx_vm* threadVM = crypto::CreateVMForEpoch(nEpoch);
+            auto vmWrapper = crypto::GetCachedVM(nEpoch);
 
             for (int i = 0; i < BLOCKS_PER_THREAD; i++) {
                 // Create a block extending current tip
@@ -65,7 +65,7 @@ TEST_CASE("ChainstateManager thread safety", "[validation][threading]") {
                 while (true) {
                     CBlockHeader tmp(header);
                     tmp.hashRandomX.SetNull();
-                    randomx_calculate_hash(threadVM, &tmp, sizeof(tmp), rx_hash);
+                    randomx_calculate_hash(vmWrapper->vm, &tmp, sizeof(tmp), rx_hash);
                     randomx_hash = uint256(std::vector<unsigned char>(rx_hash, rx_hash + RANDOMX_HASH_SIZE));
 
                     if (UintToArith256(crypto::GetRandomXCommitment(header, &randomx_hash)) <=
@@ -87,9 +87,7 @@ TEST_CASE("ChainstateManager thread safety", "[validation][threading]") {
                     failed_accepts++;
                 }
             }
-
-            // Clean up thread-local VM
-            randomx_destroy_vm(threadVM);
+            // vmWrapper cleans up automatically via RAII
         };
 
         // Launch threads
