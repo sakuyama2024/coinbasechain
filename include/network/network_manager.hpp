@@ -2,12 +2,12 @@
 #define COINBASECHAIN_NETWORK_MANAGER_HPP
 
 #include "chain/chainparams.hpp"
+#include "chain/block.hpp"
 #include "network/addr_manager.hpp"
 #include "network/nat_manager.hpp"
 #include "network/peer_manager.hpp"
 #include "network/transport.hpp"
-#include "sync/banman.hpp"
-#include "sync/header_sync.hpp"
+#include "network/banman.hpp"
 #include <atomic>
 #include <boost/asio.hpp>
 #include <chrono>
@@ -51,7 +51,8 @@ public:
 
   NetworkManager(validation::ChainstateManager &chainstate_manager,
                  const Config &config = Config{},
-                 std::shared_ptr<Transport> transport = nullptr);
+                 std::shared_ptr<Transport> transport = nullptr,
+                 boost::asio::io_context* external_io_context = nullptr);
   ~NetworkManager();
 
   // Lifecycle
@@ -62,8 +63,7 @@ public:
   // Component access
   PeerManager &peer_manager() { return *peer_manager_; }
   AddressManager &address_manager() { return *addr_manager_; }
-  sync::HeaderSync &header_sync() { return *header_sync_; }
-  sync::BanMan &ban_man() { return *ban_man_; }
+  network::BanMan &ban_man() { return *ban_man_; }
 
   // Manual connection management
   bool connect_to(const std::string &address, uint16_t port);
@@ -99,8 +99,9 @@ private:
   // Transport layer (either real TCP or simulated for testing)
   std::shared_ptr<Transport> transport_;
 
-  // IO context (may be owned by transport or local)
-  boost::asio::io_context io_context_;
+  // IO context (may be external or owned locally)
+  std::unique_ptr<boost::asio::io_context> owned_io_context_;  // Only used if no external io_context provided
+  boost::asio::io_context& io_context_;  // Reference to either external or owned
   std::unique_ptr<
       boost::asio::executor_work_guard<boost::asio::io_context::executor_type>>
       work_guard_;
@@ -111,9 +112,12 @@ private:
   std::unique_ptr<PeerManager> peer_manager_;
   validation::ChainstateManager
       &chainstate_manager_; // Reference to Application's ChainstateManager
-  std::unique_ptr<sync::HeaderSync> header_sync_;
-  std::unique_ptr<sync::BanMan> ban_man_;
+  std::unique_ptr<network::BanMan> ban_man_;
   std::unique_ptr<NATManager> nat_manager_;
+
+  // Header sync state (moved from HeaderSync class)
+  mutable std::mutex header_sync_mutex_;
+  size_t last_batch_size_{0};  // Size of last headers batch received
 
   // Periodic tasks
   std::unique_ptr<boost::asio::steady_timer> connect_timer_;
@@ -133,6 +137,7 @@ private:
       0}; // Last time we announced (mockable time)
 
   // Connection management
+  void bootstrap_from_fixed_seeds(const chain::ChainParams &params);
   void attempt_outbound_connections();
   void schedule_next_connection_attempt();
 
@@ -154,6 +159,12 @@ private:
   void request_headers_from_peer(PeerPtr peer);
   bool handle_headers_message(PeerPtr peer, message::HeadersMessage *msg);
   bool handle_getheaders_message(PeerPtr peer, message::GetHeadersMessage *msg);
+
+  // Header sync internal methods (moved from HeaderSync class)
+  bool is_synced(int64_t max_age_seconds = 3600) const;
+  bool should_request_more() const;
+  CBlockLocator get_locator() const;
+  CBlockLocator get_locator_from_prev() const;
 
   // Block relay helpers
   bool handle_inv_message(PeerPtr peer, message::InvMessage *msg);

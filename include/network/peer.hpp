@@ -76,6 +76,9 @@ public:
   void send_message(std::unique_ptr<message::Message> msg);
   void set_message_handler(MessageHandler handler);
 
+  // Setters (called by PeerManager)
+  void set_id(int id) { id_ = id; }
+
   // Getters
   PeerState state() const { return state_; }
   bool is_connected() const {
@@ -89,7 +92,7 @@ public:
   std::string address() const;
   uint16_t port() const;
   bool is_inbound() const { return is_inbound_; }
-  uint64_t id() const { return id_; }
+  int id() const { return id_; }
 
   // Peer information from VERSION message
   int32_t version() const { return peer_version_; }
@@ -138,8 +141,7 @@ private:
 
   uint32_t network_magic_;
   bool is_inbound_;
-  uint64_t id_;
-  static std::atomic<uint64_t> next_id_;
+  int id_;  // Set by PeerManager when peer is added
 
   // Self-connection prevention
   uint64_t local_nonce_; // Our node's nonce

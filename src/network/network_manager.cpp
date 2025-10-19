@@ -2,11 +2,12 @@
 #include "chain/block_manager.hpp"
 #include "network/message.hpp"
 #include "network/real_transport.hpp"
-#include "primitives/block.h"
-#include "sync/peer_manager.hpp"
-#include "util/logging.hpp"
-#include "util/time.hpp"
-#include "validation/chainstate_manager.hpp"
+#include "network/protocol.hpp"
+#include "chain/block.hpp"
+#include "chain/logging.hpp"
+#include "chain/time.hpp"
+#include "chain/chainstate_manager.hpp"
+#include "chain/validation.hpp"
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -27,8 +28,11 @@ static uint64_t generate_nonce() {
 
 NetworkManager::NetworkManager(
     validation::ChainstateManager &chainstate_manager, const Config &config,
-    std::shared_ptr<Transport> transport)
+    std::shared_ptr<Transport> transport,
+    boost::asio::io_context* external_io_context)
     : config_(config), local_nonce_(generate_nonce()), transport_(transport),
+      owned_io_context_(external_io_context ? nullptr : std::make_unique<boost::asio::io_context>()),
+      io_context_(external_io_context ? *external_io_context : *owned_io_context_),
       chainstate_manager_(chainstate_manager) {
 
   // Create transport if not provided (use real TCP transport)
@@ -36,18 +40,15 @@ NetworkManager::NetworkManager(
     transport_ = std::make_shared<RealTransport>(config_.io_threads);
   }
 
-  LOG_NET_INFO("NetworkManager initialized with local nonce: {}", local_nonce_);
+  LOG_NET_INFO("NetworkManager initialized with local nonce: {} (external_io_context: {})",
+               local_nonce_, external_io_context ? "yes" : "no");
 
   // Create components
   addr_manager_ = std::make_unique<AddressManager>();
   peer_manager_ = std::make_unique<PeerManager>(io_context_, *addr_manager_);
 
-  // Create header sync using the chainstate manager
-  header_sync_ = std::make_unique<sync::HeaderSync>(
-      chainstate_manager_, chain::GlobalChainParams::Get());
-
   // Create BanMan (with datadir for persistent bans)
-  ban_man_ = std::make_unique<sync::BanMan>(config_.datadir);
+  ban_man_ = std::make_unique<network::BanMan>(config_.datadir);
   if (!config_.datadir.empty()) {
     ban_man_->Load(); // Load existing bans from disk
   }
@@ -118,6 +119,12 @@ bool NetworkManager::start() {
     if (LoadAnchors(anchors_path)) {
       LOG_NET_INFO("Loaded anchors, will connect to them first");
     }
+  }
+
+  // Bootstrap from fixed seeds if AddressManager is empty
+  // (matches Bitcoin's ThreadDNSAddressSeed logic: query all seeds if addrman.Size() == 0)
+  if (addr_manager_->size() == 0) {
+    bootstrap_from_fixed_seeds(chain::GlobalChainParams::Get());
   }
 
   // Schedule periodic tasks
@@ -303,6 +310,93 @@ bool NetworkManager::check_incoming_nonce(uint64_t nonce) const {
   return true; // OK
 }
 
+void NetworkManager::bootstrap_from_fixed_seeds(const chain::ChainParams &params) {
+  // Bootstrap AddressManager from hardcoded seed nodes
+  // (follows Bitcoin's ThreadDNSAddressSeed logic when addrman is empty)
+
+  const auto &fixed_seeds = params.FixedSeeds();
+
+  if (fixed_seeds.empty()) {
+    LOG_NET_DEBUG("No fixed seeds available for bootstrap");
+    return;
+  }
+
+  LOG_NET_INFO("Bootstrapping from {} fixed seed nodes", fixed_seeds.size());
+
+  // Use AddressManager's time format (seconds since epoch via system_clock)
+  uint32_t current_time = static_cast<uint32_t>(
+      std::chrono::system_clock::now().time_since_epoch().count() / 1000000000);
+  size_t added_count = 0;
+
+  // Parse each "IP:port" string and add to AddressManager
+  for (const auto &seed_str : fixed_seeds) {
+    // Parse IP:port format (e.g., "178.18.251.16:9590")
+    size_t colon_pos = seed_str.find(':');
+    if (colon_pos == std::string::npos) {
+      LOG_NET_WARN("Invalid seed format (missing port): {}", seed_str);
+      continue;
+    }
+
+    std::string ip_str = seed_str.substr(0, colon_pos);
+    std::string port_str = seed_str.substr(colon_pos + 1);
+
+    // Parse port
+    uint16_t port = 0;
+    try {
+      int port_int = std::stoi(port_str);
+      if (port_int <= 0 || port_int > 65535) {
+        LOG_NET_WARN("Invalid port in seed: {}", seed_str);
+        continue;
+      }
+      port = static_cast<uint16_t>(port_int);
+    } catch (const std::exception &e) {
+      LOG_NET_WARN("Failed to parse port in seed {}: {}", seed_str, e.what());
+      continue;
+    }
+
+    // Parse IP address using boost::asio
+    try {
+      boost::system::error_code ec;
+      auto ip_addr = boost::asio::ip::make_address(ip_str, ec);
+
+      if (ec) {
+        LOG_NET_WARN("Failed to parse IP in seed {}: {}", seed_str, ec.message());
+        continue;
+      }
+
+      // Create NetworkAddress
+      protocol::NetworkAddress addr;
+      addr.services = protocol::ServiceFlags::NODE_NETWORK;
+      addr.port = port;
+
+      // Convert to 16-byte IPv6 format (IPv4-mapped if needed)
+      if (ip_addr.is_v4()) {
+        // Convert IPv4 to IPv4-mapped IPv6 (::FFFF:x.x.x.x)
+        auto v6_mapped = boost::asio::ip::make_address_v6(
+            boost::asio::ip::v4_mapped, ip_addr.to_v4());
+        auto bytes = v6_mapped.to_bytes();
+        std::copy(bytes.begin(), bytes.end(), addr.ip.begin());
+      } else {
+        // Pure IPv6
+        auto bytes = ip_addr.to_v6().to_bytes();
+        std::copy(bytes.begin(), bytes.end(), addr.ip.begin());
+      }
+
+      // Add to AddressManager with current timestamp
+      if (addr_manager_->add(addr, current_time)) {
+        added_count++;
+        LOG_NET_DEBUG("Added seed node: {}", seed_str);
+      }
+
+    } catch (const std::exception &e) {
+      LOG_NET_WARN("Exception parsing seed {}: {}", seed_str, e.what());
+      continue;
+    }
+  }
+
+  LOG_NET_INFO("Successfully added {} seed nodes to AddressManager", added_count);
+}
+
 void NetworkManager::attempt_outbound_connections() {
   if (!running_.load(std::memory_order_acquire)) {
     return;
@@ -408,8 +502,7 @@ void NetworkManager::run_maintenance() {
     ban_man_->SweepBanned();
   }
 
-  // Periodically announce our tip to peers (matches Bitcoin's SendMessages
-  // logic)
+  // Periodically announce our tip to peers 
   announce_tip_to_peers();
 
   // Check for sync timeout (if we're syncing)
@@ -442,8 +535,7 @@ void NetworkManager::run_maintenance() {
     }
   }
 
-  // Check if we need to start initial sync (matches Bitcoin's SendMessages
-  // logic)
+  // Check if we need to start initial sync 
   check_initial_sync();
 }
 
@@ -466,7 +558,7 @@ void NetworkManager::check_initial_sync() {
   // Only actively request headers from a single peer (like Bitcoin's
   // nSyncStarted check)
 
-  if (!running_.load(std::memory_order_acquire) || !header_sync_) {
+  if (!running_.load(std::memory_order_acquire)) {
     return;
   }
 
@@ -540,10 +632,8 @@ void NetworkManager::setup_peer_message_handler(Peer *peer) {
         return handle_message(peer, std::move(msg));
       });
 
-  // Register peer in HeaderSync's PeerManager for DoS tracking
-  if (header_sync_) {
-    header_sync_->GetPeerManager().AddPeer(peer->id(), peer->address());
-  }
+  // No need to register peer - network::PeerManager already tracks all peers
+  // Misbehavior tracking is now handled by the unified PeerManager
 }
 
 bool NetworkManager::handle_message(PeerPtr peer,
@@ -553,6 +643,7 @@ bool NetworkManager::handle_message(PeerPtr peer,
   }
 
   const std::string &command = msg->command();
+  LOG_NET_TRACE("handle_message: peer={} command={}", peer->id(), command);
 
   // Handle peer ready notification (VERACK received)
   // Peer class handles VERACK internally and also passes it here so we know
@@ -649,14 +740,14 @@ bool NetworkManager::handle_message(PeerPtr peer,
 }
 
 void NetworkManager::request_headers_from_peer(PeerPtr peer) {
-  if (!peer || !header_sync_) {
+  if (!peer) {
     return;
   }
 
-  // Get block locator from header sync
+  // Get block locator from chainstate
   // For initial sync, use pprev trick
   // This ensures we get non-empty response even if peer is at same tip
-  CBlockLocator locator = header_sync_->GetLocatorFromPrev();
+  CBlockLocator locator = get_locator_from_prev();
 
   // Create GETHEADERS message
   auto msg = std::make_unique<message::GetHeadersMessage>();
@@ -680,49 +771,252 @@ void NetworkManager::request_headers_from_peer(PeerPtr peer) {
 
 bool NetworkManager::handle_headers_message(PeerPtr peer,
                                             message::HeadersMessage *msg) {
-  if (!peer || !msg || !header_sync_) {
+  if (!peer || !msg) {
     return false;
   }
 
-  LOG_NET_INFO("Received {} headers from peer {}", msg->headers.size(),
-               peer->id());
+  const auto &headers = msg->headers;
+  int peer_id = peer->id();
+
+  // Bitcoin Core approach: If the last header in this batch is already in our chain
+  // and is an ancestor of our best tip, skip all DoS checks for this entire batch.
+  // This prevents false positives when reconnecting to peers after manual InvalidateBlock.
+  bool skip_dos_checks = false;
+  if (!headers.empty()) {
+    const chain::CBlockIndex* last_header_index =
+        chainstate_manager_.LookupBlockIndex(headers.back().GetHash());
+    if (last_header_index && chainstate_manager_.IsOnActiveChain(last_header_index)) {
+      skip_dos_checks = true;
+      LOG_NET_TRACE("Peer {} sent {} headers, last is on active chain ({}), skipping DoS checks",
+                    peer_id, headers.size(), headers.back().GetHash().ToString().substr(0, 16));
+    }
+  }
+
+  LOG_NET_TRACE("Processing {} headers from peer {}, skip_dos_checks={}",
+                headers.size(), peer_id, skip_dos_checks);
 
   // Update last headers received timestamp (atomic store)
-  auto now = std::chrono::steady_clock::now();
+  auto now_tp = std::chrono::steady_clock::now();
   int64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                       now.time_since_epoch())
+                       now_tp.time_since_epoch())
                        .count();
   last_headers_received_.store(now_us, std::memory_order_release);
 
-  // Process headers through header sync
-  bool success = header_sync_->ProcessHeaders(msg->headers, peer->id());
+  // Process headers (logic moved from HeaderSync::ProcessHeaders)
+  if (headers.empty()) {
+    LOG_INFO("Received empty headers from peer {}", peer_id);
+    // Empty response means peer has no more headers
+    // Check if we should request more
+    bool should_request = should_request_more();
+    bool synced = is_synced();
+    if (should_request) {
+      request_headers_from_peer(peer);
+    } else if (synced) {
+      sync_peer_id_.store(0, std::memory_order_release);
+    }
+    return true;
+  }
 
-  if (!success) {
-    LOG_NET_ERROR("Failed to process headers from peer {}", peer->id());
-    // Reset sync peer so we can try another peer (atomic store)
-    sync_peer_id_.store(0, std::memory_order_release);
-
-    // Punish peer: Check if HeaderSync's PeerManager marked them for disconnect
-    auto &peer_sync_manager = header_sync_->GetPeerManager();
-    if (peer_sync_manager.ShouldDisconnect(peer->id())) {
-      // Peer misbehaved - discourage their address
+  // DoS Protection: Check headers message size limit
+  if (headers.size() > protocol::MAX_HEADERS_SIZE) {
+    LOG_ERROR("Rejecting oversized headers message from peer {} (size={}, max={})",
+              peer_id, headers.size(), protocol::MAX_HEADERS_SIZE);
+    peer_manager_->ReportOversizedMessage(peer_id);
+    // Check if peer should be disconnected
+    if (peer_manager_->ShouldDisconnect(peer_id)) {
       if (ban_man_) {
         ban_man_->Discourage(peer->address());
       }
-      // Disconnect the peer
-      peer_manager_->remove_peer(peer->id());
+      peer_manager_->remove_peer(peer_id);
     }
-
+    sync_peer_id_.store(0, std::memory_order_release);
     return false;
   }
 
+  LOG_INFO("Processing {} headers from peer {}", headers.size(), peer_id);
+
+  // DoS Protection: Check if first header connects to known chain
+  const uint256 &first_prev = headers[0].hashPrevBlock;
+  bool prev_exists = chainstate_manager_.LookupBlockIndex(first_prev) != nullptr;
+
+  if (!prev_exists) {
+    LOG_WARN("Headers don't connect to known chain from peer {} (first header prevhash: {})",
+             peer_id, first_prev.ToString());
+    peer_manager_->IncrementUnconnectingHeaders(peer_id);
+    // Check if peer should be disconnected
+    if (peer_manager_->ShouldDisconnect(peer_id)) {
+      if (ban_man_) {
+        ban_man_->Discourage(peer->address());
+      }
+      peer_manager_->remove_peer(peer_id);
+    }
+    sync_peer_id_.store(0, std::memory_order_release);
+    return false;
+  }
+
+  // Headers connect - reset unconnecting counter
+  peer_manager_->ResetUnconnectingHeaders(peer_id);
+
+  // DoS Protection: Cheap PoW commitment check
+  bool pow_ok = chainstate_manager_.CheckHeadersPoW(headers);
+  if (!pow_ok) {
+    LOG_ERROR("Headers failed PoW commitment check from peer {}", peer_id);
+    peer_manager_->ReportInvalidPoW(peer_id);
+    if (peer_manager_->ShouldDisconnect(peer_id)) {
+      if (ban_man_) {
+        ban_man_->Discourage(peer->address());
+      }
+      peer_manager_->remove_peer(peer_id);
+    }
+    sync_peer_id_.store(0, std::memory_order_release);
+    return false;
+  }
+
+  // DoS Protection: Check headers are continuous
+  bool continuous_ok = validation::CheckHeadersAreContinuous(headers);
+  if (!continuous_ok) {
+    LOG_ERROR("Non-continuous headers from peer {}", peer_id);
+    peer_manager_->ReportNonContinuousHeaders(peer_id);
+    if (peer_manager_->ShouldDisconnect(peer_id)) {
+      if (ban_man_) {
+        ban_man_->Discourage(peer->address());
+      }
+      peer_manager_->remove_peer(peer_id);
+    }
+    sync_peer_id_.store(0, std::memory_order_release);
+    return false;
+  }
+
+  // Store batch size under lock
+  {
+    std::lock_guard<std::mutex> lock(header_sync_mutex_);
+    last_batch_size_ = headers.size();
+  }
+
+  // Accept all headers into block index
+  for (const auto &header : headers) {
+    validation::ValidationState state;
+    chain::CBlockIndex *pindex =
+        chainstate_manager_.AcceptBlockHeader(header, state, peer_id);
+
+    if (!pindex) {
+      const std::string &reason = state.GetRejectReason();
+
+      // Orphaned header - not an error
+      if (reason == "orphaned") {
+        LOG_INFO("Header from peer {} cached as orphan: {}",
+                 peer_id, header.GetHash().ToString().substr(0, 16));
+        continue;
+      }
+
+      // DoS Protection: Orphan limit exceeded
+      if (reason == "orphan-limit") {
+        LOG_WARN("Peer {} exceeded orphan limit", peer_id);
+        peer_manager_->ReportTooManyOrphans(peer_id);
+        if (peer_manager_->ShouldDisconnect(peer_id)) {
+          if (ban_man_) {
+            ban_man_->Discourage(peer->address());
+          }
+          peer_manager_->remove_peer(peer_id);
+        }
+        sync_peer_id_.store(0, std::memory_order_release);
+        return false;
+      }
+
+      // Duplicate header - Bitcoin Core approach: only penalize if it's a duplicate of an INVALID header
+      if (reason == "duplicate") {
+        const chain::CBlockIndex* existing = chainstate_manager_.LookupBlockIndex(header.GetHash());
+        LOG_NET_TRACE("Duplicate header from peer {}: {} (existing={}, valid={}, skip_dos_checks={})",
+                      peer_id, header.GetHash().ToString().substr(0, 16),
+                      existing ? "yes" : "no", existing ? existing->IsValid() : false, skip_dos_checks);
+
+        // Bitcoin Core approach: If we're skipping DoS checks (last header was on active chain),
+        // don't penalize for any duplicates. This handles manual InvalidateBlock correctly.
+        if (skip_dos_checks) {
+          LOG_NET_TRACE("Skipping DoS check for duplicate header (batch contains ancestors)");
+          continue;  // Skip this header, process next one (no penalty)
+        }
+
+        if (existing && existing->IsValid()) {
+          // Header already accepted and valid - not an attack, just redundant
+          LOG_NET_TRACE("Duplicate header is valid, skipping (no penalty)");
+          continue;  // Skip this header, process next one (no penalty)
+        }
+
+        // If we get here: duplicate invalid header AND not an ancestor
+        // This means peer is sending blocks that failed consensus validation
+        LOG_NET_WARN("Peer {} sent duplicate INVALID header (not an ancestor): {}",
+                     peer_id, header.GetHash().ToString().substr(0, 16));
+        peer_manager_->ReportInvalidHeader(peer_id, reason);
+        if (peer_manager_->ShouldDisconnect(peer_id)) {
+          if (ban_man_) {
+            ban_man_->Discourage(peer->address());
+          }
+          peer_manager_->remove_peer(peer_id);
+        }
+        sync_peer_id_.store(0, std::memory_order_release);
+        return false;
+      }
+
+      // Invalid header - instant disconnect
+      if (reason == "high-hash" || reason == "bad-diffbits" ||
+          reason == "time-too-old" || reason == "time-too-new" ||
+          reason == "bad-version" ||
+          reason == "bad-prevblk" || reason == "bad-genesis" ||
+          reason == "genesis-via-accept") {
+        LOG_ERROR("Peer {} sent invalid header: {}", peer_id, reason);
+        peer_manager_->ReportInvalidHeader(peer_id, reason);
+        if (peer_manager_->ShouldDisconnect(peer_id)) {
+          if (ban_man_) {
+            ban_man_->Discourage(peer->address());
+          }
+          peer_manager_->remove_peer(peer_id);
+        }
+        sync_peer_id_.store(0, std::memory_order_release);
+        return false;
+      }
+
+      // Unknown rejection reason - log and fail
+      LOG_ERROR("Failed to accept header from peer {} - Hash: {}, Reason: {}, Debug: {}",
+                peer_id, header.GetHash().ToString(), reason, state.GetDebugMessage());
+      sync_peer_id_.store(0, std::memory_order_release);
+      return false;
+    }
+
+    // Add to candidate set for batch activation
+    chainstate_manager_.TryAddBlockIndexCandidate(pindex);
+  }
+
+  // Activate best chain ONCE for the entire batch
+  LOG_INFO("Calling ActivateBestChain for batch of {} headers", headers.size());
+  bool activate_result = chainstate_manager_.ActivateBestChain(nullptr);
+  LOG_INFO("ActivateBestChain returned {}", activate_result ? "true" : "FALSE");
+  if (!activate_result) {
+    sync_peer_id_.store(0, std::memory_order_release);
+    return false;
+  }
+
+  // Show progress during IBD or new block notification
+  if (chainstate_manager_.IsInitialBlockDownload()) {
+    const chain::CBlockIndex *tip = chainstate_manager_.GetTip();
+    if (tip) {
+      LOG_INFO("Synchronizing block headers, height: {}", tip->nHeight);
+    }
+  } else {
+    const chain::CBlockIndex *tip = chainstate_manager_.GetTip();
+    if (tip) {
+      LOG_INFO("New block header: height={}, hash={}...", tip->nHeight,
+               tip->GetBlockHash().ToString().substr(0, 16));
+    }
+  }
+
   // Check if we should request more headers
-  bool should_request = header_sync_->ShouldRequestMore();
-  bool is_synced = header_sync_->IsSynced();
+  bool should_request = should_request_more();
+  bool synced = is_synced();
 
   if (should_request) {
     request_headers_from_peer(peer);
-  } else if (is_synced) {
+  } else if (synced) {
     // Reset sync peer - we're done syncing (atomic store)
     sync_peer_id_.store(0, std::memory_order_release);
   }
@@ -826,7 +1120,7 @@ std::vector<protocol::NetworkAddress> NetworkManager::GetAnchors() const {
     }
   }
 
-  // Limit to 2-3 anchors (Bitcoin Core uses 2)
+  // Limit to 2 anchors 
   const size_t MAX_ANCHORS = 2;
   size_t count = std::min(connected_peers.size(), MAX_ANCHORS);
 
@@ -999,7 +1293,7 @@ bool NetworkManager::LoadAnchors(const std::string &filepath) {
       }
     }
 
-    // Delete the anchors file after reading (Bitcoin Core behavior)
+    // Delete the anchors file after reading
     // This prevents using stale anchors after a crash
     std::filesystem::remove(filepath);
     LOG_NET_DEBUG("Deleted anchors file after reading");
@@ -1142,6 +1436,51 @@ void NetworkManager::relay_block(const uint256 &block_hash) {
         sent_count++;
       }
     }
+  }
+}
+
+// Header sync helper methods (moved from HeaderSync class)
+
+bool NetworkManager::is_synced(int64_t max_age_seconds) const {
+  const chain::CBlockIndex *tip = chainstate_manager_.GetTip();
+  if (!tip) {
+    return false;
+  }
+
+  // Check if tip is recent (use util::GetTime() to support mock time in tests)
+  int64_t now = util::GetTime();
+  int64_t tip_age = now - tip->nTime;
+
+  return tip_age < max_age_seconds;
+}
+
+bool NetworkManager::should_request_more() const {
+  // Request more if:
+  // 1. Last batch was full (peer might have more)
+  // 2. We're not synced yet
+  std::lock_guard<std::mutex> lock(header_sync_mutex_);
+  return last_batch_size_ == protocol::MAX_HEADERS_SIZE && !is_synced();
+}
+
+CBlockLocator NetworkManager::get_locator() const {
+  return chainstate_manager_.GetLocator();
+}
+
+CBlockLocator NetworkManager::get_locator_from_prev() const {
+  // Matches Bitcoin's initial sync logic
+  // Start from pprev of tip to ensure non-empty response
+  const chain::CBlockIndex *tip = chainstate_manager_.GetTip();
+  if (!tip) {
+    // At genesis, just use tip
+    return chainstate_manager_.GetLocator();
+  }
+
+  if (tip->pprev) {
+    // Use pprev - ensures peer sends back at least 1 header (our current tip)
+    return chainstate_manager_.GetLocator(tip->pprev);
+  } else {
+    // Tip is genesis (no pprev), use tip itself
+    return chainstate_manager_.GetLocator();
   }
 }
 

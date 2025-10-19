@@ -11,64 +11,60 @@
 namespace coinbasechain {
 namespace network {
 
+// DoS Protection Constants (from Bitcoin Core)
+static constexpr int DISCOURAGEMENT_THRESHOLD = 100;
+
+// Misbehavior penalties
+namespace MisbehaviorPenalty {
+static constexpr int INVALID_POW = 100;
+static constexpr int OVERSIZED_MESSAGE = 20;
+static constexpr int NON_CONTINUOUS_HEADERS = 20;
+static constexpr int LOW_WORK_HEADERS = 10;
+static constexpr int INVALID_HEADER = 100;
+static constexpr int TOO_MANY_UNCONNECTING = 100;  // Instant disconnect after threshold
+static constexpr int TOO_MANY_ORPHANS = 100;       // Instant disconnect
+}
+
+// Maximum unconnecting headers messages before penalty
+static constexpr int MAX_UNCONNECTING_HEADERS = 10;
+
+// Permission flags for peer connections
+enum class NetPermissionFlags : uint32_t {
+  None = 0,
+  NoBan = (1U << 0),
+  Manual = (1U << 1),
+};
+
+inline NetPermissionFlags operator|(NetPermissionFlags a, NetPermissionFlags b) {
+  return static_cast<NetPermissionFlags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+
+inline NetPermissionFlags operator&(NetPermissionFlags a, NetPermissionFlags b) {
+  return static_cast<NetPermissionFlags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+
+inline bool HasPermission(NetPermissionFlags flags, NetPermissionFlags check) {
+  return (flags & check) == check && static_cast<uint32_t>(check) != 0;
+}
+
+// Peer misbehavior tracking data
+struct PeerMisbehaviorData {
+  int misbehavior_score{0};
+  bool should_discourage{false};
+  int num_unconnecting_headers_msgs{0};
+  NetPermissionFlags permissions{NetPermissionFlags::None};
+  std::string address;
+};
+
 /**
- * PeerManager - Manages the lifecycle of peer connections
+ * PeerManager - Unified peer lifecycle and misbehavior tracking
  *
- * Simplified version for headers-only blockchain:
+ * Manages both connection lifecycle AND misbehavior/DoS protection:
  * - Tracks active peer connections
  * - Handles peer addition/removal
- * - Coordinates with AddressManager
  * - Manages connection limits
- * - Handles peer disconnections
- *
- * Note: This is a simplified version. Bitcoin's PeerManager
- * (net_processing.cpp) is much more complex with 82+ methods. We intentionally
- * split responsibilities across multiple components for better modularity.
- *
- * TODO: Features from Bitcoin's PeerManager we may need:
- *
- * 1. Peer State Management (per-peer):
- *    - InitializeNode() / FinalizeNode() callbacks for setup/cleanup
- *    - Per-peer sync state (sync height, common height, in-flight requests)
- *    - Detailed peer statistics (CNodeStateStats)
- *    - Peer service flags tracking
- *
- * 2. Misbehavior & DoS Protection:
- *    - Misbehavior scoring system (discouragement threshold)
- *    - ConsiderEviction() - evict bad peers
- *    - CheckForStaleTipAndEvictPeers() - detect if our tip is stale
- *    - Ban management integration
- *
- * 3. Message Processing (currently handled by individual Peer class):
- *    - ProcessMessages() - message routing and validation
- *    - ProcessMessage() - handle specific message types
- *    - Message rate limiting
- *
- * 4. Address Relay Management:
- *    - AddAddressKnown() - track which addresses sent to which peer
- *    - Rate limiting for ADDR messages (m_addr_processed, m_addr_rate_limited)
- *    - Address relay enable/disable per peer
- *
- * 5. Scheduled Tasks:
- *    - StartScheduledTasks() with CScheduler integration
- *    - SendPings() to all peers periodically
- *    - Periodic eviction checks
- *
- * 6. Validation Interface Integration:
- *    - CValidationInterface inheritance
- *    - SetBestBlock() - update when chain tip changes
- *    - BlockConnected() / BlockDisconnected() callbacks
- *
- * 7. Header/Block Sync Coordination (will be in HeaderSync/BlockSync):
- *    - FetchBlock() - request specific blocks from peer
- *    - FindNextBlocksToDownload() - determine what to sync
- *    - CheckHeadersPoW() / CheckHeadersAreContinuous() - validation
- *    - Track in-flight block/header requests per peer
- *
- * Current design: We split Bitcoin's monolithic PeerManager into:
- * - PeerManager (this) = connection lifecycle only
- * - HeaderSync/BlockSync (Phases 6-7) = sync logic
- * - NetworkManager (Phase 5) = coordination & message routing
+ * - Tracks misbehavior scores
+ * - Decides when to disconnect misbehaving peers
  */
 class PeerManager {
 public:
@@ -88,9 +84,10 @@ public:
 
   ~PeerManager();
 
-  // Add a peer
+  // Add a peer (with optional permissions)
   // Returns the assigned peer_id on success, -1 on failure
-  int add_peer(PeerPtr peer);
+  int add_peer(PeerPtr peer, NetPermissionFlags permissions = NetPermissionFlags::None,
+               const std::string &address = "");
 
   // Remove a peer by ID
   void remove_peer(int peer_id);
@@ -136,13 +133,39 @@ public:
   using PeerRemovedCallback = std::function<void(int peer_id)>;
   void set_peer_removed_callback(PeerRemovedCallback callback);
 
+  // === Misbehavior Tracking (Public API) ===
+  // These are the ONLY methods that external code (like HeaderSync) should call
+  // All penalty application is handled internally
+
+  // Track unconnecting headers from a peer
+  void IncrementUnconnectingHeaders(int peer_id);
+  void ResetUnconnectingHeaders(int peer_id);
+
+  // Report specific protocol violations (used by message handlers)
+  void ReportInvalidPoW(int peer_id);
+  void ReportOversizedMessage(int peer_id);
+  void ReportNonContinuousHeaders(int peer_id);
+  void ReportInvalidHeader(int peer_id, const std::string &reason);
+  void ReportTooManyOrphans(int peer_id);
+
+  // Query misbehavior state (for testing/debugging)
+  int GetMisbehaviorScore(int peer_id) const;
+  bool ShouldDisconnect(int peer_id) const;
+
 private:
+  // === Internal Misbehavior Implementation ===
+  // These should NEVER be called by external code
+
+  // Record misbehavior for a peer
+  // Returns true if peer should be disconnected
+  bool Misbehaving(int peer_id, int penalty, const std::string &reason);
   boost::asio::io_context &io_context_;
   AddressManager &addr_manager_;
   Config config_;
 
   mutable std::mutex mutex_;
   std::map<int, PeerPtr> peers_;
+  std::map<int, PeerMisbehaviorData> peer_misbehavior_;
 
   PeerRemovedCallback peer_removed_callback_;
 

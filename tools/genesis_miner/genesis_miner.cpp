@@ -1,9 +1,9 @@
 // Copyright (c) 2024 Coinbase Chain
 // Genesis Block Miner - Finds nonce for genesis block using RandomX
 
-#include "primitives/block.h"
-#include "crypto/sha256.h"
-#include "arith_uint256.h"
+#include "chain/block.hpp"
+#include "chain/sha256.hpp"
+#include "chain/arith_uint256.hpp"
 #include "randomx.h"
 #include <iostream>
 #include <iomanip>

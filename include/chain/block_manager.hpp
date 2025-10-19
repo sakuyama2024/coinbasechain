@@ -6,7 +6,7 @@
 
 #include "chain/block_index.hpp"
 #include "chain/chain.hpp"
-#include "primitives/block.h"
+#include "chain/block.hpp"
 #include <map>
 #include <memory>
 #include <string>
@@ -15,9 +15,7 @@ namespace coinbasechain {
 namespace chain {
 
 // BlockManager - Manages all known block headers and the active chain
-// Simplified from Bitcoin Core for headers-only chain (no LevelDB, block files,
-// UTXO, tx index, or pruning) All headers kept in memory (~120 bytes each: 1M
-// headers = ~120 MB, 10M headers = ~1.2 GB)
+// Simplified from Bitcoin Core for headers-only chain 
 //
 // THREAD SAFETY: NO internal mutex - caller MUST hold
 // ChainstateManager::validation_mutex_ BlockManager is PRIVATE member of

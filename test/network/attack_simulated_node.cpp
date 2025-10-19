@@ -4,7 +4,7 @@
 #include "attack_simulated_node.hpp"
 #include "network/protocol.hpp"
 #include "network/message.hpp"
-#include "validation/validation.hpp"
+#include "chain/validation.hpp"
 #include <random>
 
 namespace coinbasechain {
@@ -38,12 +38,21 @@ void AttackSimulatedNode::SendOrphanHeaders(int peer_node_id, size_t count) {
     printf("[Attack] Node %d sending %zu orphan headers to node %d\n",
            GetId(), count, peer_node_id);
 
-    // Create headers with random prev_hash (parents unknown)
+    // To trigger orphan-limit DoS protection, we need:
+    // 1. First header must connect to victim's known chain
+    // 2. Subsequent headers have random parents (orphans)
+    // This passes the "first header connects" check but creates many orphans
+
     std::vector<CBlockHeader> headers;
     std::random_device rd;
     std::mt19937_64 gen(rd());
 
-    for (size_t i = 0; i < count; i++) {
+    // First header connects to victim's tip
+    CBlockHeader first_header = CreateDummyHeader(GetTipHash(), params_->GenesisBlock().nBits);
+    headers.push_back(first_header);
+
+    // Remaining headers are orphans (random parents)
+    for (size_t i = 1; i < count; i++) {
         // Random prev_hash - won't exist in victim's chain
         uint256 random_prev_hash;
         std::uniform_int_distribution<uint8_t> dis_byte(0, 255);
@@ -102,8 +111,9 @@ void AttackSimulatedNode::SendInvalidPoWHeaders(int peer_node_id, const uint256&
     full_message.insert(full_message.end(), header_bytes.begin(), header_bytes.end());
     full_message.insert(full_message.end(), payload.begin(), payload.end());
 
+    printf("[Attack] About to send %zu invalid PoW headers from node %d to node %d\n", count, GetId(), peer_node_id);
     sim_network_->SendMessage(GetId(), peer_node_id, full_message);
-    printf("[Attack] Injected %zu invalid PoW headers\n", count);
+    printf("[Attack] Injected %zu invalid PoW headers into network\n", count);
 }
 
 void AttackSimulatedNode::SendNonContinuousHeaders(int peer_node_id, const uint256& prev_hash) {

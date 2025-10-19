@@ -1,14 +1,13 @@
 #include "network/peer.hpp"
-#include "util/logging.hpp"
-#include "util/time.hpp"
-#include "util/timedata.hpp"
+#include "chain/logging.hpp"
+#include "chain/time.hpp"
+#include "chain/timedata.hpp"
 #include <random>
 
 namespace coinbasechain {
 namespace network {
 
-// Static member initialization
-std::atomic<uint64_t> Peer::next_id_{1};
+// Peer ID is now assigned by PeerManager::add_peer(), not auto-generated
 
 // Helper to generate random nonce
 static uint64_t generate_nonce() {
@@ -29,7 +28,7 @@ Peer::Peer(boost::asio::io_context &io_context,
     : io_context_(io_context), connection_(connection),
       handshake_timer_(io_context), ping_timer_(io_context),
       inactivity_timer_(io_context), network_magic_(network_magic),
-      is_inbound_(is_inbound), id_(next_id_++), local_nonce_(local_nonce),
+      is_inbound_(is_inbound), id_(-1), local_nonce_(local_nonce),
       state_(connection && connection->is_open()
                  ? PeerState::CONNECTED
                  : (connection ? PeerState::CONNECTING : PeerState::DISCONNECTED)) {}
@@ -53,8 +52,8 @@ PeerPtr Peer::create_inbound(boost::asio::io_context &io_context,
 }
 
 void Peer::start() {
-  LOG_NET_DEBUG("Peer::start() called for peer {} (state: {}, is_inbound: {})",
-                id_, static_cast<int>(state_), is_inbound_);
+  LOG_NET_TRACE("Peer::start() peer={} state={} is_inbound={} address={}",
+                id_, static_cast<int>(state_), is_inbound_, address());
 
   if (state_ == PeerState::DISCONNECTED) {
     LOG_NET_ERROR("Cannot start disconnected peer - id:{}, address:{}, connection:{}",
@@ -65,10 +64,10 @@ void Peer::start() {
   // Transition from CONNECTING to CONNECTED if connection is now open
   if (state_ == PeerState::CONNECTING) {
     bool conn_open = connection_ && connection_->is_open();
-    LOG_NET_DEBUG("Peer {} in CONNECTING state, connection_open={}", id_, conn_open);
+    LOG_NET_TRACE("Peer {} in CONNECTING state, connection_open={}", id_, conn_open);
     if (conn_open) {
       state_ = PeerState::CONNECTED;
-      LOG_NET_DEBUG("Peer {} transitioned to CONNECTED", id_);
+      LOG_NET_TRACE("Peer {} transitioned to CONNECTED", id_);
     } else {
       LOG_NET_ERROR("Cannot start peer in CONNECTING state - connection not open");
       return;
@@ -102,11 +101,16 @@ void Peer::start() {
 }
 
 void Peer::disconnect() {
+  LOG_NET_TRACE("Peer::disconnect() peer={} address={} current_state={}",
+                id_, address(), static_cast<int>(state_));
+
   if (state_ == PeerState::DISCONNECTED || state_ == PeerState::DISCONNECTING) {
+    LOG_NET_TRACE("Peer {} already disconnected/disconnecting, skipping", id_);
     return;
   }
 
   state_ = PeerState::DISCONNECTING;
+  LOG_NET_DEBUG("Disconnecting peer {} ({})", id_, address());
 
   cancel_all_timers();
 
@@ -120,8 +124,11 @@ void Peer::disconnect() {
 void Peer::send_message(std::unique_ptr<message::Message> msg) {
   std::string command = msg->command();
 
+  LOG_NET_TRACE("Peer::send_message() peer={} command={} state={}",
+                id_, command, static_cast<int>(state_));
+
   if (state_ == PeerState::DISCONNECTED || state_ == PeerState::DISCONNECTING) {
-    LOG_NET_DEBUG("Cannot send {} - peer state is {}", command, static_cast<int>(state_));
+    LOG_NET_TRACE("Cannot send {} to peer {} - peer is disconnected/disconnecting", command, id_);
     return;
   }
 
@@ -141,7 +148,10 @@ void Peer::send_message(std::unique_ptr<message::Message> msg) {
                 command, address(), full_message.size(), static_cast<int>(state_));
 
   // Send via transport
+  LOG_NET_TRACE("Peer::send_message() calling connection_->send() (connection={})",
+                connection_ ? "exists" : "null");
   bool send_result = connection_ && connection_->send(full_message);
+  LOG_NET_TRACE("Peer::send_message() send_result={}", send_result);
 
   if (send_result) {
     stats_.messages_sent++;
@@ -211,6 +221,7 @@ void Peer::on_transport_disconnect() {
 }
 
 void Peer::send_version() {
+  LOG_NET_TRACE("Peer::send_version() peer={} address={}", id_, address());
   auto version_msg = std::make_unique<message::VersionMessage>();
   version_msg->version = protocol::PROTOCOL_VERSION;
   version_msg->services = protocol::NODE_NETWORK;
@@ -232,6 +243,9 @@ void Peer::send_version() {
 }
 
 void Peer::handle_version(const message::VersionMessage &msg) {
+  LOG_NET_TRACE("handle_version() peer={} address={} version={} user_agent={} nonce={}",
+                id_, address(), msg.version, msg.user_agent, msg.nonce);
+
   // SECURITY: Reject duplicate VERSION messages (CVE-like issue)
   // Bitcoin Core: checks if (pfrom.nVersion != 0) and ignores duplicates
   // Prevents: time manipulation via multiple AddTimeData() calls, protocol
@@ -283,6 +297,9 @@ void Peer::handle_version(const message::VersionMessage &msg) {
 }
 
 void Peer::handle_verack() {
+  LOG_NET_TRACE("handle_verack() peer={} address={} successfully_connected={}",
+                id_, address(), successfully_connected_);
+
   // SECURITY: Reject duplicate VERACK messages
   // Bitcoin Core: checks if (pfrom.fSuccessfullyConnected) and ignores
   // duplicates Prevents: timer churn from repeated schedule_ping() and
@@ -292,7 +309,7 @@ void Peer::handle_verack() {
     return;
   }
 
-  LOG_NET_DEBUG("Received VERACK from {}", address());
+  LOG_NET_DEBUG("Received VERACK from {} - handshake complete", address());
 
   state_ = PeerState::READY;
   successfully_connected_ = true; // Mark handshake as complete
@@ -301,6 +318,8 @@ void Peer::handle_verack() {
   // Start ping timer and inactivity timeout
   schedule_ping();
   start_inactivity_timeout();
+
+  LOG_NET_TRACE("Peer {} now READY, ping and inactivity timers started", id_);
 }
 
 void Peer::process_received_data(std::vector<uint8_t> &buffer) {

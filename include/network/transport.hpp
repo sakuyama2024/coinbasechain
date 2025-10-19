@@ -14,7 +14,7 @@ namespace network {
 // Allows dependency injection of different implementations:
 // - RealTransport: TCP sockets via boost::asio
 // - SimulatedTransport: In-memory message passing for testing
-// Inspired by Bitcoin Core's CConnman refactoring
+
 
 // Forward declarations
 class Transport;

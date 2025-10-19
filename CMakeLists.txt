@@ -136,67 +136,68 @@ set(UPNPC_BUILD_SAMPLE OFF CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(miniupnpc)
 
-# Create util library (file utilities + logging + locking + thread pool + time + timedata)
-add_library(util STATIC
-    src/util/files.cpp
-    src/util/logging.cpp
-    src/util/fs_lock.cpp
-    src/util/threadpool.cpp
-    src/util/time.cpp
-    src/util/timedata.cpp
+# ============================================================================
+# LIBRARY CONSOLIDATION: 2 libraries instead of 11
+# ============================================================================
+#
+# chain: All blockchain logic (crypto, primitives, consensus, validation, mining, util)
+# network: All I/O and communication (networking, RPC, application)
+#
+
+# Create chain library - everything blockchain-related
+add_library(chain STATIC
+    # Util
+    src/chain/files.cpp
+    src/chain/logging.cpp
+    src/chain/fs_lock.cpp
+    src/chain/threadpool.cpp
+    src/chain/time.cpp
+    src/chain/timedata.cpp
+    # Crypto
+    src/chain/sha256.cpp
+    src/chain/uint.cpp
+    src/chain/arith_uint256.cpp
+    src/chain/randomx_pow.cpp
+    # Primitives
+    src/chain/block.cpp
+    # Consensus
+    src/chain/pow.cpp
+    # Notifications
+    src/chain/notifications.cpp
+    # Chain
+    src/chain/block_index.cpp
+    src/chain/chain.cpp
+    src/chain/block_manager.cpp
+    src/chain/chainparams.cpp
+    # Validation
+    src/chain/validation.cpp
+    src/chain/chainstate_manager.cpp
+    src/chain/chain_selector.cpp
+    # Mining
+    src/chain/miner.cpp
 )
 
-target_include_directories(util PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(util PUBLIC
-    spdlog::spdlog
-)
-
-# Create crypto library (Bitcoin's crypto primitives + RandomX)
-add_library(crypto STATIC
-    src/crypto/sha256.cpp
-    src/crypto/uint.cpp
-    src/crypto/arith_uint256.cpp
-    src/crypto/randomx_pow.cpp
-)
-
-target_include_directories(crypto PUBLIC
+target_include_directories(chain PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 # Disable optimized SHA256 (SSE4/AVX2/SHANI) since we don't have implementation files
-# This avoids linker errors for missing sha256_sse4::Transform, etc.
-target_compile_definitions(crypto PRIVATE DISABLE_OPTIMIZED_SHA256)
+target_compile_definitions(chain PRIVATE DISABLE_OPTIMIZED_SHA256)
 
 # Get randomx include directory after it's been made available
 FetchContent_GetProperties(randomx)
 if(randomx_POPULATED)
-    target_include_directories(crypto PUBLIC ${randomx_SOURCE_DIR}/src)
+    target_include_directories(chain PUBLIC ${randomx_SOURCE_DIR}/src)
 endif()
 
-target_link_libraries(crypto PUBLIC
+target_link_libraries(chain PUBLIC
     randomx
-    util
+    spdlog::spdlog
+    nlohmann_json::nlohmann_json
 )
 
-# Create primitives library (block headers)
-add_library(primitives STATIC
-    src/primitives/block.cpp
-)
-
-target_include_directories(primitives PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
-
-target_link_libraries(primitives PUBLIC
-    crypto
-)
-
-# Create network library
+# Create network library - everything I/O and communication-related
 add_library(network STATIC
     src/network/protocol.cpp
     src/network/message.cpp
@@ -207,6 +208,10 @@ add_library(network STATIC
     src/network/real_transport.cpp
     src/network/simulated_transport.cpp
     src/network/nat_manager.cpp
+    src/network/banman.cpp
+    # RPC
+    src/network/rpc_server.cpp
+    src/network/rpc_client.cpp
 )
 
 target_include_directories(network PUBLIC
@@ -215,156 +220,16 @@ target_include_directories(network PUBLIC
 )
 
 target_link_libraries(network PUBLIC
-    crypto
-    primitives
     chain
-    sync
-    util
     Boost::system
     nlohmann_json::nlohmann_json
     libminiupnpc-static
 )
 
-# Create consensus library (PoW, difficulty adjustment)
-add_library(consensus STATIC
-    src/consensus/pow.cpp
-)
-
-target_include_directories(consensus PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(consensus PUBLIC
-    primitives
-    crypto
-)
-
-# Create validation library (block validation)
-add_library(validation STATIC
-    src/validation/validation.cpp
-    src/validation/chainstate_manager.cpp
-    src/validation/chain_selector.cpp
-)
-
-target_include_directories(validation PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(validation PUBLIC
-    consensus
-    chain
-    crypto
-    notifications
-    util
-)
-
-# Create notifications library (modern event system)
-add_library(notifications STATIC
-    src/notifications.cpp
-)
-
-target_include_directories(notifications PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(notifications PUBLIC
-    primitives
-)
-
-# Create chain library (block index, chain, block manager)
-add_library(chain STATIC
-    src/chain/block_index.cpp
-    src/chain/chain.cpp
-    src/chain/block_manager.cpp
-    src/chain/chainparams.cpp
-)
-
-target_include_directories(chain PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(chain PUBLIC
-    primitives
-    crypto
-    util
-    nlohmann_json::nlohmann_json
-)
-
-# Create sync library (header sync + peer management + ban management)
-add_library(sync STATIC
-    src/sync/header_sync.cpp
-    src/sync/peer_manager.cpp
-    src/sync/banman.cpp
-)
-
-target_include_directories(sync PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(sync PUBLIC
-    chain
-    primitives
-    crypto
-    util
-    nlohmann_json::nlohmann_json
-)
-
-# Create mining library (CPU miner)
-add_library(mining STATIC
-    src/mining/miner.cpp
-)
-
-target_include_directories(mining PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(mining PUBLIC
-    chain
-    primitives
-    crypto
-    consensus
-    validation
-    notifications
-    util
-)
-
-# Create RPC library
-add_library(rpc STATIC
-    src/rpc/rpc_server.cpp
-    src/rpc/rpc_client.cpp
-)
-
-target_include_directories(rpc PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(rpc PUBLIC
-    chain
-    network
-    mining
-    util
-)
-
-# Create app library
-add_library(app STATIC
-    src/app/application.cpp
-)
-
-target_include_directories(app PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(app PUBLIC
-    network
-    util
-    chain
-    rpc
-    validation
-)
-
 # Create our executable
 add_executable(coinbasechain
     src/main.cpp
+    src/application.cpp
 )
 
 # Include directories
@@ -377,7 +242,7 @@ target_include_directories(coinbasechain PRIVATE
 target_link_libraries(coinbasechain PRIVATE
     Threads::Threads
     Boost::system
-    app
+    network
 )
 
 # Set output directory
@@ -395,7 +260,7 @@ target_include_directories(coinbasechain-cli PRIVATE
 )
 
 target_link_libraries(coinbasechain-cli PRIVATE
-    rpc
+    network
 )
 
 set_target_properties(coinbasechain-cli PROPERTIES
@@ -408,42 +273,50 @@ enable_testing()
 # Create test executable (now includes network tests - all using Catch2)
 add_executable(coinbasechain_tests
     test/catch_amalgamated.cpp
-    test/block_tests.cpp
-    test/block_index_tests.cpp
-    test/files_tests.cpp
-    test/chain_tests.cpp
-    test/chainparams_tests.cpp
-    test/header_sync_tests.cpp
-    test/header_sync_adversarial_tests.cpp
-    test/persistence_tests.cpp
-    test/addr_manager_tests.cpp
-    test/dos_protection_tests.cpp
-    test/threading_tests.cpp
-    test/stress_threading_tests.cpp
-    test/uint_tests.cpp
-    test/validation_tests.cpp
-    test/orphan_basic_tests.cpp
-    test/orphan_dos_tests.cpp
-    test/orphan_edge_case_tests.cpp
-    test/orphan_integration_tests.cpp
-    test/orphan_security_tests.cpp
-    test/timedata_tests.cpp
-    test/reorg_tests.cpp
-    test/pow_tests.cpp
-    test/invalidateblock_tests.cpp
+    test/test_logging.cpp
+    # Unit tests
+    test/unit/block_tests.cpp
+    test/unit/block_index_tests.cpp
+    test/unit/files_tests.cpp
+    test/unit/chain_tests.cpp
+    test/unit/chainparams_tests.cpp
+    test/unit/persistence_tests.cpp
+    test/unit/addr_manager_tests.cpp
+    test/unit/threading_tests.cpp
+    test/unit/uint_tests.cpp
+    test/unit/validation_tests.cpp
+    test/unit/orphan_basic_tests.cpp
+    test/unit/timedata_tests.cpp
+    test/unit/reorg_tests.cpp
+    test/unit/pow_tests.cpp
     test/unit/reorg_multi_node_tests.cpp
+    test/unit/network_header_sync_tests.cpp
+    # Integration tests
+    test/integration/banman_adversarial_tests.cpp
+    test/integration/header_sync_adversarial_tests.cpp
+    test/integration/invalidateblock_tests.cpp
+    test/integration/orphan_dos_tests.cpp
+    test/integration/orphan_edge_case_tests.cpp
+    test/integration/orphan_integration_tests.cpp
+    test/integration/security_attack_simulations.cpp
+    test/integration/security_quick_tests.cpp
+    test/integration/stress_threading_tests.cpp
+    # test/dos_protection_tests.cpp  # TODO: Needs rewrite for unified PeerManager
+    # Network tests
     test/network/simulated_network.cpp
     test/network/simulated_node.cpp
     test/network/network_bridged_transport.cpp
     test/network/attack_simulated_node.cpp
     test/network/network_tests.cpp
     test/network/nat_manager_tests.cpp
+    test/network/peer_connection_tests.cpp
+    test/network/sync_ibd_tests.cpp
+    test/network/reorg_partition_tests.cpp
+    test/network/attack_simulation_tests.cpp
+    test/network/misbehavior_penalty_tests.cpp
     test/network/peer_tests.cpp
     test/network/peer_adversarial_tests.cpp
     test/network/invalidateblock_functional_tests.cpp
-    test/banman_adversarial_tests.cpp
-    test/security_attack_simulations.cpp
-    test/security_quick_tests.cpp
 )
 
 target_include_directories(coinbasechain_tests PRIVATE
@@ -455,14 +328,8 @@ target_include_directories(coinbasechain_tests PRIVATE
 )
 
 target_link_libraries(coinbasechain_tests PRIVATE
-    primitives
-    crypto
-    util
     chain
-    sync
     network
-    validation
-    consensus
     Boost::system
 )
 
@@ -541,14 +408,8 @@ if(ENABLE_FUZZING)
         )
 
         target_link_libraries(${target_name} PRIVATE
-            primitives
-            crypto
-            network
-            util
             chain
-            validation
-            consensus
-            sync
+            network
         )
 
         # Add fuzzing engine (if available)

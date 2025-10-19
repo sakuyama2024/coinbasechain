@@ -2,7 +2,7 @@
 #define COINBASECHAIN_TEST_ATTACK_SIMULATED_NODE_HPP
 
 #include "simulated_node.hpp"
-#include "primitives/block.h"
+#include "chain/block.hpp"
 
 namespace coinbasechain {
 namespace test {

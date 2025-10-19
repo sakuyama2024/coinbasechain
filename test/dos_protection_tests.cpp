@@ -2,10 +2,10 @@
 // Test suite for DoS protection (misbehavior scoring, peer management)
 
 #include "catch_amalgamated.hpp"
-#include "sync/peer_manager.hpp"
+#include "network/peer_manager.hpp"
 
 using namespace coinbasechain;
-using namespace coinbasechain::sync;
+using namespace coinbasechain::network;
 
 TEST_CASE("PeerManager basic operations", "[dos_protection]") {
     PeerManager pm;

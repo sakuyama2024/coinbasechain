@@ -9,13 +9,10 @@
 namespace coinbasechain {
 namespace protocol {
 
-// Protocol version (from version.hpp)
-constexpr uint32_t PROTOCOL_VERSION = coinbasechain::PROTOCOL_VERSION;
-constexpr uint32_t MIN_PEER_PROTO_VERSION =
-    coinbasechain::MIN_PEER_PROTO_VERSION;
+// Protocol version - increment when P2P protocol changes
+constexpr uint32_t PROTOCOL_VERSION = 1;
 
 // Network magic bytes - unique identifier for the network
-// High Hamming distance between values prevents cross-network contamination
 // ASCII encoding: "UNIC" (Unicity) for mainnet
 namespace magic {
 constexpr uint32_t MAINNET = 0x554E4943; // "UNIC" - Unicity mainnet
@@ -25,6 +22,7 @@ constexpr uint32_t REGTEST =
 } // namespace magic
 
 // Default ports - consistent pattern: mainnet, mainnet+10000, mainnet+20000
+// TODO WTF is this 
 namespace ports {
 constexpr uint16_t MAINNET = 9590;
 constexpr uint16_t TESTNET = 19590; // MAINNET + 10000
@@ -76,7 +74,7 @@ constexpr size_t COMMAND_SIZE = 12;
 constexpr size_t CHECKSUM_SIZE = 4;
 
 // ============================================================================
-// SECURITY LIMITS (from Bitcoin Core - CRITICAL for DoS protection)
+// SECURITY LIMITS (from Bitcoin Core )
 // ============================================================================
 
 // Serialization limits (Bitcoin Core src/serialize.h)
@@ -95,7 +93,7 @@ constexpr size_t DEFAULT_MAX_SEND_BUFFER =
 constexpr size_t DEFAULT_RECV_FLOOD_SIZE =
     5 * 1000 * 1000; // 5 MB - Flood protection (enforced)
 
-// Protocol-specific limits (Bitcoin Core src/net_processing.cpp)
+// Protocol-specific limits )
 constexpr unsigned int MAX_LOCATOR_SZ =
     101;                                 // GETHEADERS/GETBLOCKS locator limit
 constexpr uint32_t MAX_INV_SIZE = 50000; // Inventory items
@@ -104,6 +102,7 @@ constexpr uint32_t MAX_ADDR_SIZE = 1000;    // Addresses per ADDR message
 
 // Orphan management (not applicable to headers-only chain - see
 // chainstate_manager.hpp)
+//TODO
 constexpr unsigned int MAX_ORPHAN_BLOCKS =
     100; // Bitcoin Core value (unused - we track orphan headers instead)
 constexpr size_t MAX_ORPHAN_BLOCKS_SIZE =

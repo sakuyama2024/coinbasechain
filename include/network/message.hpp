@@ -2,7 +2,7 @@
 #define COINBASECHAIN_MESSAGE_HPP
 
 #include "network/protocol.hpp"
-#include "primitives/block.h"
+#include "chain/block.hpp"
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -18,7 +18,6 @@ class MessageDeserializer;
 
 /**
  * VarInt - Variable length integer encoding
- * Used throughout Bitcoin protocol for efficient integer serialization
  */
 class VarInt {
 public:
@@ -136,6 +135,8 @@ public:
 /**
  * VERSION message - First message sent to establish connection
  */
+
+/// TOOD what is relay doing 
 class VersionMessage : public Message {
 public:
   int32_t version;
@@ -146,7 +147,7 @@ public:
   uint64_t nonce;
   std::string user_agent;
   int32_t start_height;
-  bool relay; // BIP37 - relay transactions
+  bool relay; 
 
   VersionMessage();
 

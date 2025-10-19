@@ -4,8 +4,8 @@
 #ifndef COINBASECHAIN_TEST_CHAINSTATE_MANAGER_HPP
 #define COINBASECHAIN_TEST_CHAINSTATE_MANAGER_HPP
 
-#include "validation/chainstate_manager.hpp"
-#include "crypto/randomx_pow.hpp"
+#include "chain/chainstate_manager.hpp"
+#include "chain/randomx_pow.hpp"
 
 namespace coinbasechain {
 namespace test {
@@ -30,34 +30,66 @@ public:
     TestChainstateManager(const chain::ChainParams& params,
                          int suspicious_reorg_depth = 100)
         : ChainstateManager(params, suspicious_reorg_depth)
+        , bypass_pow_validation_(true)
     {
+    }
+
+    /**
+     * Enable or disable PoW validation bypass
+     *
+     * When bypass_pow_validation is true (default), CheckProofOfWork always returns true.
+     * When false, it calls the real ChainstateManager::CheckProofOfWork.
+     *
+     * This allows misbehavior tests to detect invalid PoW while keeping most tests fast.
+     */
+    void SetBypassPOWValidation(bool bypass) {
+        printf("[TestChainstateManager %p] SetBypassPOWValidation(%s) - was %d, now %d\n",
+               this, bypass ? "true" : "false", bypass_pow_validation_, bypass);
+        bypass_pow_validation_ = bypass;
     }
 
 protected:
     /**
-     * Override CheckProofOfWork to bypass validation
+     * Override CheckProofOfWork to conditionally bypass validation
      *
-     * Always returns true, allowing any header to pass PoW check.
+     * When bypass_pow_validation_ is true (default), returns true without checking.
+     * When false, calls real ChainstateManager::CheckProofOfWork for actual validation.
      * This is ONLY safe for unit tests where we control all inputs.
      */
     bool CheckProofOfWork(const CBlockHeader& header,
                          crypto::POWVerifyMode mode) const override
     {
-        // Bypass PoW validation for tests
-        return true;
+        if (bypass_pow_validation_) {
+            // Bypass PoW validation for tests
+            printf("[TestChainstateManager %p] CheckProofOfWork: BYPASSED (bypass_pow_validation_=%d)\n", this, bypass_pow_validation_);
+            return true;
+        }
+        // Use real PoW validation (for misbehavior tests)
+        printf("[TestChainstateManager %p] CheckProofOfWork: CALLING REAL VALIDATION (bypass_pow_validation_=%d)\n", this, bypass_pow_validation_);
+        bool result = ChainstateManager::CheckProofOfWork(header, mode);
+        printf("[TestChainstateManager %p] CheckProofOfWork: result=%s\n", this, result ? "true" : "false");
+        return result;
     }
 
+private:
+    bool bypass_pow_validation_;
+
     /**
-     * Override CheckBlockHeaderWrapper to bypass full block header validation
+     * Override CheckBlockHeaderWrapper to conditionally bypass validation
      *
-     * Always returns true, allowing any header to pass all checks.
+     * When bypass_pow_validation_ is true (default), returns true without checking.
+     * When false, calls real ChainstateManager::CheckBlockHeaderWrapper for actual validation.
      * This is ONLY safe for unit tests where we control all inputs.
      */
     bool CheckBlockHeaderWrapper(const CBlockHeader& header,
                                  validation::ValidationState& state) const override
     {
-        // Bypass all header validation for tests
-        return true;
+        if (bypass_pow_validation_) {
+            // Bypass all header validation for tests
+            return true;
+        }
+        // Use real header validation (for misbehavior tests)
+        return ChainstateManager::CheckBlockHeaderWrapper(header, state);
     }
 
     /**

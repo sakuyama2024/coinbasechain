@@ -9,12 +9,12 @@
 
 #include "catch_amalgamated.hpp"
 #include "test_chainstate_manager.hpp"
-#include "validation/chainstate_manager.hpp"
+#include "chain/chainstate_manager.hpp"
 #include "chain/chainparams.hpp"
 #include "chain/chain.hpp"
 #include "chain/block_index.hpp"
-#include "primitives/block.h"
-#include "util/time.hpp"
+#include "chain/block.hpp"
+#include "chain/time.hpp"
 #include <memory>
 #include <vector>
 #include <map>

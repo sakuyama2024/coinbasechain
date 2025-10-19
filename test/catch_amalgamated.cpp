@@ -15,6 +15,10 @@
 
 #include "catch_amalgamated.hpp"
 
+// Added for test logging support
+#include <cstdlib>
+#include <string>
+
 
 #ifndef CATCH_WINDOWS_H_PROXY_HPP_INCLUDED
 #define CATCH_WINDOWS_H_PROXY_HPP_INCLUDED
@@ -4770,7 +4774,23 @@ int main (int argc, char * argv[]) {
     // and its constructor, as it (optionally) registers leak detector
     (void)&Catch::leakDetector;
 
-    return Catch::Session().run( argc, argv );
+    // Initialize logging system for tests
+    // Check environment variable COINBASE_TEST_LOG_LEVEL (default: "info")
+    // Set COINBASE_TEST_LOG_LEVEL=trace to enable TRACE logging
+    const char* log_level_env = std::getenv("COINBASE_TEST_LOG_LEVEL");
+    std::string log_level = log_level_env ? log_level_env : "info";
+
+    // Initialize without file logging (console only for tests)
+    extern void InitializeTestLogging(const std::string& level);
+    InitializeTestLogging(log_level);
+
+    int result = Catch::Session().run( argc, argv );
+
+    // Shutdown logging
+    extern void ShutdownTestLogging();
+    ShutdownTestLogging();
+
+    return result;
 }
 
 #endif // !defined(CATCH_AMALGAMATED_CUSTOM_MAIN

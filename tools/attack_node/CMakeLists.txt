@@ -11,8 +11,7 @@ target_include_directories(attack_node PRIVATE
 )
 
 target_link_libraries(attack_node PRIVATE
-    primitives
-    crypto
+    chain
     network
     Boost::system
 )

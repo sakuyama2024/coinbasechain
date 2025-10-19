@@ -2,9 +2,9 @@
 // SimulatedNode implementation - Uses REAL P2P components with simulated transport
 
 #include "simulated_node.hpp"
-#include "crypto/sha256.h"
-#include "primitives/block.h"
-#include "validation/chainstate_manager.hpp"
+#include "chain/sha256.hpp"
+#include "chain/block.hpp"
+#include "chain/chainstate_manager.hpp"
 #include <sstream>
 #include <random>
 
@@ -74,10 +74,7 @@ void SimulatedNode::InitializeNetworking() {
 
     // Create NetworkManager with our transport
     network::NetworkManager::Config config;
-    // Convert message start bytes to uint32_t magic
-    const auto& msg_start = params_->MessageStart();
-    config.network_magic = (msg_start[0] << 24) | (msg_start[1] << 16) |
-                          (msg_start[2] << 8) | msg_start[3];
+    config.network_magic = params_->GetNetworkMagic();
     config.listen_enabled = true;
     config.listen_port = port_;
     config.io_threads = 0;  // Use external io_context
@@ -85,7 +82,8 @@ void SimulatedNode::InitializeNetworking() {
     network_manager_ = std::make_unique<network::NetworkManager>(
         *chainstate_,  // Pass TestChainstateManager (inherits from ChainstateManager)
         config,
-        transport_
+        transport_,
+        &io_context_  // Pass our io_context so boost::asio::post() uses it
     );
 
     // Start networking
@@ -117,6 +115,10 @@ bool SimulatedNode::ConnectTo(int peer_node_id, const std::string& address, uint
     if (success) {
         stats_.connections_made++;
     }
+
+    // Process events to ensure connection is initiated
+    // This is important in fast (non-TSAN) builds where async operations complete quickly
+    ProcessEvents();
 
     return success;
 }
@@ -180,7 +182,9 @@ uint256 SimulatedNode::MineBlock(const std::string& miner_address) {
         header.minerAddress.data()[i] = dis_byte(gen);
     }
 
-    header.hashRandomX.SetNull();  // Bypass PoW
+    // Set dummy RandomX hash (needed for commitment check when PoW validation is enabled)
+    // Use all-zeros hash which meets regtest difficulty target
+    header.hashRandomX.SetHex("0000000000000000000000000000000000000000000000000000000000000000");
 
     // Add to chainstate
     validation::ValidationState state;
@@ -197,6 +201,10 @@ uint256 SimulatedNode::MineBlock(const std::string& miner_address) {
             size_t peer_count = network_manager_->active_peer_count();
             network_manager_->relay_block(block_hash);
         }
+
+        // Process events to ensure the block relay messages are queued
+        // This is important in fast (non-TSAN) builds where async operations complete quickly
+        ProcessEvents();
 
         return block_hash;
     }
@@ -262,7 +270,7 @@ void SimulatedNode::Unban(const std::string& address) {
     }
 }
 
-sync::BanMan& SimulatedNode::GetBanMan() {
+network::BanMan& SimulatedNode::GetBanMan() {
     if (!network_manager_) {
         throw std::runtime_error("NetworkManager not initialized");
     }
@@ -273,13 +281,27 @@ void SimulatedNode::ProcessEvents() {
     // Process pending async operations
     // poll() runs all ready handlers, which may post new work
     // Keep polling until no more work is immediately ready
-    while (io_context_.poll() > 0) {
-        // Continue processing
+    printf("[TRACE] ProcessEvents() starting for node %d\n", node_id_);
+    size_t total_executed = 0;
+    size_t round = 0;
+    while (true) {
+        size_t executed = io_context_.poll();
+        printf("[TRACE] ProcessEvents() round %zu: executed %zu handlers\n", round, executed);
+        if (executed == 0) {
+            break;
+        }
+        total_executed += executed;
+        round++;
     }
+    printf("[TRACE] ProcessEvents() completed for node %d: %zu total handlers executed\n", node_id_, total_executed);
 
-    // Also run maintenance tasks immediately in simulation
-    // In a real node, these run on timers, but in simulation we want immediate execution
+}
+
+void SimulatedNode::ProcessPeriodic() {
+    // Run periodic maintenance tasks
+    // In a real node, these run on timers, but in simulation they're triggered by AdvanceTime()
     if (network_manager_) {
+        printf("[TRACE] SimulatedNode::ProcessPeriodic() for node %d - calling PeerManager::process_periodic()\n", node_id_);
         network_manager_->peer_manager().process_periodic();
         // Call announce_tip_to_peers() like Bitcoin's SendMessages does
         // It has built-in time-based throttling to prevent message storms

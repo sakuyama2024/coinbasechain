@@ -41,34 +41,9 @@ struct AddrInfo {
 };
 
 /**
- * AddressManager - Manages peer addresses with tried/new buckets
- *
- * Simplified version inspired by Bitcoin's AddrMan:
- * - "new" addresses: heard about but not yet connected
- * - "tried" addresses: successfully connected at least once
- * - Random selection with preference for tried addresses
- * - Stale address cleanup
- *
- * TODO: Security improvements needed for production:
- * 1. Bucket-based architecture (256 tried × 64, 1024 new × 64) instead of
- * simple maps
- * 2. Cryptographic bucket selection using secret key to prevent targeted
- * attacks
- * 3. NetGroupManager for network group diversity (/16 IPv4, /32 IPv6,
- * ASN-based)
- * 4. Collision handling with FEELER connections for bucket overflow
- * 5. Persistence (serialize/deserialize to disk)
- * 6. Connected() separate from Good() for connection tracking
- * 7. SetServices() to update service flags
- * 8. Network type filtering (IPv4/IPv6/Tor/I2P)
- * 9. Time penalties for addresses from untrusted sources
- * 10. Probabilistic selection based on GetChance() (recency, failure rate)
- *
- * Current implementation is vulnerable to sybil attacks (attacker filling our
- * address table with their nodes). The bucket system provides anti-sybil
- * protection by limiting how many addresses from the same network can be
- * stored.
+ * AddressManager - Manages peer addresses for peer discovery and connection
  */
+
 class AddressManager {
 public:
   AddressManager();

@@ -4,9 +4,9 @@
 #ifndef COINBASECHAIN_CHAIN_CHAINPARAMS_HPP
 #define COINBASECHAIN_CHAIN_CHAINPARAMS_HPP
 
-#include "arith_uint256.h"
-#include "primitives/block.h"
-#include "uint.hpp"
+#include "chain/arith_uint256.hpp"
+#include "chain/block.hpp"
+#include "chain/uint.hpp"
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -57,8 +57,8 @@ struct ConsensusParams {
   // Hash of genesis block
   uint256 hashGenesisBlock;
 
-  // Minimum cumulative chain work for IBD completion (eclipse attack
-  // protection) Set to 0 to disable check (regtest), or to actual chain work
+  // Minimum cumulative chain work for IBD completion Set to 0 to disable check 
+  // (regtest), or to actual chain work
   // (mainnet/testnet)
   uint256 nMinimumChainWork;
 };
@@ -74,12 +74,12 @@ public:
 
   // Accessors
   const ConsensusParams &GetConsensus() const { return consensus; }
-  const std::array<uint8_t, 4> &MessageStart() const { return pchMessageStart; }
+  uint32_t GetNetworkMagic() const; // Returns protocol::magic::* constant for this chain
   uint16_t GetDefaultPort() const { return nDefaultPort; }
   const CBlockHeader &GenesisBlock() const { return genesis; }
   ChainType GetChainType() const { return chainType; }
   std::string GetChainTypeString() const;
-  const std::vector<std::string> &DNSSeeds() const { return vSeeds; }
+  const std::vector<std::string> &FixedSeeds() const { return vFixedSeeds; }
 
   // Factory methods
   static std::unique_ptr<ChainParams> CreateMainNet();
@@ -88,11 +88,10 @@ public:
 
 protected:
   ConsensusParams consensus;
-  std::array<uint8_t, 4> pchMessageStart; // Network magic bytes
-  uint16_t nDefaultPort{8333};
+  uint16_t nDefaultPort{};
   ChainType chainType{ChainType::MAIN};
   CBlockHeader genesis;
-  std::vector<std::string> vSeeds; // DNS seeds for peer discovery
+  std::vector<std::string> vFixedSeeds;  // Hardcoded seed node addresses (IP:port)
 };
 
 /**

@@ -4,9 +4,9 @@
 #ifndef COINBASECHAIN_CHAIN_BLOCK_INDEX_HPP
 #define COINBASECHAIN_CHAIN_BLOCK_INDEX_HPP
 
-#include "arith_uint256.h"
-#include "primitives/block.h"
-#include "uint.hpp"
+#include "chain/arith_uint256.hpp"
+#include "chain/block.hpp"
+#include "chain/uint.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cstdint>

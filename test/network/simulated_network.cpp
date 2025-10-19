@@ -1,6 +1,6 @@
 #include "simulated_network.hpp"
 #include "network_bridged_transport.hpp"
-#include "util/time.hpp"
+#include "chain/time.hpp"
 #include <algorithm>
 
 namespace coinbasechain {
@@ -156,7 +156,7 @@ size_t SimulatedNetwork::AdvanceTime(uint64_t new_time_ms) {
     // (e.g., INV -> GETHEADERS -> HEADERS)
     // IMPORTANT: Keep looping as long as there are pending messages ready for delivery
     size_t total_delivered = 0;
-    const int MAX_ROUNDS = 10;  // Prevent infinite loops
+    const int MAX_ROUNDS = 50;  // Increased from 10 to handle longer message chains in fast (non-TSAN) builds
 
     for (int round = 0; round < MAX_ROUNDS; ++round) {
         // Process any messages that are ready for delivery
@@ -173,6 +173,16 @@ size_t SimulatedNetwork::AdvanceTime(uint64_t new_time_ms) {
         for (auto& [node_id, node] : nodes_) {
             if (node) {
                 node->ProcessEvents();
+            }
+        }
+
+        // Run periodic maintenance on all nodes after processing events
+        // This simulates the periodic timers that run in production
+        // (process_periodic checks for misbehaving peers and disconnects them)
+        for (auto& [node_id, node] : nodes_) {
+            if (node) {
+                printf("[TRACE] AdvanceTime: Calling ProcessPeriodic() for node %d\n", node_id);
+                node->ProcessPeriodic();
             }
         }
 

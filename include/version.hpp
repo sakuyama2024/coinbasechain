@@ -14,26 +14,25 @@ constexpr int CLIENT_VERSION_MINOR = 0;
 constexpr int CLIENT_VERSION_PATCH = 0;
 
 // Build version string
-constexpr const char *CLIENT_VERSION_STRING = "1.0.0";
+inline std::string GetVersionString() {
+  return std::to_string(CLIENT_VERSION_MAJOR) + "." +
+         std::to_string(CLIENT_VERSION_MINOR) + "." +
+         std::to_string(CLIENT_VERSION_PATCH);
+}
 
 // Copyright
-constexpr const char *COPYRIGHT_YEAR = "2024";
-constexpr const char *COPYRIGHT_HOLDERS = "Unicity Foundation";
-
-// Protocol version (separate from client version)
-// Increment when P2P protocol changes
-constexpr int PROTOCOL_VERSION = 1;
-constexpr int MIN_PEER_PROTO_VERSION = 1;
+constexpr const char *COPYRIGHT_YEAR = "2025";
+constexpr const char *COPYRIGHT_HOLDERS = "The Unicity Foundation";
 
 // User agent for P2P network
 // Format: /CoinbaseChain:1.0.0/
 inline std::string GetUserAgent() {
-  return "/CoinbaseChain:" + std::string(CLIENT_VERSION_STRING) + "/";
+  return "/CoinbaseChain:" + GetVersionString() + "/";
 }
 
 // Full version info for display
 inline std::string GetFullVersionString() {
-  return "CoinbaseChain version " + std::string(CLIENT_VERSION_STRING);
+  return "CoinbaseChain version " + GetVersionString();
 }
 
 // Get copyright string
@@ -89,9 +88,10 @@ inline std::string GetStartupBanner(const std::string &chain_type) {
       "║                                                               ║\n";
   banner +=
       "╟───────────────────────────────────────────────────────────────╢\n";
-  banner += "║  Version: " + std::string(CLIENT_VERSION_STRING);
+  std::string version_str = GetVersionString();
+  banner += "║  Version: " + version_str;
   // Pad to align with box
-  size_t version_padding = 54 - std::string(CLIENT_VERSION_STRING).length();
+  size_t version_padding = 54 - version_str.length();
   banner += std::string(version_padding, ' ') + "║\n";
 
   banner += "║  Network: " + chain_type;

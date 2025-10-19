@@ -1,7 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#include "rpc/rpc_client.hpp"
+#include "network/rpc_client.hpp"
 #include <cstdlib>
 #include <iostream>
 #include <pwd.h>

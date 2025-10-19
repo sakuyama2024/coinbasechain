@@ -2,8 +2,8 @@
 // Distributed under the MIT software license
 
 #include "chain/block_manager.hpp"
-#include "arith_uint256.h"
-#include "util/logging.hpp"
+#include "chain/arith_uint256.hpp"
+#include "chain/logging.hpp"
 #include <fstream>
 #include <nlohmann/json.hpp>
 
@@ -14,6 +14,9 @@ BlockManager::BlockManager() = default;
 BlockManager::~BlockManager() = default;
 
 bool BlockManager::Initialize(const CBlockHeader &genesis) {
+  LOG_CHAIN_TRACE("Initialize: called with genesis hash={}",
+                  genesis.GetHash().ToString().substr(0, 16));
+
   if (m_initialized) {
     LOG_CHAIN_ERROR("BlockManager already initialized");
     return false;
@@ -35,6 +38,7 @@ bool BlockManager::Initialize(const CBlockHeader &genesis) {
 
   LOG_CHAIN_INFO("BlockManager initialized with genesis: {}",
                  m_genesis_hash.ToString());
+  LOG_CHAIN_TRACE("Initialize: Success, tip set to genesis");
 
   return true;
 }
@@ -56,9 +60,14 @@ const CBlockIndex *BlockManager::LookupBlockIndex(const uint256 &hash) const {
 CBlockIndex *BlockManager::AddToBlockIndex(const CBlockHeader &header) {
   uint256 hash = header.GetHash();
 
+  LOG_CHAIN_TRACE("AddToBlockIndex: hash={} prev={}",
+                  hash.ToString().substr(0, 16),
+                  header.hashPrevBlock.ToString().substr(0, 16));
+
   // Already have it?
   auto it = m_block_index.find(hash);
   if (it != m_block_index.end()) {
+    LOG_CHAIN_TRACE("AddToBlockIndex: Block already exists, returning existing index");
     return &it->second;
   }
 
@@ -95,10 +104,14 @@ CBlockIndex *BlockManager::AddToBlockIndex(const CBlockHeader &header) {
     // Not genesis - calculate height and chain work
     pindex->nHeight = pindex->pprev->nHeight + 1;
     pindex->nChainWork = pindex->pprev->nChainWork + GetBlockProof(*pindex);
+    LOG_CHAIN_TRACE("AddToBlockIndex: Created new block index height={} chainwork={}",
+                    pindex->nHeight, pindex->nChainWork.ToString().substr(0, 16));
   } else {
     // Genesis block
     pindex->nHeight = 0;
     pindex->nChainWork = GetBlockProof(*pindex);
+    LOG_CHAIN_TRACE("AddToBlockIndex: Created GENESIS block index chainwork={}",
+                    pindex->nChainWork.ToString().substr(0, 16));
   }
 
   return pindex;

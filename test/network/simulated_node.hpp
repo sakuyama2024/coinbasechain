@@ -69,7 +69,12 @@ public:
     // Component access
     TestChainstateManager& GetChainstate() { return *chainstate_; }
     network::NetworkManager& GetNetworkManager() { return *network_manager_; }
-    sync::BanMan& GetBanMan();
+    network::BanMan& GetBanMan();
+
+    // Test configuration
+    void SetBypassPOWValidation(bool bypass) {
+        chainstate_->SetBypassPOWValidation(bypass);
+    }
 
     // Statistics
     struct NodeStats {
@@ -81,6 +86,9 @@ public:
 
     // Process io_context events (called by SimulatedNetwork)
     void ProcessEvents() override;
+
+    // Process periodic maintenance (called by SimulatedNetwork::AdvanceTime)
+    void ProcessPeriodic() override;
 
 protected:
     // Network transport (bridges to SimulatedNetwork)

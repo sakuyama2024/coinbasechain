@@ -41,31 +41,42 @@ TEST_CASE("InvalidateBlock - Basic invalidation with reorg", "[invalidateblock][
     uint256 blockB = node1.MineBlock();
     uint256 blockC = node1.MineBlock();
 
-    uint64_t time_ms = 100;
-    network.AdvanceTime(time_ms);
+    network.AdvanceTime(network.GetCurrentTime() + 100);
 
     CHECK(node1.GetTipHeight() == 3);
     CHECK(node1.GetTipHash() == blockC);
 
     // Node 2 connects and syncs
     printf("[InvalidateBlock] Node 2 connecting and syncing...\n");
+    printf("[DEBUG] Before connect: node1_peers=%zu node2_peers=%zu node2_height=%d\n",
+           node1.GetPeerCount(), node2.GetPeerCount(), node2.GetTipHeight());
+    printf("[DEBUG] Queue stats: sent=%zu delivered=%zu\n",
+           network.GetStats().total_messages_sent, network.GetStats().total_messages_delivered);
+
     node2.ConnectTo(1);
-    time_ms += 100;
-    network.AdvanceTime(time_ms);
+    size_t delivered1 = network.AdvanceTime(network.GetCurrentTime() + 100);
+    printf("[DEBUG] After connect+time: delivered=%zu node1_peers=%zu node2_peers=%zu node2_height=%d\n",
+           delivered1, node1.GetPeerCount(), node2.GetPeerCount(), node2.GetTipHeight());
+    printf("[DEBUG] Queue stats: sent=%zu delivered=%zu\n",
+           network.GetStats().total_messages_sent, network.GetStats().total_messages_delivered);
 
     for (int i = 0; i < 20; i++) {
-        time_ms += 100;
-        network.AdvanceTime(time_ms);
+        size_t delivered = network.AdvanceTime(network.GetCurrentTime() + 100);
+        if (delivered > 0 || i == 0 || i == 19) {
+            printf("[DEBUG] Round %d: delivered=%zu node2_height=%d node2_peers=%zu\n",
+                   i, delivered, node2.GetTipHeight(), node2.GetPeerCount());
+        }
     }
 
+    printf("[DEBUG] Final: node2_height=%d (expected 3) node2_peers=%zu\n",
+           node2.GetTipHeight(), node2.GetPeerCount());
     CHECK(node2.GetTipHeight() == 3);
     CHECK(node2.GetTipHash() == blockC);
     printf("[InvalidateBlock] Node 2 synced to height 3\n");
 
     // Disconnect nodes
     node2.DisconnectFrom(1);
-    time_ms += 100;
-    network.AdvanceTime(time_ms);
+    network.AdvanceTime(network.GetCurrentTime() + 100);
 
     // Node 2 builds a competing fork: A -> D -> E -> F
     printf("[InvalidateBlock] Node 2 building competing fork A->D->E->F...\n");
@@ -79,28 +90,54 @@ TEST_CASE("InvalidateBlock - Basic invalidation with reorg", "[invalidateblock][
     printf("[InvalidateBlock] Node 2 rewound to height 1 after invalidating blockB\n");
 
     // Now mine new chain
+    printf("[InvalidateBlock] Time before mining D,E,F: %lu ms\n", network.GetCurrentTime());
     uint256 blockD = node2.MineBlock();
     uint256 blockE = node2.MineBlock();
     uint256 blockF = node2.MineBlock();
 
-    time_ms += 100;
-    network.AdvanceTime(time_ms);
+    network.AdvanceTime(network.GetCurrentTime() + 100);
+    printf("[InvalidateBlock] Time after mining D,E,F: %lu ms\n", network.GetCurrentTime());
 
     CHECK(node2.GetTipHeight() == 4);
     printf("[InvalidateBlock] Node 2 built new chain to height 4\n");
 
     // Reconnect nodes - node 1 should reorg to longer chain
     printf("[InvalidateBlock] Reconnecting nodes...\n");
-    node2.ConnectTo(1);
-    time_ms += 100;
-    network.AdvanceTime(time_ms);
+    printf("[InvalidateBlock] Before reconnect: node1_height=%d node2_height=%d\n",
+           node1.GetTipHeight(), node2.GetTipHeight());
+    printf("[InvalidateBlock] node1_tip=%s\n", node1.GetTipHash().ToString().substr(0, 16).c_str());
+    printf("[InvalidateBlock] node2_tip=%s (blockF=%s)\n",
+           node2.GetTipHash().ToString().substr(0, 16).c_str(),
+           blockF.ToString().substr(0, 16).c_str());
 
-    for (int i = 0; i < 30; i++) {
-        time_ms += 100;
-        network.AdvanceTime(time_ms);
+    node2.ConnectTo(1);
+
+    // Give more time for connection to establish
+    for (int i = 0; i < 20; i++) {
+        network.AdvanceTime(network.GetCurrentTime() + 100);
+    }
+
+    printf("[InvalidateBlock] After reconnect: node1_peers=%zu node2_peers=%zu\n",
+           node1.GetPeerCount(), node2.GetPeerCount());
+
+    // Allow time for reorg to complete (block propagation + validation + reorg)
+    for (int i = 0; i < 100; i++) {
+        size_t delivered = network.AdvanceTime(network.GetCurrentTime() + 100);
+        if (i < 5 || i % 10 == 0 || delivered > 0 || i == 99) {
+            printf("[InvalidateBlock] Round %d: delivered=%zu node1_height=%d node2_height=%d node1_peers=%zu node2_peers=%zu\n",
+                   i, delivered, node1.GetTipHeight(), node2.GetTipHeight(),
+                   node1.GetPeerCount(), node2.GetPeerCount());
+        }
+        if (node1.GetTipHeight() == 4) {
+            printf("[InvalidateBlock] Reorg completed at round %d\n", i);
+            break;
+        }
     }
 
     // Node 1 should have reorged to node2's longer chain
+    printf("[InvalidateBlock] Final: node1_height=%d (expected 4) node1_tip=%s\n",
+           node1.GetTipHeight(), node1.GetTipHash().ToString().substr(0, 16).c_str());
+    printf("[InvalidateBlock] blockF=%s\n", blockF.ToString().substr(0, 16).c_str());
     CHECK(node1.GetTipHeight() == 4);
     CHECK(node1.GetTipHash() == blockF);
     printf("[InvalidateBlock] ✓ Node 1 reorged to longer chain (height 4)\n");

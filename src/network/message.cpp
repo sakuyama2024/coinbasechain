@@ -1,7 +1,7 @@
 #include "network/message.hpp"
-#include "crypto/sha256.h"
-#include "primitives/block.h"
-#include "util/endian.hpp"
+#include "chain/sha256.hpp"
+#include "chain/block.hpp"
+#include "chain/endian.hpp"
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>

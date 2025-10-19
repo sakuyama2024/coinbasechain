@@ -121,6 +121,7 @@ public:
     public:
         virtual ~ISimulatedNode() = default;
         virtual void ProcessEvents() = 0;
+        virtual void ProcessPeriodic() = 0;
     };
 
     // Register callback for message delivery to a specific node

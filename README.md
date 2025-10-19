@@ -93,12 +93,15 @@ See **[DOCKER.md](DOCKER.md)** for complete Docker documentation.
 
 ### Building from Source
 
-```bash
-# Configure
-cmake -B build -S .
+#### Quick Build (Default)
 
-# Build
-cmake --build build
+```bash
+# Regular build (fast, for daily development)
+mkdir -p build
+cd build
+cmake ..
+cmake --build . -j8
+cd ..
 
 # Run tests
 ./build/coinbasechain_tests
@@ -106,6 +109,38 @@ cmake --build build
 # Run the node
 ./build/bin/coinbasechain --help
 ```
+
+#### Build Configurations
+
+Different build configurations for different purposes:
+
+```bash
+# Regular build (fast, no sanitizers)
+mkdir -p build
+cd build
+cmake ..
+cmake --build . -j8
+
+# Release build (optimized, for production)
+mkdir -p build_release
+cd build_release
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build . -j8
+
+# ThreadSanitizer build (slow, detects threading bugs)
+mkdir -p build_tsan
+cd build_tsan
+cmake -DSANITIZE=thread ..
+cmake --build . -j8
+
+# AddressSanitizer build (detects memory bugs)
+mkdir -p build_asan
+cd build_asan
+cmake -DSANITIZE=address ..
+cmake --build . -j8
+```
+
+**Note:** ThreadSanitizer (TSAN) builds are ~10x slower due to instrumentation. Use regular builds for daily testing and TSAN builds for occasional threading verification.
 
 ## Usage
 

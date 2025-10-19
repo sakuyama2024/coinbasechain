@@ -2,7 +2,7 @@
 // Distributed under the MIT software license
 
 #include "chain/block_index.hpp"
-#include "arith_uint256.h"
+#include "chain/arith_uint256.hpp"
 #include <iomanip>
 #include <sstream>
 

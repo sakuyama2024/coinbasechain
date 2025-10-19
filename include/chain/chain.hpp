@@ -7,7 +7,7 @@
 #define COINBASECHAIN_CHAIN_CHAIN_HPP
 
 #include "chain/block_index.hpp"
-#include "primitives/block.h"
+#include "chain/block.hpp"
 #include <vector>
 
 namespace coinbasechain {
@@ -46,9 +46,9 @@ public:
   // Check whether block is present in this chain
   bool Contains(const CBlockIndex *pindex) const {
     if (!pindex)
-      return false; // Null check to prevent segfault
+      return false; 
     if (pindex->nHeight < 0 || pindex->nHeight >= (int)vChain.size()) {
-      return false; // Height out of bounds
+      return false; 
     }
     return vChain[pindex->nHeight] == pindex;
   }

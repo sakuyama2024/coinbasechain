@@ -1,5 +1,5 @@
-#include "app/application.hpp"
-#include "util/logging.hpp"
+#include "application.hpp"
+#include "chain/logging.hpp"
 #include <cstring>
 #include <iostream> // Keep for CLI output and early errors before logger initialized
 
@@ -9,7 +9,7 @@ void print_usage(const char *program_name) {
       << "\n"
       << "Options:\n"
       << "  --datadir=<path>     Data directory (default: ~/.coinbasechain)\n"
-      << "  --port=<port>        Listen port (default: 8333)\n"
+      << "  --port=<port>        Listen port (default: 9590 mainnet, 19590 testnet, 29590 regtest)\n"
       << "  --listen             Enable inbound connections\n"
       << "  --nolisten           Disable inbound connections (default)\n"
       << "  --threads=<n>        Number of IO threads (default: 4)\n"
@@ -19,7 +19,16 @@ void print_usage(const char *program_name) {
          "100, 0 = unlimited)\n"
       << "  --regtest            Use regression test chain (easy mining)\n"
       << "  --testnet            Use test network\n"
-      << "  --verbose            Verbose logging\n"
+      << "\n"
+      << "Logging:\n"
+      << "  --loglevel=<level>   Set global log level (trace,debug,info,warn,error,critical)\n"
+      << "                       Default: info\n"
+      << "  --debug=<component>  Enable trace logging for specific component(s)\n"
+      << "                       Components: network, sync, chain, crypto, app, all\n"
+      << "                       Can be comma-separated: --debug=network,sync\n"
+      << "  --verbose            Equivalent to --loglevel=debug\n"
+      << "\n"
+      << "Other:\n"
       << "  --help               Show this help message\n"
       << std::endl;
 }
@@ -29,6 +38,7 @@ int main(int argc, char *argv[]) {
     // Parse command line arguments
     coinbasechain::app::AppConfig config;
     std::string log_level = "info";
+    std::vector<std::string> debug_components;
 
     for (int i = 1; i < argc; ++i) {
       std::string arg = argv[i];
@@ -63,6 +73,21 @@ int main(int argc, char *argv[]) {
       } else if (arg == "--verbose") {
         config.verbose = true;
         log_level = "debug";
+      } else if (arg.find("--loglevel=") == 0) {
+        log_level = arg.substr(11);
+      } else if (arg.find("--debug=") == 0) {
+        // Parse comma-separated components: --debug=net,sync,chain
+        std::string components = arg.substr(8);
+        size_t pos = 0;
+        while (pos < components.length()) {
+          size_t comma = components.find(',', pos);
+          if (comma == std::string::npos) {
+            debug_components.push_back(components.substr(pos));
+            break;
+          }
+          debug_components.push_back(components.substr(pos, comma - pos));
+          pos = comma + 1;
+        }
       } else {
         std::cerr << "Unknown option: " << arg << std::endl;
         print_usage(argv[0]);
@@ -73,6 +98,17 @@ int main(int argc, char *argv[]) {
     // Initialize logging system (enable file logging with debug.log)
     std::string log_file = (config.datadir / "debug.log").string();
     coinbasechain::util::LogManager::Initialize(log_level, true, log_file);
+
+    // Apply component-specific debug levels
+    for (const auto& component : debug_components) {
+      if (component == "all") {
+        coinbasechain::util::LogManager::SetLogLevel("trace");
+      } else if (component == "net" || component == "network") {
+        coinbasechain::util::LogManager::SetComponentLevel("network", "trace");
+      } else {
+        coinbasechain::util::LogManager::SetComponentLevel(component, "trace");
+      }
+    }
 
     // Create and initialize application
     coinbasechain::app::Application app(config);
