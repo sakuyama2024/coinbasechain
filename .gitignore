@@ -30,3 +30,7 @@ coinbasechain
 
 # Dependencies
 _deps/
+
+# Static analysis
+.scannerwork/
+cppcheck-report.txt
