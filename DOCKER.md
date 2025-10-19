@@ -112,7 +112,9 @@ Docker Compose provides the easiest way to manage CoinbaseChain containers.
 | `node` | Mainnet node | default |
 | `testnet` | Testnet node | `testnet` |
 | `regtest` | Regression test network | `regtest` |
+| `debug` | Debug node with TRACE logging | `debug` |
 | `tests` | Test suite | `test` |
+| `tests-trace` | Test suite with TRACE logging | `test-trace` |
 
 ### Common Commands
 
@@ -168,9 +170,12 @@ Configure the node using environment variables:
 |----------|---------|-------------|
 | `COINBASECHAIN_NETWORK` | `mainnet` | Network type: `mainnet`, `testnet`, or `regtest` |
 | `COINBASECHAIN_THREADS` | `4` | Number of I/O threads |
-| `COINBASECHAIN_PORT` | `9590` (mainnet), `19333` (testnet), `29333` (regtest) | P2P listening port |
+| `COINBASECHAIN_PORT` | `9590` (mainnet), `19590` (testnet), `29590` (regtest) | P2P listening port |
 | `COINBASECHAIN_LISTEN` | `1` | Enable incoming connections (1=yes, 0=no) |
 | `COINBASECHAIN_VERBOSE` | `0` | Enable verbose logging (1=yes, 0=no) |
+| `COINBASECHAIN_LOGLEVEL` | - | Global log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
+| `COINBASECHAIN_DEBUG` | - | Component debug: `chain`, `network`, `all`, or comma-separated list |
+| `COINBASE_TEST_LOG_LEVEL` | `info` | Test log level (for test containers only) |
 
 **Example using environment variables:**
 
@@ -257,6 +262,81 @@ docker-compose exec node coinbasechain-cli getblockcount
 docker-compose exec node coinbasechain-cli stop
 ```
 
+## TRACE Logging for Debugging
+
+CoinbaseChain includes comprehensive TRACE-level logging for debugging chain and network issues.
+
+### Enable TRACE Logging
+
+**Using the debug profile (recommended):**
+
+```bash
+# Start debug node with full TRACE logging
+docker-compose --profile debug up -d
+
+# View TRACE logs
+docker-compose logs -f debug | grep "\[TRACE\]"
+```
+
+**Using environment variables:**
+
+```bash
+# Enable TRACE for all components
+docker run -d \
+  -e COINBASECHAIN_DEBUG=all \
+  -p 29590:29590 \
+  -v debug-data:/home/coinbasechain/.coinbasechain \
+  coinbasechain:latest --regtest --listen
+
+# Enable TRACE for specific components
+docker run -d \
+  -e COINBASECHAIN_DEBUG=chain,network \
+  -p 29590:29590 \
+  coinbasechain:latest --regtest --listen
+```
+
+### TRACE Components
+
+| Component | Description | Logs |
+|-----------|-------------|------|
+| `chain` | Chain validation, reorgs, InvalidateBlock | Header validation, fork detection, orphan handling |
+| `network` | P2P messaging, DoS protection | Peer lifecycle, message handling, misbehavior |
+| `sync` | Block/header synchronization | Sync state, progress tracking |
+| `crypto` | Cryptographic operations | PoW validation, RandomX details |
+| `app` | Application-level operations | Startup, shutdown, errors |
+| `all` | All components | Complete TRACE output |
+
+### Debug Examples
+
+**Debug a chain reorg:**
+
+```bash
+docker-compose --profile debug up -d
+docker logs coinbasechain-debug 2>&1 | grep -E "ActivateBestChain|FindFork|SetTip"
+```
+
+**Debug network sync issues:**
+
+```bash
+docker run -d --name debug-net \
+  -e COINBASECHAIN_DEBUG=network \
+  -p 29590:29590 \
+  coinbasechain:latest --regtest --listen
+
+docker logs debug-net 2>&1 | grep -E "handle_message|send_message"
+```
+
+**Debug PoW validation:**
+
+```bash
+docker run -d --name debug-pow \
+  -e COINBASECHAIN_LOGLEVEL=trace \
+  -p 29590:29590 \
+  coinbasechain:latest --regtest --listen
+
+docker logs debug-pow 2>&1 | grep -E "CheckProofOfWork|ASERT"
+```
+
 ## Running Tests
 
 ### Full Test Suite
@@ -276,6 +356,28 @@ docker-compose --profile test run --rm tests -v
 
 # Run tests with specific tags
 docker-compose --profile test run --rm tests "[security]"
+```
+
+### Run Tests with TRACE Logging
+
+```bash
+# Use the test-trace profile
+docker-compose --profile test-trace up
+
+# Or override environment variable
+docker-compose --profile test run --rm \
+  -e COINBASE_TEST_LOG_LEVEL=trace \
+  tests
+
+# Run specific test with TRACE
+docker-compose --profile test run --rm \
+  -e COINBASE_TEST_LOG_LEVEL=trace \
+  tests "[InvalidateBlock]"
+
+# Filter TRACE output
+docker-compose --profile test run --rm \
+  -e COINBASE_TEST_LOG_LEVEL=trace \
+  tests 2>&1 | grep -E "ActivateBestChain|FindFork"
 ```
 
 ### Build and Test in One Command
@@ -331,8 +433,8 @@ docker run --rm \
 | Port | Protocol | Purpose |
 |------|----------|---------|
 | 9590 | TCP | Mainnet P2P |
-| 19333 | TCP | Testnet P2P |
-| 29333 | TCP | Regtest P2P |
+| 19590 | TCP | Testnet P2P |
+| 29590 | TCP | Regtest P2P |
 
 ### Host Network Mode
 

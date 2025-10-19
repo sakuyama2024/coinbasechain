@@ -78,9 +78,8 @@ USER coinbasechain
 WORKDIR /home/coinbasechain
 
 # Expose P2P ports
-EXPOSE 9590
-EXPOSE 19333
-EXPOSE 29333
+# Mainnet: 9590, Testnet: 19590, Regtest: 29590
+EXPOSE 9590 19590 29590
 
 # Create volume mount point for persistent data
 VOLUME ["/home/coinbasechain/.coinbasechain"]

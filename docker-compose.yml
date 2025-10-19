@@ -67,7 +67,7 @@ services:
     profiles: ["testnet"]
 
     ports:
-      - "19333:19333"   # Testnet P2P
+      - "19590:19590"   # Testnet P2P
 
     volumes:
       - coinbasechain-testnet-data:/home/coinbasechain/.coinbasechain
@@ -100,15 +100,57 @@ services:
     restart: unless-stopped
     profiles: ["regtest"]
 
+    ports:
+      - "29590:29590"   # Regtest P2P
+
     volumes:
       - coinbasechain-regtest-data:/home/coinbasechain/.coinbasechain
 
     command: [
       "--regtest",
-      "--nolisten",
+      "--listen",
       "--verbose",
       "--threads=1",
       "--datadir=/home/coinbasechain/.coinbasechain"
+    ]
+
+    healthcheck:
+      test: ["CMD", "coinbasechain-cli", "getinfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ============================================================================
+  # Debug Node with TRACE logging (use profile: docker-compose --profile debug up)
+  # For debugging chain/network issues with comprehensive TRACE output
+  # ============================================================================
+  debug:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: coinbasechain:latest
+    container_name: coinbasechain-debug
+    hostname: coinbasechain-debug
+    restart: unless-stopped
+    profiles: ["debug"]
+
+    ports:
+      - "29590:29590"   # Regtest port for debugging
+
+    volumes:
+      - coinbasechain-debug-data:/home/coinbasechain/.coinbasechain
+
+    environment:
+      # Enable TRACE logging for all components
+      - COINBASECHAIN_DEBUG=all
+
+    command: [
+      "--regtest",
+      "--listen",
+      "--threads=1",
+      "--datadir=/home/coinbasechain/.coinbasechain",
+      "--debug=all"
     ]
 
     healthcheck:
@@ -129,10 +171,37 @@ services:
     container_name: coinbasechain-tests
     profiles: ["test"]
 
+    # Environment for test configuration
+    environment:
+      # Set to 'trace' to enable TRACE logging in tests
+      - COINBASE_TEST_LOG_LEVEL=info
+
     # Run tests and exit
     command: ["./coinbasechain_tests", "-v"]
 
     # Mount source for potential test coverage reports
+    volumes:
+      - ./test:/workspace/test:ro
+
+  # ============================================================================
+  # Test Runner with TRACE logging (use profile: docker-compose --profile test-trace up)
+  # For debugging test failures with comprehensive TRACE output
+  # ============================================================================
+  tests-trace:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    image: coinbasechain:test
+    container_name: coinbasechain-tests-trace
+    profiles: ["test-trace"]
+
+    environment:
+      # Enable TRACE logging for all test output
+      - COINBASE_TEST_LOG_LEVEL=trace
+
+    # Run tests with TRACE logging
+    command: ["./coinbasechain_tests", "-v"]
+
     volumes:
       - ./test:/workspace/test:ro
 
@@ -151,6 +220,10 @@ volumes:
   coinbasechain-regtest-data:
     driver: local
     name: coinbasechain-regtest-data
+
+  coinbasechain-debug-data:
+    driver: local
+    name: coinbasechain-debug-data
 
 # ============================================================================
 # Networks (optional: use custom network for node communication)

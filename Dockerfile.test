@@ -49,6 +49,11 @@ COPY --from=builder /build/build/coinbasechain_tests ./
 # Copy test data if exists
 COPY --from=builder /build/test/data/ ./test/data/ 2>/dev/null || true
 
+# Environment variable for log level control
+# Set COINBASE_TEST_LOG_LEVEL=trace to enable TRACE logging
+# Options: trace, debug, info, warn, error, critical
+ENV COINBASE_TEST_LOG_LEVEL=info
+
 # Default command: run all tests with verbose output
 ENTRYPOINT ["./coinbasechain_tests"]
 CMD ["-v"]

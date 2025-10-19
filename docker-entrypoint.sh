@@ -14,6 +14,8 @@ LISTEN="${COINBASECHAIN_LISTEN:-1}"
 SERVER="${COINBASECHAIN_SERVER:-0}"
 VERBOSE="${COINBASECHAIN_VERBOSE:-0}"
 NETWORK="${COINBASECHAIN_NETWORK:-mainnet}"
+LOGLEVEL="${COINBASECHAIN_LOGLEVEL:-}"
+DEBUG="${COINBASECHAIN_DEBUG:-}"
 
 # Ensure data directory exists
 mkdir -p "$DATADIR"
@@ -27,11 +29,11 @@ ARGS+=("--threads=$THREADS")
 case "$NETWORK" in
   testnet)
     ARGS+=("--testnet")
-    PORT="${COINBASECHAIN_PORT:-19333}"
+    PORT="${COINBASECHAIN_PORT:-19590}"
     ;;
   regtest)
     ARGS+=("--regtest")
-    PORT="${COINBASECHAIN_PORT:-29333}"
+    PORT="${COINBASECHAIN_PORT:-29590}"
     ;;
   mainnet|*)
     # Default is mainnet, no flag needed
@@ -58,6 +60,19 @@ if [ "$VERBOSE" = "1" ]; then
   ARGS+=("--verbose")
 fi
 
+# Log level configuration (trace, debug, info, warn, error, critical)
+# Examples: COINBASECHAIN_LOGLEVEL=trace or COINBASECHAIN_LOGLEVEL=debug
+if [ -n "$LOGLEVEL" ]; then
+  ARGS+=("--loglevel=$LOGLEVEL")
+fi
+
+# Component-specific debug logging
+# Examples: COINBASECHAIN_DEBUG=chain or COINBASECHAIN_DEBUG=chain,network
+# Special: COINBASECHAIN_DEBUG=all enables TRACE for all components
+if [ -n "$DEBUG" ]; then
+  ARGS+=("--debug=$DEBUG")
+fi
+
 # Add any additional arguments passed to the container
 ARGS+=("$@")
 
@@ -72,6 +87,12 @@ echo "Threads:    $THREADS"
 echo "Listen:     $LISTEN"
 echo "Server:     $SERVER"
 echo "Verbose:    $VERBOSE"
+if [ -n "$LOGLEVEL" ]; then
+  echo "Log Level:  $LOGLEVEL"
+fi
+if [ -n "$DEBUG" ]; then
+  echo "Debug:      $DEBUG"
+fi
 echo "========================================="
 echo "Command: coinbasechain ${ARGS[*]}"
 echo "========================================="
