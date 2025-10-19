@@ -133,7 +133,7 @@ public:
     return pbegin[(pend - pbegin) / 2];
   }
 
-  // Get ancestor at given height (walks pprev pointers, O(n) - TODO: add skip
+  // Get ancestor at given height (walks pprev pointers, O(n)
   // list for O(log n))
   [[nodiscard]] const CBlockIndex *GetAncestor(int height) const {
     if (height > nHeight || height < 0)
