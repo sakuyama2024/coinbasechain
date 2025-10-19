@@ -307,7 +307,6 @@ add_executable(coinbasechain_tests
     test/network/simulated_node.cpp
     test/network/network_bridged_transport.cpp
     test/network/attack_simulated_node.cpp
-    test/network/network_tests.cpp
     test/network/nat_manager_tests.cpp
     test/network/peer_connection_tests.cpp
     test/network/sync_ibd_tests.cpp
@@ -316,6 +315,7 @@ add_executable(coinbasechain_tests
     test/network/misbehavior_penalty_tests.cpp
     test/network/peer_tests.cpp
     test/network/peer_adversarial_tests.cpp
+    test/network/peer_discovery_tests.cpp
     test/network/invalidateblock_functional_tests.cpp
 )
 

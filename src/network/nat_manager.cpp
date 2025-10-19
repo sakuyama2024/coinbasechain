@@ -2,7 +2,7 @@
 // NAT traversal manager implementation
 
 #include "network/nat_manager.hpp"
-#include "util/logging.hpp"
+#include "chain/logging.hpp"
 #include <miniupnpc/miniupnpc.h>
 #include <miniupnpc/upnpcommands.h>
 #include <chrono>
