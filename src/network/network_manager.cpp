@@ -397,6 +397,27 @@ void NetworkManager::bootstrap_from_fixed_seeds(const chain::ChainParams &params
   LOG_NET_INFO("Successfully added {} seed nodes to AddressManager", added_count);
 }
 
+std::optional<std::string> NetworkManager::network_address_to_string(
+    const protocol::NetworkAddress& addr) {
+  try {
+    // Convert 16-byte array to boost::asio IP address
+    boost::asio::ip::address_v6::bytes_type bytes;
+    std::copy(addr.ip.begin(), addr.ip.end(), bytes.begin());
+    auto v6_addr = boost::asio::ip::make_address_v6(bytes);
+
+    // Check if it's IPv4-mapped and convert if needed
+    if (v6_addr.is_v4_mapped()) {
+      return boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, v6_addr)
+                 .to_string();
+    } else {
+      return v6_addr.to_string();
+    }
+  } catch (const std::exception &e) {
+    LOG_NET_WARN("Failed to convert NetworkAddress to string: {}", e.what());
+    return std::nullopt;
+  }
+}
+
 void NetworkManager::attempt_outbound_connections() {
   if (!running_.load(std::memory_order_acquire)) {
     return;
@@ -412,16 +433,28 @@ void NetworkManager::attempt_outbound_connections() {
 
     auto &addr = *maybe_addr;
 
-    // Convert IP to string
-    std::string ip_str;
-    // TODO: Proper IP conversion from addr.ip array
-    // For now, just skip - this will be implemented when we have real addresses
+    // Convert NetworkAddress to IP string
+    auto maybe_ip_str = network_address_to_string(addr);
+    if (!maybe_ip_str) {
+      LOG_NET_WARN("Failed to convert address to string, marking as failed");
+      addr_manager_->failed(addr);
+      continue;
+    }
 
-    // Mark as attempt
+    const std::string &ip_str = *maybe_ip_str;
+    LOG_NET_DEBUG("Attempting outbound connection to {}:{}", ip_str, addr.port);
+
+    // Mark as attempt (connection may still fail)
     addr_manager_->attempt(addr);
 
-    // Try to connect (this will be properly implemented when IP conversion is
-    // done) connect_to(ip_str, addr.port);
+    // Try to connect - connect_to handles its own error reporting
+    if (!connect_to(ip_str, addr.port)) {
+      LOG_NET_DEBUG("Failed to initiate connection to {}:{}", ip_str, addr.port);
+      addr_manager_->failed(addr);
+    }
+    // Note: On success, we should call addr_manager_->good(addr) in the
+    // connection callback, but that requires passing NetworkAddress through
+    // connect_to(), which is a larger refactor for later
   }
 }
 
@@ -1266,31 +1299,18 @@ bool NetworkManager::LoadAnchors(const std::string &filepath) {
 
     // Try to reconnect to anchors
     for (const auto &addr : anchors) {
-      try {
-        // Convert 16-byte array to boost::asio IP address
-        boost::asio::ip::address_v6::bytes_type bytes;
-        std::copy(addr.ip.begin(), addr.ip.end(), bytes.begin());
-        auto v6_addr = boost::asio::ip::make_address_v6(bytes);
-
-        // Check if it's IPv4-mapped and convert if needed
-        std::string ip_str;
-        if (v6_addr.is_v4_mapped()) {
-          ip_str = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped,
-                                                    v6_addr)
-                       .to_string();
-        } else {
-          ip_str = v6_addr.to_string();
-        }
-
-        LOG_NET_INFO("Reconnecting to anchor: {}:{}", ip_str, addr.port);
-
-        // Attempt to connect (this will be async so we don't block startup)
-        connect_to(ip_str, addr.port);
-
-      } catch (const std::exception &e) {
-        LOG_NET_WARN("Failed to reconnect to anchor: {}", e.what());
+      // Convert NetworkAddress to IP string using helper
+      auto maybe_ip_str = network_address_to_string(addr);
+      if (!maybe_ip_str) {
+        LOG_NET_WARN("Failed to convert anchor address to string, skipping");
         continue;
       }
+
+      const std::string &ip_str = *maybe_ip_str;
+      LOG_NET_INFO("Reconnecting to anchor: {}:{}", ip_str, addr.port);
+
+      // Attempt to connect (this will be async so we don't block startup)
+      connect_to(ip_str, addr.port);
     }
 
     // Delete the anchors file after reading

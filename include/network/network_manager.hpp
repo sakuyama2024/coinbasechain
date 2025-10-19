@@ -141,6 +141,9 @@ private:
   void attempt_outbound_connections();
   void schedule_next_connection_attempt();
 
+  // Helper to convert NetworkAddress to IP string
+  std::optional<std::string> network_address_to_string(const protocol::NetworkAddress& addr);
+
   // Inbound connections (handled via transport callback)
   void handle_inbound_connection(TransportConnectionPtr connection);
 

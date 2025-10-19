@@ -21,8 +21,7 @@ constexpr uint32_t REGTEST =
     0x4B7C2E91; // High bit separation from mainnet/testnet
 } // namespace magic
 
-// Default ports - consistent pattern: mainnet, mainnet+10000, mainnet+20000
-// TODO WTF is this 
+ 
 namespace ports {
 constexpr uint16_t MAINNET = 9590;
 constexpr uint16_t TESTNET = 19590; // MAINNET + 10000
@@ -125,7 +124,7 @@ constexpr int INACTIVITY_TIMEOUT_SEC =
 constexpr size_t MAX_SUBVERSION_LENGTH = 256;
 constexpr int64_t TIMESTAMP_ALLOWANCE_SEC = 2 * 60 * 60; // 2 hours
 
-// Time validation (Bitcoin Core src/validation.cpp)
+// Time validation 
 // TODO one hour blocks ?
 constexpr int64_t MAX_FUTURE_BLOCK_TIME =
     2 * 60 * 60; // 2 hours - Maximum block timestamp in future
