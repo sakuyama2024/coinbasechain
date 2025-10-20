@@ -86,8 +86,8 @@ public:
     return false;
   }
 
-  std::string GetRejectReason() const { return reject_reason_; }
-  std::string GetDebugMessage() const { return debug_message_; }
+  const std::string& GetRejectReason() const { return reject_reason_; }
+  const std::string& GetDebugMessage() const { return debug_message_; }
 
 private:
   Result result_;

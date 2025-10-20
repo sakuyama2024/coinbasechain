@@ -37,9 +37,8 @@ struct AppConfig {
   // Logging
   bool verbose = false;
 
-  AppConfig() {
-    // Set default data directory
-    datadir = util::get_default_datadir();
+  AppConfig() : datadir(util::get_default_datadir()) {
+    // Default data directory set via initialization list
   }
 };
 

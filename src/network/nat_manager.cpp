@@ -246,7 +246,7 @@ void NATManager::RefreshMapping() {
     }
 }
 
-std::string NATManager::GetExternalIP() const {
+const std::string& NATManager::GetExternalIP() const {
     return external_ip_;
 }
 

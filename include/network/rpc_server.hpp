@@ -71,8 +71,12 @@ private:
   std::string HandleGenerate(const std::vector<std::string> &params);
 
   // Command handlers - Network
+  std::string HandleGetConnectionCount(const std::vector<std::string> &params);
   std::string HandleGetPeerInfo(const std::vector<std::string> &params);
   std::string HandleAddNode(const std::vector<std::string> &params);
+  std::string HandleSetBan(const std::vector<std::string> &params);
+  std::string HandleListBanned(const std::vector<std::string> &params);
+  std::string HandleGetAddrManInfo(const std::vector<std::string> &params);
 
   // Command handlers - Control
   std::string HandleStop(const std::vector<std::string> &params);

@@ -186,10 +186,19 @@ void NetworkManager::stop() {
   io_context_.restart();
 }
 
-bool NetworkManager::connect_to(const std::string &address, uint16_t port) {
+bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
   if (!running_.load(std::memory_order_acquire)) {
     return false;
   }
+
+  // Convert NetworkAddress to IP string for transport layer
+  auto ip_opt = network_address_to_string(addr);
+  if (!ip_opt) {
+    LOG_NET_ERROR("Failed to convert NetworkAddress to IP string");
+    return false;
+  }
+  const std::string &address = *ip_opt;
+  uint16_t port = addr.port;
 
   // Check if address is banned
   if (ban_man_ && ban_man_->IsBanned(address)) {
@@ -216,14 +225,14 @@ bool NetworkManager::connect_to(const std::string &address, uint16_t port) {
   // Create async transport connection with callback
   // The connection will be in "not open" state until the callback fires
   auto connection = transport_->connect(
-      address, port, [this, peer_id_ptr, address, port](bool success) {
+      address, port, [this, peer_id_ptr, address, port, addr](bool success) {
         // This callback fires when TCP connection completes (can be very fast!)
         // We need to ensure the peer is in peer_manager before this fires
         LOG_NET_DEBUG("CALLBACK FIRED for {}:{}, success={}", address, port, success);
 
         // Wait briefly to ensure peer has been added to manager
         // (This handles the race where connection completes before we add peer)
-        boost::asio::post(io_context_, [this, peer_id_ptr, address, port, success]() {
+        boost::asio::post(io_context_, [this, peer_id_ptr, address, port, addr, success]() {
           if (!peer_id_ptr->has_value()) {
             LOG_NET_DEBUG("peer_id_ptr has no value, returning");
             return;
@@ -239,9 +248,10 @@ bool NetworkManager::connect_to(const std::string &address, uint16_t port) {
           }
 
           if (success) {
-            // Connection succeeded - now start the peer protocol
+            // Connection succeeded - mark address as good and start peer protocol
             LOG_NET_DEBUG("Connected to {}:{}, starting peer {}", address, port,
                           peer_id);
+            addr_manager_->good(addr);
             peer_ptr->start();
           } else {
             // Connection failed - remove the peer
@@ -296,18 +306,6 @@ size_t NetworkManager::outbound_peer_count() const {
 
 size_t NetworkManager::inbound_peer_count() const {
   return peer_manager_->inbound_count();
-}
-
-bool NetworkManager::check_incoming_nonce(uint64_t nonce) const {
-  // Check if the nonce matches any of our outbound connections' local nonce
-  // This prevents connecting to ourselves
-  auto peers = peer_manager_->get_outbound_peers();
-  for (const auto &peer : peers) {
-    if (peer && !peer->is_connected() && peer->peer_nonce() == nonce) {
-      return false; // Self-connection detected
-    }
-  }
-  return true; // OK
 }
 
 void NetworkManager::bootstrap_from_fixed_seeds(const chain::ChainParams &params) {
@@ -433,7 +431,7 @@ void NetworkManager::attempt_outbound_connections() {
 
     auto &addr = *maybe_addr;
 
-    // Convert NetworkAddress to IP string
+    // Convert NetworkAddress to IP string for logging
     auto maybe_ip_str = network_address_to_string(addr);
     if (!maybe_ip_str) {
       LOG_NET_WARN("Failed to convert address to string, marking as failed");
@@ -447,14 +445,11 @@ void NetworkManager::attempt_outbound_connections() {
     // Mark as attempt (connection may still fail)
     addr_manager_->attempt(addr);
 
-    // Try to connect - connect_to handles its own error reporting
-    if (!connect_to(ip_str, addr.port)) {
+    // Try to connect - connect_to handles address tracking on success/failure
+    if (!connect_to(addr)) {
       LOG_NET_DEBUG("Failed to initiate connection to {}:{}", ip_str, addr.port);
       addr_manager_->failed(addr);
     }
-    // Note: On success, we should call addr_manager_->good(addr) in the
-    // connection callback, but that requires passing NetworkAddress through
-    // connect_to(), which is a larger refactor for later
   }
 }
 
@@ -1147,11 +1142,11 @@ std::vector<protocol::NetworkAddress> NetworkManager::GetAnchors() const {
 
   // Filter for connected peers only
   std::vector<PeerPtr> connected_peers;
-  for (const auto &peer : outbound_peers) {
-    if (peer && peer->is_connected() && peer->state() == PeerState::READY) {
-      connected_peers.push_back(peer);
-    }
-  }
+  std::copy_if(outbound_peers.begin(), outbound_peers.end(),
+               std::back_inserter(connected_peers), [](const auto &peer) {
+                 return peer && peer->is_connected() &&
+                        peer->state() == PeerState::READY;
+               });
 
   // Limit to 2 anchors 
   const size_t MAX_ANCHORS = 2;
@@ -1299,7 +1294,7 @@ bool NetworkManager::LoadAnchors(const std::string &filepath) {
 
     // Try to reconnect to anchors
     for (const auto &addr : anchors) {
-      // Convert NetworkAddress to IP string using helper
+      // Convert NetworkAddress to IP string for logging
       auto maybe_ip_str = network_address_to_string(addr);
       if (!maybe_ip_str) {
         LOG_NET_WARN("Failed to convert anchor address to string, skipping");
@@ -1310,7 +1305,7 @@ bool NetworkManager::LoadAnchors(const std::string &filepath) {
       LOG_NET_INFO("Reconnecting to anchor: {}:{}", ip_str, addr.port);
 
       // Attempt to connect (this will be async so we don't block startup)
-      connect_to(ip_str, addr.port);
+      connect_to(addr);
     }
 
     // Delete the anchors file after reading
@@ -1480,10 +1475,6 @@ bool NetworkManager::should_request_more() const {
   // 2. We're not synced yet
   std::lock_guard<std::mutex> lock(header_sync_mutex_);
   return last_batch_size_ == protocol::MAX_HEADERS_SIZE && !is_synced();
-}
-
-CBlockLocator NetworkManager::get_locator() const {
-  return chainstate_manager_.GetLocator();
 }
 
 CBlockLocator NetworkManager::get_locator_from_prev() const {

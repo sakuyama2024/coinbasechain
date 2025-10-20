@@ -49,10 +49,10 @@ public:
           maintenance_interval(std::chrono::seconds(30)) {}
   };
 
-  NetworkManager(validation::ChainstateManager &chainstate_manager,
-                 const Config &config = Config{},
-                 std::shared_ptr<Transport> transport = nullptr,
-                 boost::asio::io_context* external_io_context = nullptr);
+  explicit NetworkManager(validation::ChainstateManager &chainstate_manager,
+                           const Config &config = Config{},
+                           std::shared_ptr<Transport> transport = nullptr,
+                           boost::asio::io_context* external_io_context = nullptr);
   ~NetworkManager();
 
   // Lifecycle
@@ -66,7 +66,7 @@ public:
   network::BanMan &ban_man() { return *ban_man_; }
 
   // Manual connection management
-  bool connect_to(const std::string &address, uint16_t port);
+  bool connect_to(const protocol::NetworkAddress &addr);
   void disconnect_from(int peer_id);
 
   // Block relay
@@ -77,9 +77,8 @@ public:
 
   // Self-connection prevention
   uint64_t get_local_nonce() const { return local_nonce_; }
-  bool check_incoming_nonce(uint64_t nonce) const;
 
-  // Stats
+  // Stats (used primarily in tests, but useful for monitoring/debugging)
   size_t active_peer_count() const;
   size_t outbound_peer_count() const;
   size_t inbound_peer_count() const;
@@ -166,7 +165,6 @@ private:
   // Header sync internal methods (moved from HeaderSync class)
   bool is_synced(int64_t max_age_seconds = 3600) const;
   bool should_request_more() const;
-  CBlockLocator get_locator() const;
   CBlockLocator get_locator_from_prev() const;
 
   // Block relay helpers

@@ -77,7 +77,10 @@ static std::string GetErrorReason() {
                      FORMAT_MESSAGE_IGNORE_INSERTS,
                  nullptr, error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
                  (LPSTR)&message, 0, nullptr);
+  // False positive: FormatMessageA modifies 'message' via out-parameter
+  // cppcheck-suppress knownConditionTrueFalse
   std::string result(message ? message : "Unknown error");
+  // cppcheck-suppress knownConditionTrueFalse
   if (message) {
     LocalFree(message);
   }

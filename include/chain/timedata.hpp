@@ -63,7 +63,7 @@ public:
 
   int size() const { return vValues.size(); }
 
-  std::vector<T> sorted() const { return vSorted; }
+  const std::vector<T>& sorted() const { return vSorted; }
 };
 
 /**

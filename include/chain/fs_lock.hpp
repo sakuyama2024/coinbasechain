@@ -39,7 +39,7 @@ public:
   /**
    * Get reason for lock failure
    */
-  std::string GetReason() const { return reason_; }
+  const std::string& GetReason() const { return reason_; }
 
 private:
   std::string reason_;

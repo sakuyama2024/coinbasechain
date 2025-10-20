@@ -80,7 +80,7 @@ private:
 class MessageDeserializer {
 public:
   MessageDeserializer(const uint8_t *data, size_t size);
-  MessageDeserializer(const std::vector<uint8_t> &data);
+  explicit MessageDeserializer(const std::vector<uint8_t> &data);
 
   // Read primitives
   uint8_t read_uint8();

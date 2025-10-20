@@ -100,11 +100,6 @@ void PeerManager::remove_peer(int peer_id) {
     LOG_NET_INFO("remove_peer: Calling disconnect() on peer {}", peer_id);
     peer->disconnect();
   }
-
-  // Notify callback
-  if (peer_removed_callback_) {
-    peer_removed_callback_(peer_id);
-  }
 }
 
 PeerPtr PeerManager::get_peer(int peer_id) {
@@ -352,10 +347,6 @@ void PeerManager::process_periodic() {
 
   // Cleanup stale addresses in AddressManager
   addr_manager_.cleanup_stale();
-}
-
-void PeerManager::set_peer_removed_callback(PeerRemovedCallback callback) {
-  peer_removed_callback_ = std::move(callback);
 }
 
 // === Misbehavior Tracking Public API ===

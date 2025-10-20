@@ -21,7 +21,7 @@ class SimulatedTransport;
  * Routes messages through SimulatedTransport's message queue instead of real
  * sockets.
  */
-class SimulatedTransportConnection
+class SimulatedTransportConnection final
     : public TransportConnection,
       public std::enable_shared_from_this<SimulatedTransportConnection> {
 public:
@@ -75,7 +75,7 @@ private:
  * - Time-based message delivery
  * - Full control over message routing for testing
  */
-class SimulatedTransport : public Transport {
+class SimulatedTransport final : public Transport {
 public:
   SimulatedTransport();
   ~SimulatedTransport() override;

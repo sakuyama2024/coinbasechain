@@ -129,10 +129,6 @@ public:
   // Process periodic tasks (cleanup, connection maintenance)
   void process_periodic();
 
-  // Set callback for when a peer is removed
-  using PeerRemovedCallback = std::function<void(int peer_id)>;
-  void set_peer_removed_callback(PeerRemovedCallback callback);
-
   // === Misbehavior Tracking (Public API) ===
   // These are the ONLY methods that external code (like HeaderSync) should call
   // All penalty application is handled internally
@@ -166,8 +162,6 @@ private:
   mutable std::mutex mutex_;
   std::map<int, PeerPtr> peers_;
   std::map<int, PeerMisbehaviorData> peer_misbehavior_;
-
-  PeerRemovedCallback peer_removed_callback_;
 
   // Get next available peer ID
   int next_peer_id_ = 0;

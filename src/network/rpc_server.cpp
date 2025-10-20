@@ -72,10 +72,20 @@ void RPCServer::RegisterHandlers() {
   handlers_["generate"] = [this](const auto &p) { return HandleGenerate(p); };
 
   // Network commands
+  handlers_["getconnectioncount"] = [this](const auto &p) {
+    return HandleGetConnectionCount(p);
+  };
   handlers_["getpeerinfo"] = [this](const auto &p) {
     return HandleGetPeerInfo(p);
   };
   handlers_["addnode"] = [this](const auto &p) { return HandleAddNode(p); };
+  handlers_["setban"] = [this](const auto &p) { return HandleSetBan(p); };
+  handlers_["listbanned"] = [this](const auto &p) {
+    return HandleListBanned(p);
+  };
+  handlers_["getaddrmaninfo"] = [this](const auto &p) {
+    return HandleGetAddrManInfo(p);
+  };
 
   // Control commands
   handlers_["stop"] = [this](const auto &p) { return HandleStop(p); };
@@ -412,6 +422,15 @@ RPCServer::HandleGetBestBlockHash(const std::vector<std::string> &params) {
 }
 
 std::string
+RPCServer::HandleGetConnectionCount(const std::vector<std::string> &params) {
+  size_t count = network_manager_.active_peer_count();
+
+  std::ostringstream oss;
+  oss << count << "\n";
+  return oss.str();
+}
+
+std::string
 RPCServer::HandleGetPeerInfo(const std::vector<std::string> &params) {
   // Get all peers from NetworkManager
   auto all_peers = network_manager_.peer_manager().get_all_peers();
@@ -498,8 +517,34 @@ std::string RPCServer::HandleAddNode(const std::vector<std::string> &params) {
   uint16_t port = static_cast<uint16_t>(std::stoi(port_str));
 
   if (command == "add") {
+    // Parse IP address and create NetworkAddress
+    boost::system::error_code ec;
+    auto ip_addr = boost::asio::ip::make_address(host, ec);
+
+    if (ec) {
+      std::ostringstream oss;
+      oss << "{\"error\":\"Invalid IP address: " << ec.message() << "\"}\n";
+      return oss.str();
+    }
+
+    // Create NetworkAddress
+    protocol::NetworkAddress addr;
+    addr.services = protocol::ServiceFlags::NODE_NETWORK;
+    addr.port = port;
+
+    // Convert to 16-byte IPv6 format (IPv4-mapped if needed)
+    if (ip_addr.is_v4()) {
+      auto v6_mapped = boost::asio::ip::make_address_v6(
+          boost::asio::ip::v4_mapped, ip_addr.to_v4());
+      auto bytes = v6_mapped.to_bytes();
+      std::copy(bytes.begin(), bytes.end(), addr.ip.begin());
+    } else {
+      auto bytes = ip_addr.to_v6().to_bytes();
+      std::copy(bytes.begin(), bytes.end(), addr.ip.begin());
+    }
+
     // Connect to the node
-    bool success = network_manager_.connect_to(host, port);
+    bool success = network_manager_.connect_to(addr);
     if (!success) {
       return "{\"error\":\"Failed to connect to node\"}\n";
     }
@@ -537,6 +582,105 @@ std::string RPCServer::HandleAddNode(const std::vector<std::string> &params) {
   } else {
     return "{\"error\":\"Unknown command (use 'add' or 'remove')\"}\n";
   }
+}
+
+std::string RPCServer::HandleSetBan(const std::vector<std::string> &params) {
+  if (params.empty()) {
+    return "{\"error\":\"Missing subnet/IP parameter\"}\n";
+  }
+
+  std::string address = params[0];
+  std::string command = "add"; // Default command
+  if (params.size() > 1) {
+    command = params[1];
+  }
+
+  if (command == "add") {
+    // Optional bantime parameter (in seconds, 0 = permanent)
+    int64_t bantime = 0; // 0 = permanent by default
+    if (params.size() > 2) {
+      try {
+        bantime = std::stoll(params[2]);
+      } catch (...) {
+        return "{\"error\":\"Invalid bantime parameter\"}\n";
+      }
+    }
+
+    // Ban the address
+    network_manager_.ban_man().Ban(address, bantime);
+
+    std::ostringstream oss;
+    if (bantime > 0) {
+      oss << "{\n"
+          << "  \"success\": true,\n"
+          << "  \"message\": \"Banned " << address << " for " << bantime
+          << " seconds\"\n"
+          << "}\n";
+    } else {
+      oss << "{\n"
+          << "  \"success\": true,\n"
+          << "  \"message\": \"Permanently banned " << address << "\"\n"
+          << "}\n";
+    }
+    return oss.str();
+
+  } else if (command == "remove") {
+    network_manager_.ban_man().Unban(address);
+
+    std::ostringstream oss;
+    oss << "{\n"
+        << "  \"success\": true,\n"
+        << "  \"message\": \"Unbanned " << address << "\"\n"
+        << "}\n";
+    return oss.str();
+
+  } else {
+    return "{\"error\":\"Unknown command (use 'add' or 'remove')\"}\n";
+  }
+}
+
+std::string
+RPCServer::HandleListBanned(const std::vector<std::string> &params) {
+  auto banned = network_manager_.ban_man().GetBanned();
+
+  std::ostringstream oss;
+  oss << "[\n";
+
+  size_t i = 0;
+  for (const auto &[address, entry] : banned) {
+    oss << "  {\n"
+        << "    \"address\": \"" << address << "\",\n"
+        << "    \"banned_until\": " << entry.nBanUntil << ",\n"
+        << "    \"ban_created\": " << entry.nCreateTime << ",\n"
+        << "    \"ban_reason\": \"manually added\"\n"
+        << "  }";
+
+    if (i < banned.size() - 1) {
+      oss << ",";
+    }
+    oss << "\n";
+    i++;
+  }
+
+  oss << "]\n";
+  return oss.str();
+}
+
+std::string
+RPCServer::HandleGetAddrManInfo(const std::vector<std::string> &params) {
+  auto &addr_man = network_manager_.address_manager();
+
+  size_t total = addr_man.size();
+  size_t tried = addr_man.tried_count();
+  size_t new_addrs = addr_man.new_count();
+
+  std::ostringstream oss;
+  oss << "{\n"
+      << "  \"total\": " << total << ",\n"
+      << "  \"tried\": " << tried << ",\n"
+      << "  \"new\": " << new_addrs << "\n"
+      << "}\n";
+  return oss.str();
 }
 
 std::string

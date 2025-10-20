@@ -23,7 +23,7 @@ public:
     void Stop();
 
     // Get discovered external IP
-    std::string GetExternalIP() const;
+    const std::string& GetExternalIP() const;
 
     // Get mapped external port
     uint16_t GetExternalPort() const;
