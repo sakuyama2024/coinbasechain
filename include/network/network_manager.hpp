@@ -28,8 +28,8 @@ namespace network {
 class NetworkManager {
 public:
   struct Config {
-    uint32_t network_magic; // Network magic bytes
-    uint16_t listen_port;   // Port to listen on (0 = don't listen)
+    uint32_t network_magic; // Network magic bytes (REQUIRED - must be set based on chain type)
+    uint16_t listen_port;   // Port to listen on (REQUIRED - must be set based on chain type, 0 = don't listen)
     bool listen_enabled;    // Enable inbound connections
     bool enable_nat;        // Enable UPnP NAT traversal
     size_t io_threads;      // Number of IO threads
@@ -38,13 +38,16 @@ public:
     std::chrono::seconds connect_interval; // Time between connection attempts
     std::chrono::seconds maintenance_interval; // Time between maintenance tasks
 
+    // SECURITY: network_magic and listen_port have NO defaults
+    // They must be explicitly set based on chain type to prevent
+    // accidental mainnet/testnet/regtest network confusion
     Config()
-        : network_magic(protocol::magic::MAINNET) // Mainnet by default
+        : network_magic(0) // INVALID - must be explicitly set
           ,
-          listen_port(protocol::ports::MAINNET), listen_enabled(false),
-          enable_nat(true), // Enable NAT traversal by default
-          io_threads(4), datadir("") // Empty = no persistent bans
+          listen_port(0) // INVALID - must be explicitly set
           ,
+          listen_enabled(true), // Default: accept inbound connections
+          enable_nat(true), io_threads(4), datadir(""),
           connect_interval(std::chrono::seconds(5)),
           maintenance_interval(std::chrono::seconds(30)) {}
   };

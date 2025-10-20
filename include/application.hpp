@@ -39,6 +39,10 @@ struct AppConfig {
 
   AppConfig() : datadir(util::get_default_datadir()) {
     // Default data directory set via initialization list
+    // SECURITY: Set network parameters based on chain type
+    // (mainnet is the default chain_type)
+    network_config.network_magic = protocol::magic::MAINNET;
+    network_config.listen_port = protocol::ports::MAINNET;
   }
 };
 
