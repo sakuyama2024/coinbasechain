@@ -48,7 +48,7 @@ NetworkManager::NetworkManager(
   peer_manager_ = std::make_unique<PeerManager>(io_context_, *addr_manager_);
 
   // Create BanMan (with datadir for persistent bans)
-  ban_man_ = std::make_unique<network::BanMan>(config_.datadir);
+  ban_man_ = std::make_unique<BanMan>(config_.datadir);
   if (!config_.datadir.empty()) {
     ban_man_->Load(); // Load existing bans from disk
   }

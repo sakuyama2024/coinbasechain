@@ -4,9 +4,11 @@
 #ifndef COINBASECHAIN_RPC_RPC_SERVER_HPP
 #define COINBASECHAIN_RPC_RPC_SERVER_HPP
 
+#include "chain/uint.hpp"
 #include <atomic>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -48,6 +50,12 @@ public:
   bool IsRunning() const { return running_; }
 
 private:
+  // Security: Input validation helpers
+  static std::optional<int> SafeParseInt(const std::string& str, int min, int max);
+  static std::optional<uint256> SafeParseHash(const std::string& str);
+  static std::optional<uint16_t> SafeParsePort(const std::string& str);
+  static std::string EscapeJSONString(const std::string& str);
+
   void ServerThread();
   void HandleClient(int client_fd);
   std::string ExecuteCommand(const std::string &method,
@@ -95,6 +103,7 @@ private:
 
   int server_fd_;
   std::atomic<bool> running_;
+  std::atomic<bool> shutting_down_;
   std::thread server_thread_;
 
   std::map<std::string, CommandHandler> handlers_;

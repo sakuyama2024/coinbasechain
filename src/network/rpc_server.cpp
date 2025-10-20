@@ -4,16 +4,19 @@
 #include "network/rpc_server.hpp"
 #include "chain/chainparams.hpp"
 #include "chain/miner.hpp"
+#include "chain/uint.hpp"
 #include "network/network_manager.hpp"
 #include "network/peer_manager.hpp"
 #include "chain/logging.hpp"
 #include "chain/time.hpp"
 #include "chain/chainstate_manager.hpp"
+#include <nlohmann/json.hpp>
 #include <chrono>
 #include <cstring>
 #include <iomanip>
 #include <sstream>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <thread>
 #include <unistd.h>
@@ -28,11 +31,99 @@ RPCServer::RPCServer(const std::string &socket_path,
                      std::function<void()> shutdown_callback)
     : socket_path_(socket_path), chainstate_manager_(chainstate_manager),
       network_manager_(network_manager), miner_(miner), params_(params),
-      shutdown_callback_(shutdown_callback), server_fd_(-1), running_(false) {
+      shutdown_callback_(shutdown_callback), server_fd_(-1), running_(false),
+      shutting_down_(false) {
   RegisterHandlers();
 }
 
 RPCServer::~RPCServer() { Stop(); }
+
+// ============================================================================
+// SECURITY: Input Validation Helpers
+// ============================================================================
+
+std::optional<int> RPCServer::SafeParseInt(const std::string& str, int min, int max) {
+  try {
+    size_t pos = 0;
+    long value = std::stol(str, &pos);
+
+    // Check entire string was consumed
+    if (pos != str.size()) {
+      return std::nullopt;
+    }
+
+    // Check bounds
+    if (value < min || value > max) {
+      return std::nullopt;
+    }
+
+    return static_cast<int>(value);
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
+std::optional<uint256> RPCServer::SafeParseHash(const std::string& str) {
+  // Check length
+  if (str.size() != 64) {
+    return std::nullopt;
+  }
+
+  // Check characters
+  for (char c : str) {
+    if (!std::isxdigit(static_cast<unsigned char>(c))) {
+      return std::nullopt;
+    }
+  }
+
+  uint256 hash;
+  hash.SetHex(str);
+  return hash;
+}
+
+std::optional<uint16_t> RPCServer::SafeParsePort(const std::string& str) {
+  try {
+    size_t pos = 0;
+    long value = std::stol(str, &pos);
+
+    // Check entire string was consumed
+    if (pos != str.size()) {
+      return std::nullopt;
+    }
+
+    // Check valid port range
+    if (value < 1 || value > 65535) {
+      return std::nullopt;
+    }
+
+    return static_cast<uint16_t>(value);
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
+std::string RPCServer::EscapeJSONString(const std::string& str) {
+  std::ostringstream oss;
+  for (char c : str) {
+    switch (c) {
+      case '"':  oss << "\\\""; break;
+      case '\\': oss << "\\\\"; break;
+      case '\b': oss << "\\b"; break;
+      case '\f': oss << "\\f"; break;
+      case '\n': oss << "\\n"; break;
+      case '\r': oss << "\\r"; break;
+      case '\t': oss << "\\t"; break;
+      default:
+        if (c < 0x20) {
+          oss << "\\u" << std::hex << std::setw(4) << std::setfill('0')
+              << static_cast<int>(static_cast<unsigned char>(c));
+        } else {
+          oss << c;
+        }
+    }
+  }
+  return oss.str();
+}
 
 void RPCServer::RegisterHandlers() {
   // Blockchain commands
@@ -107,9 +198,13 @@ bool RPCServer::Start() {
   // Remove old socket file if it exists
   unlink(socket_path_.c_str());
 
+  // SECURITY FIX: Set restrictive umask before creating socket
+  mode_t old_umask = umask(0077);  // rw------- for socket file
+
   // Create Unix domain socket
   server_fd_ = socket(AF_UNIX, SOCK_STREAM, 0);
   if (server_fd_ < 0) {
+    umask(old_umask);  // Restore umask
     LOG_ERROR("Failed to create RPC socket");
     return false;
   }
@@ -124,8 +219,15 @@ bool RPCServer::Start() {
     LOG_ERROR("Failed to bind RPC socket to {}", socket_path_);
     close(server_fd_);
     server_fd_ = -1;
+    umask(old_umask);  // Restore umask
     return false;
   }
+
+  // Restore umask
+  umask(old_umask);
+
+  // SECURITY FIX: Explicitly set permissions (double-check)
+  chmod(socket_path_.c_str(), 0600);  // Only owner can access
 
   // Listen for connections
   if (listen(server_fd_, 5) < 0) {
@@ -147,6 +249,8 @@ void RPCServer::Stop() {
     return;
   }
 
+  // SECURITY FIX: Set shutdown flag to reject new requests
+  shutting_down_.store(true, std::memory_order_release);
   running_ = false;
 
   if (server_fd_ >= 0) {
@@ -183,51 +287,68 @@ void RPCServer::ServerThread() {
 }
 
 void RPCServer::HandleClient(int client_fd) {
-  char buffer[4096];
-  ssize_t received = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+  // Check shutdown flag
+  if (shutting_down_.load(std::memory_order_acquire)) {
+    std::string error = "{\"error\":\"Server shutting down\"}\n";
+    send(client_fd, error.c_str(), error.size(), 0);
+    return;
+  }
+
+  // SECURITY FIX: Use vector to avoid buffer overflow
+  std::vector<char> buffer(4096);
+  ssize_t received = recv(client_fd, buffer.data(), buffer.size(), 0);
 
   if (received <= 0) {
     return;
   }
 
-  buffer[received] = '\0';
-  std::string request(buffer, received);
+  // SECURITY FIX: Bounds check before creating string
+  if (received >= static_cast<ssize_t>(buffer.size())) {
+    LOG_ERROR("RPC request too large: {} bytes", received);
+    std::string error = "{\"error\":\"Request too large\"}\n";
+    send(client_fd, error.c_str(), error.size(), 0);
+    return;
+  }
 
-  // Simple JSON parsing (method and params)
+  std::string request(buffer.data(), received);
+
+  // SECURITY FIX: Use proper JSON parsing instead of hand-rolled parser
   std::string method;
   std::vector<std::string> params;
 
-  // Extract method
-  size_t method_pos = request.find("\"method\":\"");
-  if (method_pos != std::string::npos) {
-    method_pos += 10;
-    size_t method_end = request.find("\"", method_pos);
-    if (method_end != std::string::npos) {
-      method = request.substr(method_pos, method_end - method_pos);
-    }
-  }
+  try {
+    nlohmann::json j = nlohmann::json::parse(request);
 
-  // Extract params (simple array parsing)
-  size_t params_pos = request.find("\"params\":[");
-  if (params_pos != std::string::npos) {
-    params_pos += 10;
-    size_t params_end = request.find("]", params_pos);
-    if (params_end != std::string::npos) {
-      std::string params_str =
-          request.substr(params_pos, params_end - params_pos);
-      // Parse comma-separated quoted strings
-      size_t pos = 0;
-      while (pos < params_str.size()) {
-        size_t quote1 = params_str.find("\"", pos);
-        if (quote1 == std::string::npos)
-          break;
-        size_t quote2 = params_str.find("\"", quote1 + 1);
-        if (quote2 == std::string::npos)
-          break;
-        params.push_back(params_str.substr(quote1 + 1, quote2 - quote1 - 1));
-        pos = quote2 + 1;
+    // Extract method
+    if (!j.contains("method") || !j["method"].is_string()) {
+      std::string error = "{\"error\":\"Missing or invalid method field\"}\n";
+      send(client_fd, error.c_str(), error.size(), 0);
+      return;
+    }
+
+    method = j["method"].get<std::string>();
+
+    // Extract params (optional)
+    if (j.contains("params")) {
+      if (j["params"].is_array()) {
+        for (const auto& param : j["params"]) {
+          if (param.is_string()) {
+            params.push_back(param.get<std::string>());
+          } else {
+            // Convert non-string params to string
+            params.push_back(param.dump());
+          }
+        }
+      } else if (j["params"].is_string()) {
+        // Single string param
+        params.push_back(j["params"].get<std::string>());
       }
     }
+  } catch (const nlohmann::json::exception& e) {
+    LOG_WARN("RPC JSON parse error: {}", e.what());
+    std::string error = "{\"error\":\"Invalid JSON\"}\n";
+    send(client_fd, error.c_str(), error.size(), 0);
+    return;
   }
 
   // Execute command
@@ -247,8 +368,12 @@ std::string RPCServer::ExecuteCommand(const std::string &method,
   try {
     return it->second(params);
   } catch (const std::exception &e) {
+    // SECURITY FIX: Log full error internally but return sanitized error to client
+    LOG_ERROR("RPC command '{}' failed: {}", method, e.what());
+
+    // Return sanitized error message (escape special characters)
     std::ostringstream oss;
-    oss << "{\"error\":\"" << e.what() << "\"}\n";
+    oss << "{\"error\":\"" << EscapeJSONString(e.what()) << "\"}\n";
     return oss.str();
   }
 }
@@ -341,7 +466,13 @@ RPCServer::HandleGetBlockHash(const std::vector<std::string> &params) {
     return "{\"error\":\"Missing height parameter\"}\n";
   }
 
-  int height = std::stoi(params[0]);
+  // SECURITY FIX: Safe integer parsing with bounds check
+  auto height_opt = SafeParseInt(params[0], 0, 10000000);
+  if (!height_opt) {
+    return "{\"error\":\"Invalid height (must be 0-10000000)\"}\n";
+  }
+
+  int height = *height_opt;
   auto *index = chainstate_manager_.GetBlockAtHeight(height);
 
   if (!index) {
@@ -357,8 +488,13 @@ RPCServer::HandleGetBlockHeader(const std::vector<std::string> &params) {
     return "{\"error\":\"Missing block hash parameter\"}\n";
   }
 
-  uint256 hash;
-  hash.SetHex(params[0]);
+  // SECURITY FIX: Safe hash parsing with validation
+  auto hash_opt = SafeParseHash(params[0]);
+  if (!hash_opt) {
+    return "{\"error\":\"Invalid block hash (must be 64 hex characters)\"}\n";
+  }
+
+  uint256 hash = *hash_opt;
 
   auto *index = chainstate_manager_.LookupBlockIndex(hash);
   if (!index) {
@@ -514,7 +650,14 @@ std::string RPCServer::HandleAddNode(const std::vector<std::string> &params) {
 
   std::string host = node_addr.substr(0, colon_pos);
   std::string port_str = node_addr.substr(colon_pos + 1);
-  uint16_t port = static_cast<uint16_t>(std::stoi(port_str));
+
+  // SECURITY FIX: Safe port parsing with validation
+  auto port_opt = SafeParsePort(port_str);
+  if (!port_opt) {
+    return "{\"error\":\"Invalid port (must be 1-65535)\"}\n";
+  }
+
+  uint16_t port = *port_opt;
 
   if (command == "add") {
     // Parse IP address and create NetworkAddress
@@ -842,14 +985,22 @@ std::string RPCServer::HandleGenerate(const std::vector<std::string> &params) {
     return "{\"error\":\"Mining not available\"}\n";
   }
 
+  // SECURITY FIX: Only allow generate on regtest
+  if (params_.GetChainType() != chain::ChainType::REGTEST) {
+    return "{\"error\":\"generate only available on regtest\"}\n";
+  }
+
   if (params.empty()) {
     return "{\"error\":\"Missing number of blocks parameter\"}\n";
   }
 
-  int num_blocks = std::stoi(params[0]);
-  if (num_blocks <= 0 || num_blocks > 1000) {
-    return "{\"error\":\"Invalid number of blocks (must be 1-1000)\"}\n";
+  // SECURITY FIX: Safe integer parsing and reduced limit
+  auto num_blocks_opt = SafeParseInt(params[0], 1, 100);
+  if (!num_blocks_opt) {
+    return "{\"error\":\"Invalid number of blocks (must be 1-100)\"}\n";
   }
+
+  int num_blocks = *num_blocks_opt;
 
   // Get starting height
   auto *start_tip = chainstate_manager_.GetTip();
@@ -914,6 +1065,9 @@ std::string RPCServer::HandleGenerate(const std::vector<std::string> &params) {
 std::string RPCServer::HandleStop(const std::vector<std::string> &params) {
   LOG_INFO("Received stop command via RPC");
 
+  // SECURITY FIX: Set shutdown flag immediately to reject new requests
+  shutting_down_.store(true, std::memory_order_release);
+
   // Trigger graceful shutdown via callback
   if (shutdown_callback_) {
     shutdown_callback_();
@@ -928,7 +1082,23 @@ RPCServer::HandleSetMockTime(const std::vector<std::string> &params) {
     return "{\"error\":\"Missing timestamp parameter\"}\n";
   }
 
-  int64_t mock_time = std::stoll(params[0]);
+  // SECURITY FIX: Only allow setmocktime on regtest/testnet
+  if (params_.GetChainType() == chain::ChainType::MAIN) {
+    return "{\"error\":\"setmocktime not allowed on mainnet\"}\n";
+  }
+
+  int64_t mock_time;
+  try {
+    mock_time = std::stoll(params[0]);
+  } catch (...) {
+    return "{\"error\":\"Invalid timestamp format\"}\n";
+  }
+
+  // SECURITY FIX: Validate reasonable range (year 1970 to 2106)
+  // Allow 0 for disabling mock time
+  if (mock_time != 0 && (mock_time < 0 || mock_time > 4294967295LL)) {
+    return "{\"error\":\"Timestamp out of range (must be 0 or 1-4294967295)\"}\n";
+  }
 
   // Set mock time (0 to disable)
   util::SetMockTime(mock_time);
@@ -956,8 +1126,13 @@ RPCServer::HandleInvalidateBlock(const std::vector<std::string> &params) {
     return "{\"error\":\"Missing block hash parameter\"}\n";
   }
 
-  uint256 hash;
-  hash.SetHex(params[0]);
+  // SECURITY FIX: Safe hash parsing with validation
+  auto hash_opt = SafeParseHash(params[0]);
+  if (!hash_opt) {
+    return "{\"error\":\"Invalid block hash (must be 64 hex characters)\"}\n";
+  }
+
+  uint256 hash = *hash_opt;
 
   // Check if block exists
   auto *index = chainstate_manager_.LookupBlockIndex(hash);
