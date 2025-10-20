@@ -78,6 +78,12 @@ public:
   // Periodic tip announcements (public for testing/simulation)
   void announce_tip_to_peers();
 
+  // Announce tip to a single peer (called when peer becomes READY)
+  void announce_tip_to_peer(Peer* peer);
+
+  // Flush pending block announcements from all peers' queues
+  void flush_block_announcements();
+
   // Self-connection prevention
   uint64_t get_local_nonce() const { return local_nonce_; }
 

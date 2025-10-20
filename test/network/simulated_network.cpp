@@ -167,21 +167,21 @@ size_t SimulatedNetwork::AdvanceTime(uint64_t new_time_ms) {
         if (delivered > 0) {
         }
 
-        // Process io_context events on all nodes
-        // This allows peers to react to received messages and send responses
-        // IMPORTANT: This may queue new messages with delivery_time <= current_time_ms
-        for (auto& [node_id, node] : nodes_) {
-            if (node) {
-                node->ProcessEvents();
-            }
-        }
-
-        // Run periodic maintenance on all nodes after processing events
-        // This simulates the periodic timers that run in production
+        // Run periodic maintenance on all nodes first
+        // This simulates the periodic timers that run in production and queues block announcements
         // (process_periodic checks for misbehaving peers and disconnects them)
         for (auto& [node_id, node] : nodes_) {
             if (node) {
                 node->ProcessPeriodic();
+            }
+        }
+
+        // Process io_context events on all nodes after periodic tasks
+        // This flushes block announcements queued by ProcessPeriodic() and allows peers to react to received messages
+        // IMPORTANT: This may queue new messages with delivery_time <= current_time_ms
+        for (auto& [node_id, node] : nodes_) {
+            if (node) {
+                node->ProcessEvents();
             }
         }
 

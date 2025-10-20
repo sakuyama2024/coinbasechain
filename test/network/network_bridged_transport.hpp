@@ -2,6 +2,7 @@
 #define COINBASECHAIN_TEST_NETWORK_BRIDGED_TRANSPORT_HPP
 
 #include "network/transport.hpp"
+#include "network/protocol.hpp"
 #include "simulated_network.hpp"
 #include <atomic>
 #include <map>
@@ -97,7 +98,7 @@ public:
     void close() override;
     bool is_open() const override { return open_; }
     std::string remote_address() const override;
-    uint16_t remote_port() const override { return 8333; }
+    uint16_t remote_port() const override { return protocol::ports::REGTEST + peer_node_id_; }
     bool is_inbound() const override { return is_inbound_; }
     uint64_t connection_id() const override { return id_; }
     void set_receive_callback(network::ReceiveCallback callback) override;

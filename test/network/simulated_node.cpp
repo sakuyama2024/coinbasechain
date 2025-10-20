@@ -18,7 +18,7 @@ SimulatedNode::SimulatedNode(int node_id,
                              SimulatedNetwork* network,
                              const chain::ChainParams* params)
     : node_id_(node_id)
-    , port_(8333 + node_id)
+    , port_(protocol::ports::REGTEST + node_id)
     , sim_network_(network)
 {
     // Generate node address
@@ -79,6 +79,7 @@ void SimulatedNode::InitializeNetworking() {
     config.listen_enabled = true;
     config.listen_port = port_;
     config.io_threads = 0;  // Use external io_context
+    config.enable_nat = false;  // Disable NAT/UPnP in tests (would block trying to discover devices)
 
     network_manager_ = std::make_unique<network::NetworkManager>(
         *chainstate_,  // Pass TestChainstateManager (inherits from ChainstateManager)
@@ -169,9 +170,9 @@ void SimulatedNode::DisconnectFrom(int peer_node_id) {
         }
     }
 
-    // Note: peer->port() returns the remote listen port (8333), not the connection port
-    // So we search by address only
-    int peer_manager_id = peer_mgr.find_peer_by_address(peer_addr, 8333);
+    // Note: peer->port() returns the remote listen port (protocol::ports::REGTEST + peer_node_id), not the connection port
+    // So we search by address and port
+    int peer_manager_id = peer_mgr.find_peer_by_address(peer_addr, protocol::ports::REGTEST + peer_node_id);
 
     if (peer_manager_id >= 0) {
         network_manager_->disconnect_from(peer_manager_id);
@@ -312,6 +313,13 @@ void SimulatedNode::ProcessEvents() {
             break;
         }
     }
+
+    // Flush pending block announcements after processing events
+    // This ensures announcements are sent regardless of how tests trigger event processing
+    // (matches Bitcoin's SendMessages loop which flushes after processing events)
+    if (network_manager_) {
+        network_manager_->flush_block_announcements();
+    }
 }
 
 void SimulatedNode::ProcessPeriodic() {
@@ -319,8 +327,8 @@ void SimulatedNode::ProcessPeriodic() {
     // In a real node, these run on timers, but in simulation they're triggered by AdvanceTime()
     if (network_manager_) {
         network_manager_->peer_manager().process_periodic();
-        // Call announce_tip_to_peers() like Bitcoin's SendMessages does
-        // It has built-in time-based throttling to prevent message storms
+        // Call announce_tip_to_peers() to add blocks to announcement queues
+        // The actual flushing happens in ProcessEvents() (like Bitcoin's SendMessages loop)
         network_manager_->announce_tip_to_peers();
     }
 }

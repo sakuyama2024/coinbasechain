@@ -44,7 +44,7 @@ public:
     uint16_t GetPort() const { return port_; }
 
     // Connection management
-    bool ConnectTo(int peer_node_id, const std::string& address = "", uint16_t port = 8333);
+    bool ConnectTo(int peer_node_id, const std::string& address = "", uint16_t port = protocol::ports::REGTEST);
     void DisconnectFrom(int peer_id);
 
     // Mining (instant, no PoW)

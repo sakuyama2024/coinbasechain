@@ -588,7 +588,7 @@ TEST_CASE("NetworkConditionsTest - BandwidthLimits", "[networkconditionstest][ne
 // SCALE TESTS
 // ==============================================================================
 
-TEST_CASE("ScaleTest - HundredNodes", "[scaletest][network]") {
+TEST_CASE("ScaleTest - HundredNodes", "[.][scaletest][network]") {
     SimulatedNetwork network(12345);
     SetZeroLatency(network);
 

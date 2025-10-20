@@ -164,6 +164,12 @@ private:
   // Ping tracking
   uint64_t last_ping_nonce_ = 0;
   std::chrono::steady_clock::time_point ping_sent_time_;
+
+public:
+  // Block announcement queue (like Bitcoin's m_blocks_for_inv_relay)
+  // Blocks to announce to this peer via INV messages
+  std::vector<uint256> blocks_for_inv_relay_;
+  std::mutex block_inv_mutex_;  // Protects blocks_for_inv_relay_
 };
 
 } // namespace network

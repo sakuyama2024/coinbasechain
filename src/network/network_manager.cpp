@@ -73,19 +73,23 @@ bool NetworkManager::start() {
     transport_->run();
   }
 
-  // Create work guard to keep io_context running (for timers)
-  work_guard_ = std::make_unique<
-      boost::asio::executor_work_guard<boost::asio::io_context::executor_type>>(
-      boost::asio::make_work_guard(io_context_));
+  // Create work guard and timers only if we own the io_context threads
+  // When using external io_context (tests), the external code controls event processing
+  if (config_.io_threads > 0) {
+    // Create work guard to keep io_context running (for timers)
+    work_guard_ = std::make_unique<
+        boost::asio::executor_work_guard<boost::asio::io_context::executor_type>>(
+        boost::asio::make_work_guard(io_context_));
 
-  // Start IO threads (for timers)
+    // Setup timers
+    connect_timer_ = std::make_unique<boost::asio::steady_timer>(io_context_);
+    maintenance_timer_ = std::make_unique<boost::asio::steady_timer>(io_context_);
+  }
+
+  // Start IO threads
   for (size_t i = 0; i < config_.io_threads; ++i) {
     io_threads_.emplace_back([this]() { io_context_.run(); });
   }
-
-  // Setup timers
-  connect_timer_ = std::make_unique<boost::asio::steady_timer>(io_context_);
-  maintenance_timer_ = std::make_unique<boost::asio::steady_timer>(io_context_);
 
   // Start listening if enabled (via transport)
   if (config_.listen_enabled && config_.listen_port > 0) {
@@ -127,9 +131,12 @@ bool NetworkManager::start() {
     bootstrap_from_fixed_seeds(chain::GlobalChainParams::Get());
   }
 
-  // Schedule periodic tasks
-  schedule_next_connection_attempt();
-  schedule_next_maintenance();
+  // Schedule periodic tasks (only if we own the io_context threads)
+  // When using external io_context (tests), the external code controls event processing
+  if (config_.io_threads > 0) {
+    schedule_next_connection_attempt();
+    schedule_next_maintenance();
+  }
 
   return true;
 }
@@ -680,22 +687,9 @@ bool NetworkManager::handle_message(PeerPtr peer,
     // Peer has completed handshake (VERSION/VERACK exchange)
 
     if (peer->successfully_connected()) {
-      // Announce our tip to this peer (matching Bitcoin Core behavior)
-      // This allows peers to discover our chain and request headers if we're
-      // ahead
-      const chain::CBlockIndex *tip = chainstate_manager_.GetTip();
-      if (tip && tip->nHeight > 0) {
-        auto inv_msg = std::make_unique<message::InvMessage>();
-        protocol::InventoryVector inv;
-        inv.type = protocol::InventoryType::MSG_BLOCK;
-        uint256 tip_hash = tip->GetBlockHash();
-        std::memcpy(inv.hash.data(), tip_hash.data(), 32);
-        inv_msg->inventory.push_back(inv);
-
-        LOG_NET_DEBUG("Announcing our tip (height={}) to peer {}", tip->nHeight,
-                      peer->id());
-        peer->send_message(std::move(inv_msg));
-      }
+      // Announce our tip to this peer immediately (Bitcoin Core does this with no time throttling)
+      // This allows peers to discover our chain and request headers if we're ahead
+      announce_tip_to_peer(peer.get());
 
       // Initiate header sync if needed (only if we don't have a sync peer yet)
       // Use atomic compare-and-exchange to avoid race condition
@@ -1366,9 +1360,9 @@ bool NetworkManager::handle_inv_message(PeerPtr peer,
 }
 
 void NetworkManager::announce_tip_to_peers() {
-  // Matches Bitcoin Core's SendMessages logic for periodic tip announcements
-  // Bitcoin re-announces periodically even if tip hasn't changed (every ~30
-  // seconds)
+  // Periodic re-announcement to all connected peers
+  // This is called from run_maintenance() every 30 seconds
+  // IMPORTANT: Bitcoin re-announces periodically even if tip unchanged to handle partition healing
 
   const chain::CBlockIndex *tip = chainstate_manager_.GetTip();
   if (!tip || tip->nHeight == 0) {
@@ -1376,50 +1370,89 @@ void NetworkManager::announce_tip_to_peers() {
   }
 
   uint256 current_tip_hash = tip->GetBlockHash();
-  bool tip_changed = (current_tip_hash != last_announced_tip_);
 
-  // Get current time (mockable for tests)
-  int64_t now = util::GetTime();
-
-  // Bitcoin's re-announcement interval (30 seconds)
-  constexpr int64_t ANNOUNCE_INTERVAL_SECONDS = 30;
-
-  // Check if we should announce:
-  // 1. Tip has changed, OR
-  // 2. Enough time has passed since last announcement (periodic
-  // re-announcement)
-  bool should_announce = tip_changed || (now - last_tip_announcement_time_ >=
-                                         ANNOUNCE_INTERVAL_SECONDS);
-
-  if (!should_announce) {
-    return; // Too soon to re-announce
-  }
-
-  LOG_NET_DEBUG("Announcing tip to peers (height={}, hash={})", tip->nHeight,
+  LOG_NET_DEBUG("Adding tip to all peers' announcement queues (height={}, hash={})", tip->nHeight,
                 current_tip_hash.GetHex().substr(0, 16));
 
-  // Update tracking
   last_announced_tip_ = current_tip_hash;
-  last_tip_announcement_time_ = now;
 
-  // Create INV message with current tip
-  auto inv_msg = std::make_unique<message::InvMessage>();
-  protocol::InventoryVector inv;
-  inv.type = protocol::InventoryType::MSG_BLOCK;
-  std::memcpy(inv.hash.data(), current_tip_hash.data(), 32);
-  inv_msg->inventory.push_back(inv);
-
-  // Send to all ready peers
+  // Add to all ready peers' announcement queues with per-peer deduplication
+  // (Bitcoin per-peer approach: don't send same hash twice to same peer)
   auto all_peers = peer_manager_->get_all_peers();
-  int sent_count = 0;
   for (const auto &peer : all_peers) {
     if (peer && peer->is_connected() && peer->state() == PeerState::READY) {
-      // Clone the message for each peer
-      auto msg_copy = std::make_unique<message::InvMessage>();
-      msg_copy->inventory = inv_msg->inventory;
-      peer->send_message(std::move(msg_copy));
-      sent_count++;
+      std::lock_guard<std::mutex> lock(peer->block_inv_mutex_);
+
+      // Only add if not already in this peer's queue (per-peer deduplication)
+      auto& queue = peer->blocks_for_inv_relay_;
+      if (std::find(queue.begin(), queue.end(), current_tip_hash) == queue.end()) {
+        queue.push_back(current_tip_hash);
+      }
     }
+  }
+}
+
+void NetworkManager::announce_tip_to_peer(Peer* peer) {
+  // Announce current tip to a single peer (called when peer becomes READY)
+  // Bitcoin does this per-peer - adds to peer's announcement queue
+
+  if (!peer || !peer->is_connected() || peer->state() != PeerState::READY) {
+    return;
+  }
+
+  const chain::CBlockIndex *tip = chainstate_manager_.GetTip();
+  if (!tip || tip->nHeight == 0) {
+    return;
+  }
+
+  uint256 current_tip_hash = tip->GetBlockHash();
+
+  LOG_NET_DEBUG("Adding tip to peer {} announcement queue (height={}, hash={})",
+                peer->id(), tip->nHeight, current_tip_hash.GetHex().substr(0, 16));
+
+  // Add to peer's announcement queue (like Bitcoin's m_blocks_for_inv_relay)
+  std::lock_guard<std::mutex> lock(peer->block_inv_mutex_);
+
+  // Only add if not already in this peer's queue (per-peer deduplication)
+  auto& queue = peer->blocks_for_inv_relay_;
+  if (std::find(queue.begin(), queue.end(), current_tip_hash) == queue.end()) {
+    queue.push_back(current_tip_hash);
+  }
+}
+
+void NetworkManager::flush_block_announcements() {
+  // Flush pending block announcements from all peers' queues
+  // This is called periodically (like Bitcoin's SendMessages loop)
+  auto all_peers = peer_manager_->get_all_peers();
+
+  for (const auto &peer : all_peers) {
+    if (!peer || !peer->is_connected() || peer->state() != PeerState::READY) {
+      continue;
+    }
+
+    // Get and clear this peer's pending blocks
+    std::vector<uint256> blocks_to_announce;
+    {
+      std::lock_guard<std::mutex> lock(peer->block_inv_mutex_);
+      if (peer->blocks_for_inv_relay_.empty()) {
+        continue;
+      }
+      blocks_to_announce = std::move(peer->blocks_for_inv_relay_);
+      peer->blocks_for_inv_relay_.clear();
+    }
+
+    // Create and send INV message with pending blocks
+    auto inv_msg = std::make_unique<message::InvMessage>();
+    for (const auto& block_hash : blocks_to_announce) {
+      protocol::InventoryVector inv;
+      inv.type = protocol::InventoryType::MSG_BLOCK;
+      std::memcpy(inv.hash.data(), block_hash.data(), 32);
+      inv_msg->inventory.push_back(inv);
+    }
+
+    LOG_NET_DEBUG("Flushing {} block announcement(s) to peer {}",
+                  blocks_to_announce.size(), peer->id());
+    peer->send_message(std::move(inv_msg));
   }
 }
 

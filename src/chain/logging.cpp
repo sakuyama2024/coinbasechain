@@ -27,19 +27,16 @@ void LogManager::Initialize(const std::string &log_level, bool log_to_file,
     std::vector<spdlog::sink_ptr> sinks;
 
     // File sink (append mode, like Bitcoin Core)
-    // NOTE: Console sink disabled to avoid stdout blocking when run from
-    // subprocess
     if (log_to_file) {
       auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(
           log_file_path, true); // true = append mode
       file_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%n] [%l] %v");
       sinks.push_back(file_sink);
     } else {
-      // If not logging to file, still need at least one sink
-      // Use a null sink to avoid crashes
-      auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(
-          "/dev/null", false);
-      sinks.push_back(file_sink);
+      // Console sink for tests (colorized stdout)
+      auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+      console_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%n] [%l] %v");
+      sinks.push_back(console_sink);
     }
 
     // Create loggers for different components
