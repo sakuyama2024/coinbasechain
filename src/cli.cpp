@@ -2,6 +2,7 @@
 // Distributed under the MIT software license
 
 #include "network/rpc_client.hpp"
+#include "version.hpp"
 #include <cstdlib>
 #include <iostream>
 #include <pwd.h>
@@ -31,6 +32,7 @@ void PrintUsage(const char *program_name) {
       << "Usage: " << program_name << " [options] <command> [params]\n\n"
       << "Options:\n"
       << "  --datadir=<path>     Data directory (default: ~/.coinbasechain)\n"
+      << "  --version            Show version information\n"
       << "  --help               Show this help message\n\n"
       << "Commands:\n"
       << "\n"
@@ -72,6 +74,10 @@ int main(int argc, char *argv[]) {
 
       if (arg == "--help" || arg == "-h") {
         PrintUsage(argv[0]);
+        return 0;
+      } else if (arg == "--version" || arg == "-v") {
+        std::cout << coinbasechain::GetFullVersionString() << std::endl;
+        std::cout << coinbasechain::GetCopyrightString() << std::endl;
         return 0;
       } else if (arg.find("--datadir=") == 0) {
         datadir = arg.substr(10);

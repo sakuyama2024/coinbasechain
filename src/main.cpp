@@ -1,5 +1,6 @@
 #include "application.hpp"
 #include "chain/logging.hpp"
+#include "version.hpp"
 #include <cstring>
 #include <iostream> // Keep for CLI output and early errors before logger initialized
 
@@ -29,6 +30,7 @@ void print_usage(const char *program_name) {
       << "  --verbose            Equivalent to --loglevel=debug\n"
       << "\n"
       << "Other:\n"
+      << "  --version            Show version information\n"
       << "  --help               Show this help message\n"
       << std::endl;
 }
@@ -45,6 +47,10 @@ int main(int argc, char *argv[]) {
 
       if (arg == "--help") {
         print_usage(argv[0]);
+        return 0;
+      } else if (arg == "--version") {
+        std::cout << coinbasechain::GetFullVersionString() << std::endl;
+        std::cout << coinbasechain::GetCopyrightString() << std::endl;
         return 0;
       } else if (arg.find("--datadir=") == 0) {
         config.datadir = arg.substr(10);
