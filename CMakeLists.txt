@@ -204,6 +204,10 @@ add_library(network STATIC
     src/network/peer.cpp
     src/network/addr_manager.cpp
     src/network/peer_manager.cpp
+    src/network/anchor_manager.cpp
+    src/network/header_sync_manager.cpp
+    src/network/block_relay_manager.cpp
+    src/network/message_router.cpp
     src/network/network_manager.cpp
     src/network/real_transport.cpp
     src/network/simulated_transport.cpp

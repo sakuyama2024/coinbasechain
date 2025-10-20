@@ -22,6 +22,12 @@ class ChainstateManager;
 
 namespace network {
 
+// Forward declarations
+class AnchorManager;
+class HeaderSyncManager;
+class BlockRelayManager;
+class MessageRouter;
+
 // NetworkManager - Top-level coordinator for all networking (inspired by
 // Bitcoin's CConnman) Manages io_context, coordinates
 // PeerManager/AddressManager, handles connections, routes messages
@@ -122,25 +128,16 @@ private:
       &chainstate_manager_; // Reference to Application's ChainstateManager
   std::unique_ptr<BanMan> ban_man_;
   std::unique_ptr<NATManager> nat_manager_;
-
-  // Header sync state (moved from HeaderSync class)
-  mutable std::mutex header_sync_mutex_;
-  size_t last_batch_size_{0};  // Size of last headers batch received
+  std::unique_ptr<AnchorManager> anchor_manager_;
+  std::unique_ptr<HeaderSyncManager> header_sync_manager_;
+  std::unique_ptr<BlockRelayManager> block_relay_manager_;
+  std::unique_ptr<MessageRouter> message_router_;
 
   // Periodic tasks
   std::unique_ptr<boost::asio::steady_timer> connect_timer_;
   std::unique_ptr<boost::asio::steady_timer> maintenance_timer_;
 
-  // Sync state
-  std::atomic<uint64_t> sync_peer_id_{
-      0}; // 0 = no sync peer, otherwise peer ID we're syncing from
-  std::atomic<int64_t> sync_start_time_{
-      0}; // When did sync start? (microseconds since epoch)
-  std::atomic<int64_t> last_headers_received_{
-      0}; // Last time we received headers (microseconds since epoch)
-
   // Tip announcement tracking (for periodic re-announcements)
-  uint256 last_announced_tip_; // Last tip we announced to peers
   int64_t last_tip_announcement_time_{
       0}; // Last time we announced (mockable time)
 
@@ -166,15 +163,10 @@ private:
   void setup_peer_message_handler(Peer *peer);
   bool handle_message(PeerPtr peer, std::unique_ptr<message::Message> msg);
 
-  // Header sync helpers
+  // Header sync helpers (delegated to HeaderSyncManager)
   void request_headers_from_peer(PeerPtr peer);
   bool handle_headers_message(PeerPtr peer, message::HeadersMessage *msg);
   bool handle_getheaders_message(PeerPtr peer, message::GetHeadersMessage *msg);
-
-  // Header sync internal methods (moved from HeaderSync class)
-  bool is_synced(int64_t max_age_seconds = 3600) const;
-  bool should_request_more() const;
-  CBlockLocator get_locator_from_prev() const;
 
   // Block relay helpers
   bool handle_inv_message(PeerPtr peer, message::InvMessage *msg);
