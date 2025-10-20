@@ -147,8 +147,14 @@ public:
   }
 
   [[nodiscard]] CBlockIndex *GetAncestor(int height) {
-    return const_cast<CBlockIndex *>(
-        static_cast<const CBlockIndex *>(this)->GetAncestor(height));
+    if (height > nHeight || height < 0)
+      return nullptr;
+
+    CBlockIndex *pindex = this;
+    while (pindex && pindex->nHeight > height)
+      pindex = pindex->pprev;
+
+    return pindex;
   }
 
   [[nodiscard]] bool

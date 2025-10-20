@@ -69,8 +69,6 @@ public:
     // Type alias for fixed-size header serialization
     using HeaderBytes = std::array<uint8_t, HEADER_SIZE>;
 
-    CBlockHeader() = default;
-
     void SetNull() noexcept
     {
         nVersion = 0;
@@ -130,8 +128,6 @@ public:
 struct CBlockLocator
 {
     std::vector<uint256> vHave;
-
-    CBlockLocator() {}
 
     explicit CBlockLocator(std::vector<uint256>&& have) : vHave(std::move(have)) {}
 
