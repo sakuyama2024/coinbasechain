@@ -319,6 +319,9 @@ add_executable(coinbasechain_tests
     test/network/peer_adversarial_tests.cpp
     test/network/peer_discovery_tests.cpp
     test/network/invalidateblock_functional_tests.cpp
+    test/network/block_announcement_tests.cpp
+    test/network/block_announcement_peer_states_tests.cpp
+    test/network/block_announcement_edge_case_tests.cpp
 )
 
 target_include_directories(coinbasechain_tests PRIVATE
