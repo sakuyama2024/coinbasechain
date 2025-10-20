@@ -326,6 +326,13 @@ void PeerManager::process_periodic() {
                     peer_id, data.misbehavior_score, data.should_discourage);
 
       if (data.should_discourage) {
+        // Never disconnect peers with NoBan permission (matches Bitcoin)
+        if (HasPermission(data.permissions, NetPermissionFlags::NoBan)) {
+          LOG_NET_TRACE("process_periodic: skipping NoBan peer={} (score={} but protected)",
+                        peer_id, data.misbehavior_score);
+          continue;
+        }
+
         // Add to removal list if not already there
         if (std::find(to_remove.begin(), to_remove.end(), peer_id) == to_remove.end()) {
           to_remove.push_back(peer_id);
@@ -366,6 +373,11 @@ void PeerManager::ReportNonContinuousHeaders(int peer_id) {
               "non-continuous headers sequence");
 }
 
+void PeerManager::ReportLowWorkHeaders(int peer_id) {
+  Misbehaving(peer_id, MisbehaviorPenalty::LOW_WORK_HEADERS,
+              "low-work headers");
+}
+
 void PeerManager::ReportInvalidHeader(int peer_id, const std::string &reason) {
   Misbehaving(peer_id, MisbehaviorPenalty::INVALID_HEADER,
               "invalid header: " + reason);
@@ -393,15 +405,7 @@ bool PeerManager::Misbehaving(int peer_id, int penalty,
 
   PeerMisbehaviorData &data = it->second;
 
-  // Check if peer has NoBan permission
-  if (HasPermission(data.permissions, NetPermissionFlags::NoBan)) {
-    LOG_NET_TRACE("Misbehaving() peer={} has NoBan permission, ignoring penalty", peer_id);
-    LOG_NET_INFO("Peer {} ({}) misbehavior ignored (has NoBan permission): {}",
-                 peer_id, data.address, reason);
-    return false;
-  }
-
-  // Add penalty to score
+  // Add penalty to score (always track, even for NoBan peers - matches Bitcoin)
   int old_score = data.misbehavior_score;
   data.misbehavior_score += penalty;
 
@@ -412,9 +416,19 @@ bool PeerManager::Misbehaving(int peer_id, int penalty,
                data.address, penalty, reason, data.misbehavior_score);
 
   // Check if threshold exceeded
-  if (data.misbehavior_score >= DISCOURAGEMENT_THRESHOLD) {
+  if (data.misbehavior_score >= DISCOURAGEMENT_THRESHOLD && old_score < DISCOURAGEMENT_THRESHOLD) {
+    LOG_NET_TRACE("Misbehaving() peer={} THRESHOLD EXCEEDED", peer_id);
+
+    // Check if peer has NoBan permission (matches Bitcoin: track score but don't disconnect)
+    if (HasPermission(data.permissions, NetPermissionFlags::NoBan)) {
+      LOG_NET_WARN("Warning: not punishing noban peer {} (score {} >= threshold {})",
+                   peer_id, data.misbehavior_score, DISCOURAGEMENT_THRESHOLD);
+      // DO NOT set should_discourage for NoBan peers
+      return false;
+    }
+
+    // Normal peer: mark for disconnection
     data.should_discourage = true;
-    LOG_NET_TRACE("Misbehaving() peer={} THRESHOLD EXCEEDED, should_discourage=true", peer_id);
     LOG_NET_WARN("Peer {} ({}) marked for disconnect (score {} >= threshold {})",
                  peer_id, data.address, data.misbehavior_score,
                  DISCOURAGEMENT_THRESHOLD);
@@ -430,6 +444,11 @@ bool PeerManager::ShouldDisconnect(int peer_id) const {
 
   auto it = peer_misbehavior_.find(peer_id);
   if (it == peer_misbehavior_.end()) {
+    return false;
+  }
+
+  // Never disconnect peers with NoBan permission (matches Bitcoin)
+  if (HasPermission(it->second.permissions, NetPermissionFlags::NoBan)) {
     return false;
   }
 

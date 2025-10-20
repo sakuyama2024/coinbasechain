@@ -141,6 +141,7 @@ public:
   void ReportInvalidPoW(int peer_id);
   void ReportOversizedMessage(int peer_id);
   void ReportNonContinuousHeaders(int peer_id);
+  void ReportLowWorkHeaders(int peer_id);
   void ReportInvalidHeader(int peer_id, const std::string &reason);
   void ReportTooManyOrphans(int peer_id);
 

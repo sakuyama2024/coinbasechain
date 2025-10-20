@@ -54,6 +54,9 @@ public:
 
   const chain::CBlockIndex *GetTip() const;
 
+  // Get chain parameters (thread-safe, params_ is const)
+  const chain::ChainParams &GetParams() const { return params_; }
+
   // Thread-safe block index lookup
   chain::CBlockIndex *LookupBlockIndex(const uint256 &hash);
   const chain::CBlockIndex *LookupBlockIndex(const uint256 &hash) const;

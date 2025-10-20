@@ -6,6 +6,8 @@
 #include "chain/block.hpp"
 #include "chain/chainstate_manager.hpp"
 #include "chain/logging.hpp"
+#include "chain/pow.hpp"
+#include "chain/randomx_pow.hpp"
 #include <sstream>
 #include <random>
 
@@ -208,8 +210,7 @@ uint256 SimulatedNode::MineBlock(const std::string& miner_address) {
         header.minerAddress.data()[i] = dis_byte(gen);
     }
 
-    // Set dummy RandomX hash (needed for commitment check when PoW validation is enabled)
-    // Use all-zeros hash which meets regtest difficulty target
+    // Set dummy RandomX hash (PoW bypass enabled by default)
     header.hashRandomX.SetHex("0000000000000000000000000000000000000000000000000000000000000000");
 
     // Add to chainstate

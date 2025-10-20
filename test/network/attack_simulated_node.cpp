@@ -5,6 +5,8 @@
 #include "network/protocol.hpp"
 #include "network/message.hpp"
 #include "chain/validation.hpp"
+#include "chain/pow.hpp"
+#include "chain/randomx_pow.hpp"
 #include <random>
 
 namespace coinbasechain {
@@ -198,7 +200,8 @@ uint256 AttackSimulatedNode::MineBlockPrivate(const std::string& miner_address) 
         header.minerAddress.data()[i] = dis_byte(gen);
     }
 
-    header.hashRandomX.SetNull();  // Bypass PoW
+    // Bypass PoW (bypass enabled by default)
+    header.hashRandomX.SetNull();
 
     // Add to chainstate
     validation::ValidationState state;
@@ -257,6 +260,55 @@ void AttackSimulatedNode::BroadcastBlock(const uint256& block_hash, int peer_nod
     sim_network_->SendMessage(GetId(), peer_node_id, full_message);
 
     printf("[Attack] Broadcast complete for block at height %d\n", pindex->nHeight);
+}
+
+void AttackSimulatedNode::SendLowWorkHeaders(int peer_node_id, const std::vector<uint256>& block_hashes) {
+    printf("[Attack] Node %d sending %zu low-work headers to node %d\n",
+           GetId(), block_hashes.size(), peer_node_id);
+
+    // Look up all the block headers from our chainstate
+    auto& chainstate = GetChainstate();
+    std::vector<CBlockHeader> headers;
+
+    for (const auto& block_hash : block_hashes) {
+        const chain::CBlockIndex* pindex = chainstate.LookupBlockIndex(block_hash);
+
+        if (!pindex) {
+            printf("[Attack] WARNING: Cannot find block %s in chainstate, skipping\n",
+                   block_hash.ToString().substr(0, 16).c_str());
+            continue;
+        }
+
+        headers.push_back(pindex->GetBlockHeader());
+    }
+
+    if (headers.empty()) {
+        printf("[Attack] ERROR: No valid headers found\n");
+        return;
+    }
+
+    printf("[Attack] Collected %zu valid headers from attacker's chain\n", headers.size());
+
+    // Serialize HEADERS message
+    message::HeadersMessage msg;
+    msg.headers = headers;
+    auto payload = msg.serialize();
+
+    auto msg_header = message::create_header(
+        protocol::magic::REGTEST,
+        protocol::commands::HEADERS,
+        payload
+    );
+    auto header_bytes = message::serialize_header(msg_header);
+
+    std::vector<uint8_t> full_message;
+    full_message.insert(full_message.end(), header_bytes.begin(), header_bytes.end());
+    full_message.insert(full_message.end(), payload.begin(), payload.end());
+
+    // Inject message directly into network
+    sim_network_->SendMessage(GetId(), peer_node_id, full_message);
+
+    printf("[Attack] Sent low-work headers (total work much less than victim's chain)\n");
 }
 
 } // namespace test

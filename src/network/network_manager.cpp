@@ -545,8 +545,8 @@ void NetworkManager::handle_inbound_connection(
     // Start the peer (waits for VERSION from peer)
     peer->start();
 
-    // Add to peer manager
-    int peer_id = peer_manager_->add_peer(std::move(peer));
+    // Add to peer manager (use default_inbound_permissions_ for testing)
+    int peer_id = peer_manager_->add_peer(std::move(peer), default_inbound_permissions_);
     if (peer_id < 0) {
       LOG_NET_ERROR("Failed to add inbound peer to manager");
     }

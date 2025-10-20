@@ -305,7 +305,7 @@ add_executable(coinbasechain_tests
     test/integration/security_attack_simulations.cpp
     test/integration/security_quick_tests.cpp
     test/integration/stress_threading_tests.cpp
-    # test/dos_protection_tests.cpp  # TODO: Needs rewrite for unified PeerManager
+    test/dos_protection_tests.cpp
     # Network tests
     test/network/simulated_network.cpp
     test/network/simulated_node.cpp
@@ -326,6 +326,8 @@ add_executable(coinbasechain_tests
     test/network/block_announcement_tests.cpp
     test/network/block_announcement_peer_states_tests.cpp
     test/network/block_announcement_edge_case_tests.cpp
+    test/network/low_work_headers_test.cpp
+    test/network/permission_integration_tests.cpp
 )
 
 target_include_directories(coinbasechain_tests PRIVATE

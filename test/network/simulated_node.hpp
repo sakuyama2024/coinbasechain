@@ -76,6 +76,11 @@ public:
         chainstate_->SetBypassPOWValidation(bypass);
     }
 
+    // Set permissions for inbound connections (for testing NoBan, etc.)
+    void SetInboundPermissions(network::NetPermissionFlags flags) {
+        network_manager_->set_default_inbound_permissions(flags);
+    }
+
     // Statistics
     struct NodeStats {
         size_t blocks_mined = 0;

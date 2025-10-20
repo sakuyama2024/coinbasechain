@@ -232,6 +232,18 @@ See `NETWORK_MISSING.md` for detailed comparison of missing features.
 ./build/coinbasechain_tests -s
 ```
 
+### Writing Network Tests
+
+When writing P2P network tests, refer to the comprehensive guide:
+- **[Network Testing Guide](test/network/TESTING_GUIDE.md)** - Best practices, common pitfalls, and example patterns
+
+Key topics covered:
+- Node ID vs Peer ID (critical distinction!)
+- Ban vs Discourage (DoS protection uses Discourage)
+- PoW bypass timing (disable AFTER sync, BEFORE attacks)
+- Handshake race conditions with multiple peers
+- Debugging tips and example patterns
+
 ## Project Structure
 
 ```

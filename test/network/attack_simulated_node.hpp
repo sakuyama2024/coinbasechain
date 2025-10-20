@@ -49,6 +49,10 @@ public:
     // Broadcast a previously mined private block to a specific peer
     void BroadcastBlock(const uint256& block_hash, int peer_node_id);
 
+    // Send low-work headers to a peer (for DoS testing)
+    // Sends headers from the attacker's chain (which has low total work)
+    void SendLowWorkHeaders(int peer_node_id, const std::vector<uint256>& block_hashes);
+
 private:
     bool stalling_enabled_ = false;
 

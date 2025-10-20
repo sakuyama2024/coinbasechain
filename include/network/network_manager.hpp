@@ -93,6 +93,11 @@ public:
   // Self-connection prevention
   uint64_t get_local_nonce() const { return local_nonce_; }
 
+  // Test-only: Set default permissions for inbound connections
+  void set_default_inbound_permissions(NetPermissionFlags flags) {
+    default_inbound_permissions_ = flags;
+  }
+
   // Stats (used primarily in tests, but useful for monitoring/debugging)
   size_t active_peer_count() const;
   size_t outbound_peer_count() const;
@@ -109,6 +114,9 @@ private:
 
   // Self-connection prevention: unique nonce for this node
   uint64_t local_nonce_;
+
+  // Test-only: Default permissions for inbound connections
+  NetPermissionFlags default_inbound_permissions_{NetPermissionFlags::None};
 
   // Transport layer (either real TCP or simulated for testing)
   std::shared_ptr<Transport> transport_;
