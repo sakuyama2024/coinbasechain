@@ -124,6 +124,10 @@ public:
     [[nodiscard]] std::string ToString() const;
 };
 
+// CRITICAL: Verify no padding in struct (required for raw struct hashing in RandomX PoW)
+static_assert(sizeof(CBlockHeader) == CBlockHeader::HEADER_SIZE,
+              "CBlockHeader must be tightly packed (no padding) - sizeof() is used for RandomX hashing");
+
 // CBlockLocator - Describes a position in the block chain (for finding common ancestor with peer)
 struct CBlockLocator
 {
