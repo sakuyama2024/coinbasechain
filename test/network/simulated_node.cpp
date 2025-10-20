@@ -5,6 +5,7 @@
 #include "chain/sha256.hpp"
 #include "chain/block.hpp"
 #include "chain/chainstate_manager.hpp"
+#include "chain/logging.hpp"
 #include <sstream>
 #include <random>
 
@@ -110,8 +111,32 @@ bool SimulatedNode::ConnectTo(int peer_node_id, const std::string& address, uint
         peer_addr = oss.str();
     }
 
+    // Construct NetworkAddress for new API
+    protocol::NetworkAddress net_addr;
+    net_addr.services = protocol::ServiceFlags::NODE_NETWORK;
+    net_addr.port = port;
+
+    // Convert IP string to bytes (IPv4-mapped IPv6)
+    boost::system::error_code ec;
+    auto ip_addr = boost::asio::ip::make_address(peer_addr, ec);
+
+    if (ec) {
+      LOG_ERROR("SimulatedNode::ConnectToPeer: Invalid IP address: {}", peer_addr);
+      return false;
+    }
+
+    if (ip_addr.is_v4()) {
+      auto v6_mapped = boost::asio::ip::make_address_v6(
+          boost::asio::ip::v4_mapped, ip_addr.to_v4());
+      auto bytes = v6_mapped.to_bytes();
+      std::copy(bytes.begin(), bytes.end(), net_addr.ip.begin());
+    } else {
+      auto bytes = ip_addr.to_v6().to_bytes();
+      std::copy(bytes.begin(), bytes.end(), net_addr.ip.begin());
+    }
+
     // Use real NetworkManager to connect
-    bool success = network_manager_->connect_to(peer_addr, port);
+    bool success = network_manager_->connect_to(net_addr);
     if (success) {
         stats_.connections_made++;
     }
@@ -281,27 +306,18 @@ void SimulatedNode::ProcessEvents() {
     // Process pending async operations
     // poll() runs all ready handlers, which may post new work
     // Keep polling until no more work is immediately ready
-    printf("[TRACE] ProcessEvents() starting for node %d\n", node_id_);
-    size_t total_executed = 0;
-    size_t round = 0;
     while (true) {
         size_t executed = io_context_.poll();
-        printf("[TRACE] ProcessEvents() round %zu: executed %zu handlers\n", round, executed);
         if (executed == 0) {
             break;
         }
-        total_executed += executed;
-        round++;
     }
-    printf("[TRACE] ProcessEvents() completed for node %d: %zu total handlers executed\n", node_id_, total_executed);
-
 }
 
 void SimulatedNode::ProcessPeriodic() {
     // Run periodic maintenance tasks
     // In a real node, these run on timers, but in simulation they're triggered by AdvanceTime()
     if (network_manager_) {
-        printf("[TRACE] SimulatedNode::ProcessPeriodic() for node %d - calling PeerManager::process_periodic()\n", node_id_);
         network_manager_->peer_manager().process_periodic();
         // Call announce_tip_to_peers() like Bitcoin's SendMessages does
         // It has built-in time-based throttling to prevent message storms

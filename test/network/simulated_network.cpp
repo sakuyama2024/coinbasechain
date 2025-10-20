@@ -181,7 +181,6 @@ size_t SimulatedNetwork::AdvanceTime(uint64_t new_time_ms) {
         // (process_periodic checks for misbehaving peers and disconnects them)
         for (auto& [node_id, node] : nodes_) {
             if (node) {
-                printf("[TRACE] AdvanceTime: Calling ProcessPeriodic() for node %d\n", node_id);
                 node->ProcessPeriodic();
             }
         }

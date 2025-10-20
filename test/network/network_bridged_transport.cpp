@@ -32,27 +32,17 @@ void NetworkBridgedTransport::BridgedConnection::start() {
 }
 
 bool NetworkBridgedTransport::BridgedConnection::send(const std::vector<uint8_t>& data) {
-    printf("[TRACE] BridgedConnection::send() called (open_=%d, transport_=%s, sim_network_=%s, size=%zu)\n",
-           open_.load(), transport_ ? "exists" : "null",
-           (transport_ && transport_->sim_network_) ? "exists" : "null",
-           data.size());
-
     if (!open_) {
-        printf("[TRACE] BridgedConnection::send() - Connection not open, returning false\n");
         return false;
     }
 
     // Route through SimulatedNetwork
     if (transport_ && transport_->sim_network_) {
-        printf("[TRACE] BridgedConnection::send() - Calling SimulatedNetwork::SendMessage(from=%d, to=%d, size=%zu)\n",
-               transport_->node_id_, peer_node_id_, data.size());
         transport_->sim_network_->SendMessage(
             transport_->node_id_,
             peer_node_id_,
             data
         );
-    } else {
-        printf("[TRACE] BridgedConnection::send() - ERROR: transport or sim_network is null!\n");
     }
 
     return true;
