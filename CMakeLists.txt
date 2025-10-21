@@ -200,6 +200,7 @@ target_link_libraries(chain PUBLIC
 # Create network library - everything I/O and communication-related
 add_library(network STATIC
     src/network/protocol.cpp
+    src/network/connection_types.cpp
     src/network/message.cpp
     src/network/peer.cpp
     src/network/addr_manager.cpp
@@ -281,8 +282,11 @@ add_executable(coinbasechain_tests
     # Unit tests
     test/unit/block_tests.cpp
     test/unit/block_index_tests.cpp
+    test/unit/block_manager_tests.cpp
     test/unit/files_tests.cpp
     test/unit/chain_tests.cpp
+    test/unit/chain_selector_tests.cpp
+    test/unit/chainstate_manager_tests.cpp
     test/unit/chainparams_tests.cpp
     test/unit/persistence_tests.cpp
     test/unit/addr_manager_tests.cpp
@@ -296,6 +300,13 @@ add_executable(coinbasechain_tests
     test/unit/reorg_multi_node_tests.cpp
     test/unit/network_header_sync_tests.cpp
     test/unit/notification_tests.cpp
+    test/unit/anchor_manager_tests.cpp
+    test/unit/connection_types_tests.cpp
+    test/unit/protocol_tests.cpp
+    test/unit/banman_tests.cpp
+    test/unit/message_tests.cpp
+    test/unit/peer_manager_tests.cpp
+    test/unit/message_router_tests.cpp
     # Integration tests
     test/integration/banman_adversarial_tests.cpp
     test/integration/header_sync_adversarial_tests.cpp
