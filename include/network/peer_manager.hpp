@@ -74,8 +74,9 @@ public:
     size_t target_outbound_peers; // Try to maintain this many outbound
 
     Config()
-        : max_outbound_peers(8), max_inbound_peers(125),
-          target_outbound_peers(8) {}
+        : max_outbound_peers(protocol::DEFAULT_MAX_OUTBOUND_CONNECTIONS),
+          max_inbound_peers(protocol::DEFAULT_MAX_INBOUND_CONNECTIONS),
+          target_outbound_peers(protocol::DEFAULT_MAX_OUTBOUND_CONNECTIONS) {}
   };
 
   explicit PeerManager(boost::asio::io_context &io_context,

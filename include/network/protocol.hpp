@@ -103,18 +103,9 @@ constexpr uint32_t MAX_INV_SIZE = 50000; // Inventory items
 constexpr uint32_t MAX_HEADERS_SIZE = 2000; // Headers per response
 constexpr uint32_t MAX_ADDR_SIZE = 1000;    // Addresses per ADDR message
 
-// Orphan management (not applicable to headers-only chain - see
-// chainstate_manager.hpp)
-//TODO
-constexpr unsigned int MAX_ORPHAN_BLOCKS =
-    100; // Bitcoin Core value (unused - we track orphan headers instead)
-constexpr size_t MAX_ORPHAN_BLOCKS_SIZE =
-    5 * 1000 * 1000; // 5 MB total (unused)
-
-// Connection limits (custom implementation in peer_manager.hpp:
-// max_inbound_peers=125, max_outbound_peers=8)
-constexpr unsigned int DEFAULT_MAX_PEER_CONNECTIONS =
-    125; // Bitcoin Core default (unused - see peer_manager.hpp)
+// Connection limits
+constexpr unsigned int DEFAULT_MAX_OUTBOUND_CONNECTIONS = 8;
+constexpr unsigned int DEFAULT_MAX_INBOUND_CONNECTIONS = 125;
 
 // Timeouts and intervals (in seconds)
 constexpr int VERSION_HANDSHAKE_TIMEOUT_SEC = 60; // 1 minute for handshake
@@ -126,12 +117,6 @@ constexpr int INACTIVITY_TIMEOUT_SEC =
 
 // Network address constants
 constexpr size_t MAX_SUBVERSION_LENGTH = 256;
-constexpr int64_t TIMESTAMP_ALLOWANCE_SEC = 2 * 60 * 60; // 2 hours
-
-// Time validation 
-// TODO one hour blocks ?
-constexpr int64_t MAX_FUTURE_BLOCK_TIME =
-    2 * 60 * 60; // 2 hours - Maximum block timestamp in future
 
 // User agent string (from version.hpp)
 inline std::string GetUserAgent() { return coinbasechain::GetUserAgent(); }
