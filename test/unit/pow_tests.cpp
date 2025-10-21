@@ -7,7 +7,7 @@
 // This test suite validates both the ASERT algorithm correctness and its
 // resistance to manipulation attacks. Key attack vectors and their mitigations:
 //
-// 1. TIMESTAMP MANIPULATION ATTACK ⚠️ PARTIALLY VULNERABLE
+// 1. TIMESTAMP MANIPULATION ATTACK 
 //    Attack: Miner sets block timestamps as high as possible (near MAX_FUTURE_BLOCK_TIME)
 //            to make ASERT think blocks are slow, decreasing difficulty artificially.
 //

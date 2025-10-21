@@ -316,7 +316,7 @@ void Peer::handle_version(const message::VersionMessage &msg) {
   LOG_NET_TRACE("handle_version() peer={} address={} version={} user_agent={} nonce={}",
                 id_, address(), msg.version, msg.user_agent, msg.nonce);
 
-  // SECURITY: Reject duplicate VERSION messages (CVE-like issue)
+  // SECURITY: Reject duplicate VERSION messages 
   // Bitcoin Core: checks if (pfrom.nVersion != 0) and ignores duplicates
   // Prevents: time manipulation via multiple AddTimeData() calls, protocol
   // violations
