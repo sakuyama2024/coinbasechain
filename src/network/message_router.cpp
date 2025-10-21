@@ -100,7 +100,7 @@ bool MessageRouter::handle_getaddr(PeerPtr peer) {
   }
 
   auto response = std::make_unique<message::AddrMessage>();
-  response->addresses = addr_manager_->get_addresses(1000);
+  response->addresses = addr_manager_->get_addresses(protocol::MAX_ADDR_SIZE);
   peer->send_message(std::move(response));
   return true;
 }

@@ -72,7 +72,7 @@ public:
 
   // Get multiple addresses for ADDR message (limited to max_count)
   std::vector<protocol::TimestampedAddress>
-  get_addresses(size_t max_count = 1000);
+  get_addresses(size_t max_count = protocol::MAX_ADDR_SIZE);
 
   // Get statistics
   size_t size() const;
