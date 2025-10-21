@@ -1,5 +1,9 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
+//
+// Simple single-threaded CPU miner for regtest testing
+// This is NOT intended for production mining - it's a basic implementation
+// for generating test blocks in regtest mode during development and testing.
 
 #include "chain/miner.hpp"
 #include "chain/arith_uint256.hpp"
@@ -147,8 +151,11 @@ void CPUMiner::MiningWorker() {
     // Next nonce
     nonce++;
     if (nonce == 0) {
-      // Wrapped around - very unlikely with RandomX difficulty
-      nonce = 0;
+      // Nonce space exhausted - increment timestamp
+      // This gives us a fresh nonce space to search
+      current_template_.header.nTime++;
+      LOG_DEBUG("Miner: Nonce space exhausted, incremented nTime to {}",
+                current_template_.header.nTime);
     }
   }
 }
