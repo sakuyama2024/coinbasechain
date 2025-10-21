@@ -103,6 +103,11 @@ constexpr uint32_t MAX_INV_SIZE = 50000; // Inventory items
 constexpr uint32_t MAX_HEADERS_SIZE = 2000; // Headers per response
 constexpr uint32_t MAX_ADDR_SIZE = 1000;    // Addresses per ADDR message
 
+// Orphan header management limits (DoS protection)
+constexpr size_t MAX_ORPHAN_HEADERS = 1000;         // Total orphans across all peers
+constexpr size_t MAX_ORPHAN_HEADERS_PER_PEER = 50; // Max orphans per peer
+constexpr int64_t ORPHAN_HEADER_EXPIRE_TIME = 600;  // 10 minutes in seconds
+
 // Connection limits
 constexpr unsigned int DEFAULT_MAX_OUTBOUND_CONNECTIONS = 8;
 constexpr unsigned int DEFAULT_MAX_INBOUND_CONNECTIONS = 125;

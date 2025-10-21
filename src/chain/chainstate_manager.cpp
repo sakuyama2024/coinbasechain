@@ -796,19 +796,19 @@ bool ChainstateManager::TryAddOrphanHeader(const CBlockHeader &header,
   // DoS Protection 1: Check per-peer limit
   int peer_orphan_count = m_peer_orphan_count[peer_id];
   LOG_CHAIN_TRACE("TryAddOrphanHeader: peer={} has {}/{} orphans",
-                  peer_id, peer_orphan_count, MAX_ORPHAN_HEADERS_PER_PEER);
-  if (peer_orphan_count >= static_cast<int>(MAX_ORPHAN_HEADERS_PER_PEER)) {
+                  peer_id, peer_orphan_count, protocol::MAX_ORPHAN_HEADERS_PER_PEER);
+  if (peer_orphan_count >= static_cast<int>(protocol::MAX_ORPHAN_HEADERS_PER_PEER)) {
     LOG_WARN("Peer {} exceeded orphan limit ({}/{}), rejecting orphan {}",
-             peer_id, peer_orphan_count, MAX_ORPHAN_HEADERS_PER_PEER,
+             peer_id, peer_orphan_count, protocol::MAX_ORPHAN_HEADERS_PER_PEER,
              hash.ToString().substr(0, 16));
     return false;
   }
 
   // DoS Protection 2: Check total limit
-  if (m_orphan_headers.size() >= MAX_ORPHAN_HEADERS) {
+  if (m_orphan_headers.size() >= protocol::MAX_ORPHAN_HEADERS) {
     // Evict oldest orphan to make room
     LOG_DEBUG("Orphan pool full ({}/{}), evicting oldest",
-              m_orphan_headers.size(), MAX_ORPHAN_HEADERS);
+              m_orphan_headers.size(), protocol::MAX_ORPHAN_HEADERS);
 
     size_t evicted = EvictOrphanHeaders();
     if (evicted == 0) {
@@ -844,7 +844,7 @@ size_t ChainstateManager::EvictOrphanHeaders() {
   // Strategy 1: Evict expired orphans (older than 10 minutes)
   auto it = m_orphan_headers.begin();
   while (it != m_orphan_headers.end()) {
-    if (now - it->second.nTimeReceived > ORPHAN_HEADER_EXPIRE_TIME) {
+    if (now - it->second.nTimeReceived > protocol::ORPHAN_HEADER_EXPIRE_TIME) {
       LOG_DEBUG("Evicting expired orphan header: hash={}, age={}s",
                 it->first.ToString().substr(0, 16),
                 now - it->second.nTimeReceived);
@@ -867,7 +867,7 @@ size_t ChainstateManager::EvictOrphanHeaders() {
   }
 
   // Strategy 2: If still at limit, evict oldest
-  if (evicted == 0 && m_orphan_headers.size() >= MAX_ORPHAN_HEADERS) {
+  if (evicted == 0 && m_orphan_headers.size() >= protocol::MAX_ORPHAN_HEADERS) {
     // Find oldest orphan
     auto oldest = m_orphan_headers.begin();
     for (auto it = m_orphan_headers.begin(); it != m_orphan_headers.end();

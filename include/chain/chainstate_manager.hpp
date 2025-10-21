@@ -8,6 +8,7 @@
 #include "chain/block.hpp"
 #include "chain/chain_selector.hpp"
 #include "chain/validation.hpp"
+#include "network/protocol.hpp"
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -133,14 +134,6 @@ private:
   // Protected by validation_mutex_
   std::map<uint256, OrphanHeader> m_orphan_headers;
   std::map<int, int> m_peer_orphan_count; // peer_id -> orphan count
-
-  // DoS protection limits
-  static constexpr size_t MAX_ORPHAN_HEADERS =
-      1000; // Total orphans across all peers
-  static constexpr size_t MAX_ORPHAN_HEADERS_PER_PEER =
-      50; // Max orphans per peer
-  static constexpr int64_t ORPHAN_HEADER_EXPIRE_TIME =
-      600; // 10 minutes in seconds
 
   // Failed blocks (prevents reprocessing, marks descendants as
   // BLOCK_FAILED_CHILD) Protected by validation_mutex_
