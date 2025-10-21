@@ -313,10 +313,13 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
     return false;
   }
 
+  // Get current blockchain height for VERSION message
+  int32_t current_height = chainstate_manager_.GetChainHeight();
+
   // Create outbound peer with the connection (will be in CONNECTING state)
   // Store target address for duplicate connection prevention (Bitcoin Core pattern)
   auto peer = Peer::create_outbound(io_context_, connection, config_.network_magic,
-                                     local_nonce_, address, port);
+                                     local_nonce_, current_height, address, port);
   if (!peer) {
     LOG_NET_ERROR("Failed to create peer for {}:{}", address, port);
     return false;
@@ -553,9 +556,12 @@ void NetworkManager::handle_inbound_connection(
     return;
   }
 
+  // Get current blockchain height for VERSION message
+  int32_t current_height = chainstate_manager_.GetChainHeight();
+
   // Create inbound peer with our local nonce
   auto peer = Peer::create_inbound(io_context_, connection,
-                                   config_.network_magic, local_nonce_);
+                                   config_.network_magic, local_nonce_, current_height);
   if (peer) {
     // Setup message handler
     setup_peer_message_handler(peer.get());
@@ -694,9 +700,12 @@ void NetworkManager::attempt_feeler_connection() {
     return;
   }
 
+  // Get current blockchain height for VERSION message
+  int32_t current_height = chainstate_manager_.GetChainHeight();
+
   // Create peer with FEELER connection type (doesn't count against outbound limit)
   auto peer = Peer::create_outbound(io_context_, connection, config_.network_magic,
-                                     local_nonce_, address, port,
+                                     local_nonce_, current_height, address, port,
                                      ConnectionType::FEELER);
 
   // Setup message handler before adding to manager

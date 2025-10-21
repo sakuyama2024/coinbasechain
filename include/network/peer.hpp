@@ -57,6 +57,7 @@ public:
   static PeerPtr create_outbound(boost::asio::io_context &io_context,
                                  TransportConnectionPtr connection,
                                  uint32_t network_magic, uint64_t local_nonce,
+                                 int32_t start_height,
                                  const std::string &target_address = "",
                                  uint16_t target_port = 0,
                                  ConnectionType conn_type = ConnectionType::OUTBOUND);
@@ -64,7 +65,8 @@ public:
   // Create inbound peer (they connected to us)
   static PeerPtr create_inbound(boost::asio::io_context &io_context,
                                 TransportConnectionPtr connection,
-                                uint32_t network_magic, uint64_t local_nonce);
+                                uint32_t network_magic, uint64_t local_nonce,
+                                int32_t start_height);
 
   ~Peer();
 
@@ -115,6 +117,7 @@ private:
   // Private constructor - use create_outbound/create_inbound
   Peer(boost::asio::io_context &io_context, TransportConnectionPtr connection,
        uint32_t network_magic, bool is_inbound, uint64_t local_nonce,
+       int32_t start_height,
        const std::string &target_address = "", uint16_t target_port = 0,
        ConnectionType conn_type = ConnectionType::OUTBOUND);
 
@@ -158,6 +161,7 @@ private:
 
   // Self-connection prevention
   uint64_t local_nonce_; // Our node's nonce
+  int32_t local_start_height_; // Our blockchain height at connection time
 
   // Stored peer address (Bitcoin Core pattern: CNode::addr)
   // For outbound: target address we're connecting to (passed to create_outbound)
