@@ -285,6 +285,7 @@ add_executable(coinbasechain_tests
     test/unit/block_manager_tests.cpp
     test/unit/files_tests.cpp
     test/unit/chain_tests.cpp
+    test/unit/chain_selector_tests.cpp
     test/unit/chainparams_tests.cpp
     test/unit/persistence_tests.cpp
     test/unit/addr_manager_tests.cpp
