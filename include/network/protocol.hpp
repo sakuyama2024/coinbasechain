@@ -33,10 +33,11 @@ constexpr uint16_t REGTEST = 29590; // MAINNET + 20000
 } // namespace ports
 
 // Service flags - what services this node provides
-// Headers-only chain: only NODE_NETWORK is needed
+// For our headers-only chain, NODE_NETWORK means we can serve headers (not full blocks)
+// This differs from Bitcoin where NODE_NETWORK means serving complete blocks
 enum ServiceFlags : uint64_t {
   NODE_NONE = 0,
-  NODE_NETWORK = (1 << 0), // Can serve block headers
+  NODE_NETWORK = (1 << 0), // Can serve block headers (headers-only network)
 };
 
 // Message types - 12 bytes, null-padded

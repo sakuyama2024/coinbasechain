@@ -2,6 +2,8 @@
 #include "chain/logging.hpp"
 #include "chain/time.hpp"
 #include "chain/timedata.hpp"
+#include <boost/asio/ip/address.hpp>
+#include <boost/asio/ip/address_v6.hpp>
 #include <random>
 
 namespace coinbasechain {
@@ -19,6 +21,41 @@ static uint64_t generate_nonce() {
 
 // Helper to get current timestamp (uses mockable time for testing)
 static int64_t get_timestamp() { return util::GetTime(); }
+
+// Helper to create NetworkAddress from IP string and port
+static protocol::NetworkAddress create_network_address(const std::string &ip_str,
+                                                      uint16_t port,
+                                                      uint64_t services = protocol::NODE_NETWORK) {
+  protocol::NetworkAddress addr;
+  addr.services = services;
+  addr.port = port;
+
+  // Parse IP address
+  boost::system::error_code ec;
+  auto ip_addr = boost::asio::ip::make_address(ip_str, ec);
+
+  if (ec) {
+    // If parsing fails, return empty address
+    addr.ip.fill(0);
+    LOG_NET_WARN("Failed to parse IP address '{}': {}", ip_str, ec.message());
+    return addr;
+  }
+
+  // Convert to IPv6 format (IPv4 addresses are mapped to IPv6)
+  if (ip_addr.is_v4()) {
+    // Convert IPv4 to IPv4-mapped IPv6 (::ffff:x.x.x.x)
+    auto v6_mapped = boost::asio::ip::make_address_v6(
+        boost::asio::ip::v4_mapped, ip_addr.to_v4());
+    auto bytes = v6_mapped.to_bytes();
+    std::copy(bytes.begin(), bytes.end(), addr.ip.begin());
+  } else {
+    // Pure IPv6
+    auto bytes = ip_addr.to_v6().to_bytes();
+    std::copy(bytes.begin(), bytes.end(), addr.ip.begin());
+  }
+
+  return addr;
+}
 
 // Peer implementation
 
@@ -247,9 +284,23 @@ void Peer::send_version() {
   version_msg->timestamp = get_timestamp();
 
   // Fill in addr_recv (peer's address) and addr_from (our address)
-  // For now, use placeholder values
-  version_msg->addr_recv = protocol::NetworkAddress();
+  // addr_recv: The network address of the remote peer
+  if (connection_) {
+    std::string peer_addr = connection_->remote_address();
+    uint16_t peer_port = connection_->remote_port();
+    version_msg->addr_recv = create_network_address(peer_addr, peer_port);
+    LOG_NET_DEBUG("VERSION addr_recv set to {}:{}", peer_addr, peer_port);
+  } else {
+    // No connection yet (shouldn't happen), use empty address
+    version_msg->addr_recv = protocol::NetworkAddress();
+    LOG_NET_WARN("No connection when sending VERSION, using empty addr_recv");
+  }
+
+  // addr_from: Our address as seen by the peer
+  // Match Bitcoin Core: sends CService{} (empty/all zeros) for addrMe in VERSION.
+  // Peers discover our real address from the connection itself (what IP they see).
   version_msg->addr_from = protocol::NetworkAddress();
+  LOG_NET_DEBUG("VERSION addr_from set to empty (matching Bitcoin Core)");
 
   // Use our local nonce for self-connection prevention
   version_msg->nonce = local_nonce_;

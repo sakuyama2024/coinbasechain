@@ -26,8 +26,7 @@ enum class PeerState {
   CONNECTING,      // TCP connection in progress
   CONNECTED,       // TCP connected, handshake not started
   VERSION_SENT,    // Sent VERSION message
-  VERACK_RECEIVED, // Received VERACK (handshake complete)
-  READY,           // Fully connected and ready
+  READY,           // Received VERACK, fully connected and ready
   DISCONNECTING    // Shutting down
 };
 
