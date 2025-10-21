@@ -200,6 +200,7 @@ target_link_libraries(chain PUBLIC
 # Create network library - everything I/O and communication-related
 add_library(network STATIC
     src/network/protocol.cpp
+    src/network/connection_types.cpp
     src/network/message.cpp
     src/network/peer.cpp
     src/network/addr_manager.cpp
@@ -296,6 +297,10 @@ add_executable(coinbasechain_tests
     test/unit/reorg_multi_node_tests.cpp
     test/unit/network_header_sync_tests.cpp
     test/unit/notification_tests.cpp
+    test/unit/anchor_manager_tests.cpp
+    test/unit/connection_types_tests.cpp
+    test/unit/protocol_tests.cpp
+    test/unit/banman_tests.cpp
     # Integration tests
     test/integration/banman_adversarial_tests.cpp
     test/integration/header_sync_adversarial_tests.cpp
