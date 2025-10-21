@@ -2,6 +2,7 @@
 // NetworkBridgedTransport implementation
 
 #include "network_bridged_transport.hpp"
+#include "chain/logging.hpp"
 #include <sstream>
 
 namespace coinbasechain {

@@ -98,6 +98,9 @@ public:
     default_inbound_permissions_ = flags;
   }
 
+  // Test-only: Manually trigger a feeler connection attempt
+  void attempt_feeler_connection();
+
   // Stats (used primarily in tests, but useful for monitoring/debugging)
   size_t active_peer_count() const;
   size_t outbound_peer_count() const;
@@ -144,6 +147,8 @@ private:
   // Periodic tasks
   std::unique_ptr<boost::asio::steady_timer> connect_timer_;
   std::unique_ptr<boost::asio::steady_timer> maintenance_timer_;
+  std::unique_ptr<boost::asio::steady_timer> feeler_timer_;
+  static constexpr std::chrono::minutes FEELER_INTERVAL{2};
 
   // Tip announcement tracking (for periodic re-announcements)
   int64_t last_tip_announcement_time_{
@@ -153,9 +158,10 @@ private:
   void bootstrap_from_fixed_seeds(const chain::ChainParams &params);
   void attempt_outbound_connections();
   void schedule_next_connection_attempt();
+  void schedule_next_feeler();
 
-  // Helper to convert NetworkAddress to IP string
   std::optional<std::string> network_address_to_string(const protocol::NetworkAddress& addr);
+  bool already_connected_to_address(const std::string& address, uint16_t port);
 
   // Inbound connections (handled via transport callback)
   void handle_inbound_connection(TransportConnectionPtr connection);

@@ -112,13 +112,21 @@ int PeerManager::find_peer_by_address(const std::string &address,
                                       uint16_t port) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  // Search all peers for matching address:port
+  // Bitcoin Core pattern (net.cpp:332-341): FindNode() searches m_nodes and checks pnode->addr
+  // For outbound: addr = target address (what we're connecting to)
+  // For inbound: addr = runtime address (where they connected from)
+  // Both stored in the same field and searched the same way
+  //
+  // Bitcoin removes peers from m_nodes immediately when disconnected (net.cpp:1896)
+  // We remove peers from peers_ immediately in remove_peer() (line 88)
+  // So both approaches rely on immediate removal, not filtering by connection state
   for (const auto &[id, peer] : peers_) {
     if (!peer)
       continue;
 
-    // Match both address and port
-    if (peer->address() == address && peer->port() == port) {
+    // Check the stored address (target_address_/target_port_)
+    // This is populated for both outbound (from connect params) and inbound (from socket)
+    if (peer->target_address() == address && peer->target_port() == port) {
       return id;
     }
   }
@@ -174,8 +182,10 @@ size_t PeerManager::outbound_count() const {
   std::lock_guard<std::mutex> lock(mutex_);
   size_t count = 0;
 
+  // Count outbound peers (excluding feelers which don't consume outbound slots)
+  // Bitcoin Core pattern: Feelers don't count against MAX_OUTBOUND_FULL_RELAY_CONNECTIONS
   for (const auto &[id, peer] : peers_) {
-    if (!peer->is_inbound()) {
+    if (!peer->is_inbound() && !peer->is_feeler()) {
       count++;
     }
   }

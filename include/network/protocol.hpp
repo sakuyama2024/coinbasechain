@@ -12,6 +12,10 @@ namespace protocol {
 // Protocol version - increment when P2P protocol changes
 constexpr uint32_t PROTOCOL_VERSION = 1;
 
+// Minimum supported protocol version
+// Peers with version < MIN_PROTOCOL_VERSION will be rejected
+constexpr uint32_t MIN_PROTOCOL_VERSION = 1;
+
 // Network magic bytes - unique identifier for the network
 // ASCII encoding: "UNIC" (Unicity) for mainnet
 namespace magic {

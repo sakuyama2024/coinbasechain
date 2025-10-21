@@ -209,6 +209,23 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
   return std::nullopt;
 }
 
+std::optional<protocol::NetworkAddress>
+AddressManager::select_new_for_feeler() {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  // FEELER connections test addresses from "new" table (never connected before)
+  // This helps move working addresses from "new" to "tried"
+  if (new_.empty()) {
+    return std::nullopt;
+  }
+
+  // Select random address from "new" table only
+  std::uniform_int_distribution<size_t> idx_dist(0, new_.size() - 1);
+  auto it = new_.begin();
+  std::advance(it, idx_dist(rng_));
+  return it->second.address;
+}
+
 std::vector<protocol::TimestampedAddress>
 AddressManager::get_addresses(size_t max_count) {
   std::lock_guard<std::mutex> lock(mutex_);

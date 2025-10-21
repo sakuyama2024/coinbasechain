@@ -1,6 +1,7 @@
 #ifndef COINBASECHAIN_PEER_HPP
 #define COINBASECHAIN_PEER_HPP
 
+#include "network/connection_types.hpp"
 #include "network/message.hpp"
 #include "network/protocol.hpp"
 #include "network/transport.hpp"
@@ -55,7 +56,10 @@ public:
   // Create outbound peer (we initiate connection)
   static PeerPtr create_outbound(boost::asio::io_context &io_context,
                                  TransportConnectionPtr connection,
-                                 uint32_t network_magic, uint64_t local_nonce);
+                                 uint32_t network_magic, uint64_t local_nonce,
+                                 const std::string &target_address = "",
+                                 uint16_t target_port = 0,
+                                 ConnectionType conn_type = ConnectionType::OUTBOUND);
 
   // Create inbound peer (they connected to us)
   static PeerPtr create_inbound(boost::asio::io_context &io_context,
@@ -91,7 +95,13 @@ public:
   const PeerStats &stats() const { return stats_; }
   std::string address() const;
   uint16_t port() const;
+
+  const std::string& target_address() const { return target_address_; }
+  uint16_t target_port() const { return target_port_; }
+
   bool is_inbound() const { return is_inbound_; }
+  ConnectionType connection_type() const { return connection_type_; }
+  bool is_feeler() const { return connection_type_ == ConnectionType::FEELER; }
   int id() const { return id_; }
 
   // Peer information from VERSION message
@@ -104,7 +114,9 @@ public:
 private:
   // Private constructor - use create_outbound/create_inbound
   Peer(boost::asio::io_context &io_context, TransportConnectionPtr connection,
-       uint32_t network_magic, bool is_inbound, uint64_t local_nonce);
+       uint32_t network_magic, bool is_inbound, uint64_t local_nonce,
+       const std::string &target_address = "", uint16_t target_port = 0,
+       ConnectionType conn_type = ConnectionType::OUTBOUND);
 
   // Connection management
   void on_connected();
@@ -141,10 +153,18 @@ private:
 
   uint32_t network_magic_;
   bool is_inbound_;
+  ConnectionType connection_type_;  // Connection type (INBOUND, OUTBOUND_FULL_RELAY, FEELER, etc.)
   int id_;  // Set by PeerManager when peer is added
 
   // Self-connection prevention
   uint64_t local_nonce_; // Our node's nonce
+
+  // Stored peer address (Bitcoin Core pattern: CNode::addr)
+  // For outbound: target address we're connecting to (passed to create_outbound)
+  // For inbound: runtime address from accepted socket (set in create_inbound)
+  // Used for duplicate prevention and peer lookup (see PeerManager::find_peer_by_address)
+  std::string target_address_;
+  uint16_t target_port_{0};
 
   PeerState state_;
   PeerStats stats_;

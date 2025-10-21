@@ -24,30 +24,47 @@ static int64_t get_timestamp() { return util::GetTime(); }
 
 Peer::Peer(boost::asio::io_context &io_context,
            TransportConnectionPtr connection, uint32_t network_magic,
-           bool is_inbound, uint64_t local_nonce)
+           bool is_inbound, uint64_t local_nonce,
+           const std::string &target_address, uint16_t target_port,
+           ConnectionType conn_type)
     : io_context_(io_context), connection_(connection),
       handshake_timer_(io_context), ping_timer_(io_context),
       inactivity_timer_(io_context), network_magic_(network_magic),
-      is_inbound_(is_inbound), id_(-1), local_nonce_(local_nonce),
+      is_inbound_(is_inbound), connection_type_(conn_type), id_(-1),
+      local_nonce_(local_nonce), target_address_(target_address),
+      target_port_(target_port),
       state_(connection && connection->is_open()
                  ? PeerState::CONNECTED
                  : (connection ? PeerState::CONNECTING : PeerState::DISCONNECTED)) {}
 
-Peer::~Peer() { disconnect(); }
+Peer::~Peer() {
+  LOG_NET_INFO("Peer destructor called for peer {} address={}", id_, address());
+  disconnect();
+}
 
 PeerPtr Peer::create_outbound(boost::asio::io_context &io_context,
                               TransportConnectionPtr connection,
-                              uint32_t network_magic, uint64_t local_nonce) {
+                              uint32_t network_magic, uint64_t local_nonce,
+                              const std::string &target_address,
+                              uint16_t target_port,
+                              ConnectionType conn_type) {
   auto peer = PeerPtr(
-      new Peer(io_context, connection, network_magic, false, local_nonce));
+      new Peer(io_context, connection, network_magic, false, local_nonce,
+               target_address, target_port, conn_type));
   return peer;
 }
 
 PeerPtr Peer::create_inbound(boost::asio::io_context &io_context,
                              TransportConnectionPtr connection,
                              uint32_t network_magic, uint64_t local_nonce) {
+  // Bitcoin Core pattern: Store the peer's address (from accepted connection)
+  // For inbound peers, this is the runtime address they connected from
+  std::string addr = connection ? connection->remote_address() : "";
+  uint16_t port = connection ? connection->remote_port() : 0;
+
   auto peer = PeerPtr(
-      new Peer(io_context, connection, network_magic, true, local_nonce));
+      new Peer(io_context, connection, network_magic, true, local_nonce,
+               addr, port, ConnectionType::INBOUND));
   return peer;
 }
 
@@ -257,6 +274,17 @@ void Peer::handle_version(const message::VersionMessage &msg) {
     return;
   }
 
+  // SECURITY: Reject obsolete protocol versions
+  // Bitcoin Core: rejects version < MIN_PROTO_VERSION (209)
+  // Prevents: compatibility issues, potential exploits in old protocol versions
+  if (msg.version < static_cast<int32_t>(protocol::MIN_PROTOCOL_VERSION)) {
+    LOG_NET_WARN(
+        "Peer {} using obsolete protocol version {} (min: {}), disconnecting",
+        address(), msg.version, protocol::MIN_PROTOCOL_VERSION);
+    disconnect();
+    return;
+  }
+
   peer_version_ = msg.version;
   peer_services_ = msg.services;
   peer_start_height_ = msg.start_height;
@@ -310,6 +338,16 @@ void Peer::handle_verack() {
   }
 
   LOG_NET_DEBUG("Received VERACK from {} - handshake complete", address());
+
+  // FEELER connections: Disconnect immediately after handshake completes
+  // Bitcoin Core pattern (net_processing.cpp:3606): "feeler connection completed peer=%d; disconnecting"
+  // Purpose: Test address liveness without consuming an outbound slot
+  if (is_feeler()) {
+    LOG_NET_INFO("Feeler connection completed to peer {} ({}); disconnecting",
+                 id_, address());
+    disconnect();
+    return;
+  }
 
   state_ = PeerState::READY;
   successfully_connected_ = true; // Mark handshake as complete

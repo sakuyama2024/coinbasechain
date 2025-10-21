@@ -165,16 +165,19 @@ void SimulatedNode::DisconnectFrom(int peer_node_id) {
     // Get peer ID by address (this returns the PeerManager map key)
     auto& peer_mgr = network_manager_->peer_manager();
 
-    // Debug: print all peers
+    // Search all peers to find one matching this address
+    // We can't use find_peer_by_address() because:
+    // - For outbound peers: target_port = protocol::ports::REGTEST
+    // - For inbound peers: target_port = ephemeral source port (unknown)
+    // Since each node has a unique IP (127.0.0.X), search by address only
+    int peer_manager_id = -1;
     auto all_peers = peer_mgr.get_all_peers();
-    for (const auto& p : all_peers) {
-        if (p) {
+    for (const auto& peer : all_peers) {
+        if (peer && peer->target_address() == peer_addr) {
+            peer_manager_id = peer->id();
+            break;
         }
     }
-
-    // Note: peer->port() returns the remote listen port (protocol::ports::REGTEST + peer_node_id), not the connection port
-    // So we search by address and port
-    int peer_manager_id = peer_mgr.find_peer_by_address(peer_addr, protocol::ports::REGTEST + peer_node_id);
 
     if (peer_manager_id >= 0) {
         network_manager_->disconnect_from(peer_manager_id);

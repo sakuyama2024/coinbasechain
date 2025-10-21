@@ -113,6 +113,7 @@ bool NetworkManager::start() {
     // Setup timers
     connect_timer_ = std::make_unique<boost::asio::steady_timer>(io_context_);
     maintenance_timer_ = std::make_unique<boost::asio::steady_timer>(io_context_);
+    feeler_timer_ = std::make_unique<boost::asio::steady_timer>(io_context_);
   }
 
   // Start IO threads
@@ -165,6 +166,7 @@ bool NetworkManager::start() {
   if (config_.io_threads > 0) {
     schedule_next_connection_attempt();
     schedule_next_maintenance();
+    schedule_next_feeler();
   }
 
   return true;
@@ -248,6 +250,14 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
     return false;
   }
 
+  // SECURITY: Prevent duplicate outbound connections to same peer
+  // Bitcoin Core: AlreadyConnectedToAddress() check at net.cpp:2881
+  // This prevents wasting connection slots and eclipse attack vulnerabilities
+  if (already_connected_to_address(address, port)) {
+    LOG_NET_INFO("Already connected to {}:{}, skipping duplicate", address, port);
+    return false;
+  }
+
   // Check if we can add more outbound connections
   if (!peer_manager_->needs_more_outbound()) {
     return false;
@@ -304,8 +314,9 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
   }
 
   // Create outbound peer with the connection (will be in CONNECTING state)
+  // Store target address for duplicate connection prevention (Bitcoin Core pattern)
   auto peer = Peer::create_outbound(io_context_, connection, config_.network_magic,
-                                     local_nonce_);
+                                     local_nonce_, address, port);
   if (!peer) {
     LOG_NET_ERROR("Failed to create peer for {}:{}", address, port);
     return false;
@@ -330,6 +341,13 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
 
 void NetworkManager::disconnect_from(int peer_id) {
   peer_manager_->remove_peer(peer_id);
+}
+
+bool NetworkManager::already_connected_to_address(const std::string& address, uint16_t port) {
+  // Bitcoin Core pattern: Check existing connections to prevent duplicates
+  // Uses peer_manager's find_peer_by_address which iterates through all peers
+  // Returns true if we already have a connection to this address:port
+  return peer_manager_->find_peer_by_address(address, port) != -1;
 }
 
 size_t NetworkManager::active_peer_count() const {
@@ -590,6 +608,111 @@ void NetworkManager::schedule_next_maintenance() {
       schedule_next_maintenance();
     }
   });
+}
+
+void NetworkManager::schedule_next_feeler() {
+  if (!running_.load(std::memory_order_acquire) || !feeler_timer_) {
+    return;
+  }
+
+  // Bitcoin Core pattern: Make one feeler connection every FEELER_INTERVAL (2 minutes)
+  feeler_timer_->expires_after(FEELER_INTERVAL);
+  feeler_timer_->async_wait([this](const boost::system::error_code &ec) {
+    if (!ec && running_.load(std::memory_order_acquire)) {
+      attempt_feeler_connection();
+      schedule_next_feeler();
+    }
+  });
+}
+
+void NetworkManager::attempt_feeler_connection() {
+  if (!running_.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  // Get address from "new" table (addresses we've heard about but never connected to)
+  auto addr = addr_manager_->select_new_for_feeler();
+  if (!addr) {
+    LOG_NET_DEBUG("No addresses available for feeler connection");
+    return;
+  }
+
+  // Convert NetworkAddress to IP string
+  auto addr_str_opt = network_address_to_string(*addr);
+  if (!addr_str_opt) {
+    LOG_NET_DEBUG("Failed to convert feeler address to string");
+    return;
+  }
+
+  std::string address = *addr_str_opt;
+  uint16_t port = addr->port;
+
+  LOG_NET_INFO("Attempting feeler connection to {}:{}", address, port);
+
+  // Create peer_id container for async callback
+  auto peer_id_ptr = std::make_shared<std::optional<int>>(std::nullopt);
+
+  // Create async transport connection with callback (same pattern as connect_to())
+  auto connection = transport_->connect(
+      address, port, [this, peer_id_ptr, address, port, addr](bool success) {
+        LOG_NET_INFO("FEELER CALLBACK FIRED: success={}, peer_id_ptr has_value={}",
+                      success, peer_id_ptr->has_value());
+        // Callback fires when TCP connection completes
+        boost::asio::post(io_context_, [this, peer_id_ptr, address, port, addr, success]() {
+          LOG_NET_INFO("FEELER CALLBACK POST EXECUTED: peer_id_ptr has_value={}",
+                        peer_id_ptr->has_value());
+          if (!peer_id_ptr->has_value()) {
+            LOG_NET_INFO("FEELER CALLBACK ABORTED: peer_id_ptr is nullopt");
+            return;
+          }
+
+          int peer_id = peer_id_ptr->value();
+          auto peer_ptr = peer_manager_->get_peer(peer_id);
+          if (!peer_ptr) {
+            LOG_NET_DEBUG("FEELER CALLBACK: peer {} not found in manager", peer_id);
+            return;
+          }
+
+          if (success) {
+            // Connection succeeded - mark address as good and start peer protocol
+            // The peer will auto-disconnect after VERACK (see handle_verack())
+            LOG_NET_DEBUG("Feeler connected to {}:{}, starting peer {}", address, port, peer_id);
+            addr_manager_->good(*addr);
+            peer_ptr->start();
+          } else {
+            // Connection failed - remove the peer
+            LOG_NET_DEBUG("Feeler failed to connect to {}:{}, removing peer {}", address, port, peer_id);
+            addr_manager_->failed(*addr);
+            peer_manager_->remove_peer(peer_id);
+          }
+        });
+      });
+
+  if (!connection) {
+    LOG_NET_ERROR("Failed to create feeler connection to {}:{}", address, port);
+    addr_manager_->failed(*addr);
+    return;
+  }
+
+  // Create peer with FEELER connection type (doesn't count against outbound limit)
+  auto peer = Peer::create_outbound(io_context_, connection, config_.network_magic,
+                                     local_nonce_, address, port,
+                                     ConnectionType::FEELER);
+
+  // Setup message handler before adding to manager
+  setup_peer_message_handler(peer.get());
+
+  // Add to peer manager and store ID for callback
+  int peer_id = peer_manager_->add_peer(peer);
+  if (peer_id < 0) {
+    LOG_NET_DEBUG("Failed to add feeler peer to manager");
+    return;
+  }
+
+  // Store peer_id for callback access
+  *peer_id_ptr = peer_id;
+
+  LOG_NET_DEBUG("Feeler connection initiated to {}:{} (peer_id={})", address, port, peer_id);
 }
 
 void NetworkManager::check_initial_sync() {

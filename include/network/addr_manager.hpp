@@ -67,6 +67,9 @@ public:
   // Get a random address to connect to
   std::optional<protocol::NetworkAddress> select();
 
+  // Select address from "new" table for feeler connection
+  std::optional<protocol::NetworkAddress> select_new_for_feeler();
+
   // Get multiple addresses for ADDR message (limited to max_count)
   std::vector<protocol::TimestampedAddress>
   get_addresses(size_t max_count = 1000);
