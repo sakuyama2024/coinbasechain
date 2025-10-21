@@ -161,8 +161,8 @@ bool BlockRelayManager::HandleInvMessage(PeerPtr peer,
       uint256 block_hash;
       std::memcpy(block_hash.data(), inv.hash.data(), 32);
 
-      LOG_NET_INFO("Peer {} announced block: {}", peer->id(),
-                   block_hash.GetHex());
+      LOG_NET_DEBUG("Peer {} announced block: {}", peer->id(),
+                    block_hash.GetHex());
 
       // Check if we already have this block
       const chain::CBlockIndex *pindex =

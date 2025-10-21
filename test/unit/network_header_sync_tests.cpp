@@ -12,7 +12,7 @@ using namespace coinbasechain::test;
 // HEADER SYNCHRONIZATION TESTS (via NetworkManager)
 // ==============================================================================
 
-TEST_CASE("NetworkManager HeaderSync - Basic Sync", "[.][network_header_sync][network]") {
+TEST_CASE("NetworkManager HeaderSync - Basic Sync", "[network_header_sync][network]") {
     SimulatedNetwork network(50001);
     SetZeroLatency(network);
 

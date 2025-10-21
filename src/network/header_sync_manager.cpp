@@ -237,6 +237,30 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
     return false;
   }
 
+  // DoS Protection: Check for low-work headers (Bitcoin Core approach)
+  // Calculate total work on this chain
+  const chain::CBlockIndex* chain_start = chainstate_manager_.LookupBlockIndex(headers[0].hashPrevBlock);
+  if (chain_start) {
+    arith_uint256 total_work = chain_start->nChainWork + validation::CalculateHeadersWork(headers);
+
+    // Get our dynamic anti-DoS threshold
+    arith_uint256 minimum_work = validation::GetAntiDoSWorkThreshold(
+        chainstate_manager_.GetTip(),
+        chainstate_manager_.GetParams(),
+        chainstate_manager_.IsInitialBlockDownload());
+
+    // Ignore low-work chains (don't penalize, just ignore per Bitcoin Core)
+    if (total_work < minimum_work) {
+      LOG_NET_DEBUG("Ignoring low-work headers from peer {} (work={}, threshold={}, height={})",
+                    peer_id,
+                    total_work.ToString(),
+                    minimum_work.ToString(),
+                    chain_start->nHeight + headers.size());
+      ClearSyncPeer();
+      return false;
+    }
+  }
+
   // Store batch size under lock
   {
     std::lock_guard<std::mutex> lock(sync_mutex_);
@@ -421,8 +445,8 @@ bool HeaderSyncManager::HandleGetHeadersMessage(
   }
 
   const chain::CBlockIndex *tip = chainstate_manager_.GetTip();
-  LOG_NET_INFO("Preparing headers: fork_point height={}, tip height={}",
-               fork_point->nHeight, tip ? tip->nHeight : -1);
+  LOG_NET_DEBUG("Preparing headers: fork_point height={}, tip height={}",
+                fork_point->nHeight, tip ? tip->nHeight : -1);
 
   // Build HEADERS response
   auto response = std::make_unique<message::HeadersMessage>();
@@ -443,9 +467,9 @@ bool HeaderSyncManager::HandleGetHeadersMessage(
     pindex = chainstate_manager_.GetBlockAtHeight(pindex->nHeight + 1);
   }
 
-  LOG_NET_INFO("Sending {} headers to peer {} (from height {} to {})",
-               response->headers.size(), peer->id(), fork_point->nHeight + 1,
-               fork_point->nHeight + response->headers.size());
+  LOG_NET_DEBUG("Sending {} headers to peer {} (from height {} to {})",
+                response->headers.size(), peer->id(), fork_point->nHeight + 1,
+                fork_point->nHeight + response->headers.size());
 
   peer->send_message(std::move(response));
   return true;
