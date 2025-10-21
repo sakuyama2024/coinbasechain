@@ -37,7 +37,7 @@ struct CBanEntry {
 
 class BanMan {
 public:
-  explicit BanMan(const std::string &datadir = "");
+  explicit BanMan(const std::string &datadir = "", bool auto_save = true);
   ~BanMan();
 
   bool Load();
@@ -60,6 +60,9 @@ public:
 private:
   // Data directory path
   std::string m_datadir;
+
+  // Auto-save on modifications (disabled for tests to avoid race conditions)
+  bool m_auto_save;
 
   // Banned addresses (persistent)
   mutable std::mutex m_banned_mutex;

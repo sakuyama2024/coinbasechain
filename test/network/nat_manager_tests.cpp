@@ -89,7 +89,7 @@ TEST_CASE("NAT Manager - Thread Safety", "[nat][network]") {
 // Tagged with [.] to skip by default
 // Run with: ./coinbasechain_tests "[nat][integration]"
 
-TEST_CASE("NAT Manager - UPnP Integration", "[nat][network][integration][.]") {
+TEST_CASE("NAT Manager - UPnP Integration", "[nat][integration][.]") {
     NATManager manager;
     uint16_t test_port = 39994;
 
@@ -121,7 +121,7 @@ TEST_CASE("NAT Manager - UPnP Integration", "[nat][network][integration][.]") {
     }
 }
 
-TEST_CASE("NAT Manager - Start Twice", "[nat][network][integration][.]") {
+TEST_CASE("NAT Manager - Start Twice", "[nat][integration][.]") {
     SECTION("Cannot start twice") {
         NATManager manager;
         uint16_t test_port = 39998;

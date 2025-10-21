@@ -127,7 +127,7 @@ TEST_CASE("BanMan - Persistence", "[network][banman][unit]") {
 
     SECTION("Save and load bans") {
         {
-            BanMan banman(fixture.test_dir);
+            BanMan banman(fixture.test_dir, false);  // Disable auto-save for tests
 
             // Add some bans
             banman.Ban("192.168.1.1", 3600);
@@ -143,7 +143,7 @@ TEST_CASE("BanMan - Persistence", "[network][banman][unit]") {
 
         // Load in new instance
         {
-            BanMan banman2(fixture.test_dir);
+            BanMan banman2(fixture.test_dir, false);  // Disable auto-save for tests
             REQUIRE(banman2.Load());
 
             // Check bans persisted
@@ -157,7 +157,7 @@ TEST_CASE("BanMan - Persistence", "[network][banman][unit]") {
     }
 
     SECTION("Load from non-existent file") {
-        BanMan banman(fixture.test_dir);
+        BanMan banman(fixture.test_dir, false);  // Disable auto-save for tests
 
         // Should succeed (not an error for first run)
         REQUIRE(banman.Load());
@@ -190,7 +190,7 @@ TEST_CASE("BanMan - Persistence", "[network][banman][unit]") {
 
     SECTION("Discouragement is not persisted") {
         {
-            BanMan banman(fixture.test_dir);
+            BanMan banman(fixture.test_dir, false);  // Disable auto-save for tests
 
             // Add ban and discouragement
             banman.Ban("192.168.1.1", 3600);
@@ -200,7 +200,7 @@ TEST_CASE("BanMan - Persistence", "[network][banman][unit]") {
         }
 
         {
-            BanMan banman2(fixture.test_dir);
+            BanMan banman2(fixture.test_dir, false);  // Disable auto-save for tests
             REQUIRE(banman2.Load());
 
             // Ban persisted
@@ -217,7 +217,7 @@ TEST_CASE("BanMan - JSON File Format", "[network][banman][unit]") {
 
     SECTION("Verify JSON structure") {
         {
-            BanMan banman(fixture.test_dir);
+            BanMan banman(fixture.test_dir, false);  // Disable auto-save for tests
 
             // Add bans with different expiry types
             banman.Ban("192.168.1.1", 3600);  // Timed
@@ -258,7 +258,7 @@ TEST_CASE("BanMan - JSON File Format", "[network][banman][unit]") {
         file << "{ invalid json ]";
         file.close();
 
-        BanMan banman(fixture.test_dir);
+        BanMan banman(fixture.test_dir, false);  // Disable auto-save for tests
 
         // Should handle error gracefully
         bool loaded = banman.Load();
@@ -421,7 +421,7 @@ TEST_CASE("BanMan - Auto-save on destruction", "[network][banman][unit]") {
     BanManTestFixture fixture;
 
     {
-        BanMan banman(fixture.test_dir);
+        BanMan banman(fixture.test_dir, false);  // Disable auto-save for tests
         banman.Ban("192.168.1.1", 3600);
         // Destructor should auto-save
     }
@@ -430,7 +430,7 @@ TEST_CASE("BanMan - Auto-save on destruction", "[network][banman][unit]") {
     REQUIRE(std::filesystem::exists(fixture.GetBanlistPath()));
 
     // Load and verify
-    BanMan banman2(fixture.test_dir);
+    BanMan banman2(fixture.test_dir, false);  // Disable auto-save for tests
     REQUIRE(banman2.Load());
     REQUIRE(banman2.IsBanned("192.168.1.1"));
 }

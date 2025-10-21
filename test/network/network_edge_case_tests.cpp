@@ -165,7 +165,7 @@ TEST_CASE("BanMan persistence - Save and load bans from disk", "[network][banman
 
     {
         // Create BanMan, add bans, and save
-        BanMan banman(test_dir.string());
+        BanMan banman(test_dir.string(), false);  // Disable auto-save for tests
 
         banman.Ban("192.168.1.1", 0);      // Permanent
         banman.Ban("192.168.1.2", 3600);   // 1 hour
@@ -181,7 +181,7 @@ TEST_CASE("BanMan persistence - Save and load bans from disk", "[network][banman
 
     // Destroy BanMan and create new one (simulates restart)
     {
-        BanMan banman(test_dir.string());
+        BanMan banman(test_dir.string(), false);  // Disable auto-save for tests
 
         // Bans should not exist yet (not loaded)
         REQUIRE_FALSE(banman.IsBanned("192.168.1.1"));
@@ -208,7 +208,7 @@ TEST_CASE("BanMan persistence - Unban persists correctly", "[network][banman][pe
     std::filesystem::create_directories(test_dir);
 
     {
-        BanMan banman(test_dir.string());
+        BanMan banman(test_dir.string(), false);  // Disable auto-save for tests
 
         banman.Ban("192.168.1.1", 0);
         banman.Ban("192.168.1.2", 0);
@@ -225,7 +225,7 @@ TEST_CASE("BanMan persistence - Unban persists correctly", "[network][banman][pe
     }
 
     {
-        BanMan banman(test_dir.string());
+        BanMan banman(test_dir.string(), false);  // Disable auto-save for tests
         REQUIRE(banman.Load());
 
         // Unban should persist

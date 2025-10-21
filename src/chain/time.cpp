@@ -56,18 +56,6 @@ std::chrono::steady_clock::time_point GetSteadyTime() {
   return std::chrono::steady_clock::now();
 }
 
-int64_t GetTimeMillis() {
-  int64_t mock = g_mock_time.load(std::memory_order_relaxed);
-  if (mock != 0) {
-    return mock * 1000; // Convert seconds to milliseconds
-  }
-
-  // Return real system time in milliseconds
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::system_clock::now().time_since_epoch())
-      .count();
-}
-
 void SetMockTime(int64_t time) {
   g_mock_time.store(time, std::memory_order_relaxed);
 

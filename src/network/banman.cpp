@@ -12,9 +12,10 @@ using json = nlohmann::json;
 namespace coinbasechain {
 namespace network {
 
-BanMan::BanMan(const std::string &datadir) : m_datadir(datadir) {
-  LOG_INFO("BanMan initialized with datadir: {}",
-           datadir.empty() ? "<none>" : datadir);
+BanMan::BanMan(const std::string &datadir, bool auto_save)
+    : m_datadir(datadir), m_auto_save(auto_save) {
+  LOG_INFO("BanMan initialized with datadir: {}, auto_save: {}",
+           datadir.empty() ? "<none>" : datadir, auto_save);
 }
 
 BanMan::~BanMan() {
@@ -143,11 +144,10 @@ void BanMan::Ban(const std::string &address, int64_t ban_time_offset) {
   } else {
     LOG_WARN("BanMan: Permanently banned {}", address);
   }
-  // TODO
-  // Auto-save (disabled - causes severe performance issues in tests)
-  // if (!m_datadir.empty()) {
-  //     SaveInternal();
-  // }
+  // Auto-save
+  if (m_auto_save && !m_datadir.empty()) {
+      SaveInternal();
+  }
 }
 
 void BanMan::Unban(const std::string &address) {
@@ -158,10 +158,10 @@ void BanMan::Unban(const std::string &address) {
     m_banned.erase(it);
     LOG_INFO("BanMan: Unbanned {}", address);
 
-    // Auto-save (disabled - causes severe performance issues in tests)
-    // if (!m_datadir.empty()) {
-    //     SaveInternal();
-    // }
+    // Auto-save
+    if (!m_datadir.empty()) {
+        SaveInternal();
+    }
   } else {
     LOG_WARN("BanMan: Address {} was not banned", address);
   }
@@ -225,10 +225,10 @@ void BanMan::ClearBanned() {
   m_banned.clear();
   LOG_INFO("BanMan: Cleared all bans");
 
-  // TODO Auto-save (disabled - causes severe performance issues in tests)
-  // if (!m_datadir.empty()) {
-  //     SaveInternal();
-  // }
+  // Auto-save
+  if (m_auto_save && !m_datadir.empty()) {
+      SaveInternal();
+  }
 }
 
 void BanMan::SweepBanned() {
