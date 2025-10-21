@@ -871,10 +871,10 @@ RPCServer::HandleGetMiningInfo(const std::vector<std::string> &params) {
     difficulty = dDiff;
   }
 
-  // Calculate network hashrate (simplified - based on last 120 blocks)
+  // Calculate network hashrate (simplified - based on last DEFAULT_HASHRATE_CALCULATION_BLOCKS)
   double networkhashps = 0.0;
   if (tip && tip->nHeight > 0) {
-    int nblocks = std::min(120, tip->nHeight);
+    int nblocks = std::min(protocol::DEFAULT_HASHRATE_CALCULATION_BLOCKS, tip->nHeight);
     const chain::CBlockIndex *pb = tip;
     const chain::CBlockIndex *pb0 = pb;
 
@@ -904,12 +904,12 @@ std::string
 RPCServer::HandleGetNetworkHashPS(const std::vector<std::string> &params) {
   auto *tip = chainstate_manager_.GetTip();
 
-  // Default to 120 blocks
-  int nblocks = 120;
+  // Default to DEFAULT_HASHRATE_CALCULATION_BLOCKS
+  int nblocks = protocol::DEFAULT_HASHRATE_CALCULATION_BLOCKS;
   if (!params.empty()) {
     nblocks = std::stoi(params[0]);
     if (nblocks == -1 || nblocks == 0) {
-      nblocks = 120;
+      nblocks = protocol::DEFAULT_HASHRATE_CALCULATION_BLOCKS;
     }
   }
 
