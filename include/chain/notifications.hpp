@@ -82,6 +82,7 @@ public:
   using ChainTipCallback =
       std::function<void(const chain::CBlockIndex *pindexNew, int height)>;
   using SyncStateCallback = std::function<void(bool syncing, double progress)>;
+  using SuspiciousReorgCallback = std::function<void(int reorg_depth, int max_allowed)>;
 
   /**
    * Subscribe to block connected events
@@ -108,6 +109,13 @@ public:
    * Returns RAII subscription handle
    */
   [[nodiscard]] Subscription SubscribeSyncState(SyncStateCallback callback);
+
+  /**
+   * Subscribe to suspicious reorg detection
+   * Returns RAII subscription handle
+   */
+  [[nodiscard]] Subscription
+  SubscribeSuspiciousReorg(SuspiciousReorgCallback callback);
 
   /**
    * Notify all subscribers of block connected
@@ -164,6 +172,12 @@ public:
   void NotifySyncState(bool syncing, double progress);
 
   /**
+   * Notify all subscribers of suspicious reorg detection
+   * Called by ChainstateManager when reorg exceeds safety threshold
+   */
+  void NotifySuspiciousReorg(int reorg_depth, int max_allowed);
+
+  /**
    * Get singleton instance
    */
   static ChainNotifications &Get();
@@ -180,6 +194,7 @@ private:
     BlockDisconnectedCallback block_disconnected;
     ChainTipCallback chain_tip;
     SyncStateCallback sync_state;
+    SuspiciousReorgCallback suspicious_reorg;
   };
 
   std::mutex mutex_;

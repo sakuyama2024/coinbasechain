@@ -70,6 +70,8 @@ int main(int argc, char *argv[]) {
             coinbasechain::protocol::magic::REGTEST;
         config.network_config.listen_port =
             coinbasechain::protocol::ports::REGTEST;
+        // Disable NAT for regtest (localhost testing doesn't need UPnP)
+        config.network_config.enable_nat = false;
       } else if (arg == "--testnet") {
         config.chain_type = coinbasechain::chain::ChainType::TESTNET;
         config.network_config.network_magic =

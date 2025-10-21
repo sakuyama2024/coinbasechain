@@ -88,6 +88,24 @@ bool Application::initialize() {
         }
       });
 
+  // Subscribe to suspicious reorg notifications to trigger shutdown
+  reorg_sub_ = Notifications().SubscribeSuspiciousReorg(
+      [this](int reorg_depth, int max_allowed) {
+        LOG_ERROR(
+            "Application: Suspicious reorg detected ({} blocks, max {}). "
+            "Initiating graceful shutdown to protect chain integrity.",
+            reorg_depth, max_allowed);
+        request_shutdown();
+      });
+
+  // Subscribe to chain tip changes to invalidate miner block templates
+  tip_sub_ = Notifications().SubscribeChainTip(
+      [this](const chain::CBlockIndex *pindexNew, int height) {
+        if (miner_) {
+          miner_->InvalidateTemplate();
+        }
+      });
+
   LOG_INFO("Initialization complete");
   return true;
 }

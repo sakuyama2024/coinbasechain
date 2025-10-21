@@ -193,6 +193,12 @@ BlockTemplate CPUMiner::CreateBlockTemplate() {
 }
 
 bool CPUMiner::ShouldRegenerateTemplate() {
+  // Check atomic flag first (notification-based, fast)
+  if (template_invalidated_.exchange(false)) {
+    return true;
+  }
+
+  // Fallback to polling (slower, but ensures correctness)
   const chain::CBlockIndex *tip = chainstate_.GetTip();
   if (!tip) {
     return template_prev_hash_.IsNull();

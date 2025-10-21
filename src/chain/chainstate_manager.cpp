@@ -316,6 +316,11 @@ bool ChainstateManager::ActivateBestChain(chain::CBlockIndex *pindexMostWork) {
               pindexMostWork->GetBlockHash().ToString());
     LOG_ERROR("*  fork point @ height {} ({})", pindexFork->nHeight,
               pindexFork->GetBlockHash().ToString());
+
+    // Notify subscribers (e.g., Application for graceful shutdown)
+    Notifications().NotifySuspiciousReorg(reorg_depth,
+                                           suspicious_reorg_depth_ - 1);
+
     return false;
   }
 

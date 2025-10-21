@@ -9,6 +9,7 @@
 #include "chain/chain_selector.hpp"
 #include "chain/validation.hpp"
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <set>

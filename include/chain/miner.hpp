@@ -51,6 +51,10 @@ public:
   uint64_t GetTotalHashes() const { return total_hashes_.load(); }
   int GetBlocksFound() const { return blocks_found_.load(); }
 
+  // Invalidate current block template (called when chain tip changes)
+  // Thread-safe: uses atomic flag checked by mining thread
+  void InvalidateTemplate() { template_invalidated_.store(true); }
+
 private:
   void MiningWorker();
   BlockTemplate CreateBlockTemplate();
@@ -65,6 +69,7 @@ private:
   std::atomic<bool> mining_{false};
   std::atomic<uint64_t> total_hashes_{0};
   std::atomic<int> blocks_found_{0};
+  std::atomic<bool> template_invalidated_{false};
 
   // Current template
   BlockTemplate current_template_;

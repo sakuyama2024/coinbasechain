@@ -98,6 +98,19 @@ ChainNotifications::SubscribeSyncState(SyncStateCallback callback) {
   return Subscription(this, id);
 }
 
+ChainNotifications::Subscription
+ChainNotifications::SubscribeSuspiciousReorg(SuspiciousReorgCallback callback) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  size_t id = next_id_++;
+
+  CallbackEntry entry;
+  entry.id = id;
+  entry.suspicious_reorg = std::move(callback);
+  callbacks_.push_back(std::move(entry));
+
+  return Subscription(this, id);
+}
+
 void ChainNotifications::NotifyBlockConnected(
     const CBlockHeader &block, const chain::CBlockIndex *pindex) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -137,6 +150,17 @@ void ChainNotifications::NotifySyncState(bool syncing, double progress) {
   for (const auto &entry : callbacks_) {
     if (entry.sync_state) {
       entry.sync_state(syncing, progress);
+    }
+  }
+}
+
+void ChainNotifications::NotifySuspiciousReorg(int reorg_depth,
+                                                int max_allowed) {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  for (const auto &entry : callbacks_) {
+    if (entry.suspicious_reorg) {
+      entry.suspicious_reorg(reorg_depth, max_allowed);
     }
   }
 }

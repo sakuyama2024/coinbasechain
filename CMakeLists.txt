@@ -295,6 +295,7 @@ add_executable(coinbasechain_tests
     test/unit/pow_tests.cpp
     test/unit/reorg_multi_node_tests.cpp
     test/unit/network_header_sync_tests.cpp
+    test/unit/notification_tests.cpp
     # Integration tests
     test/integration/banman_adversarial_tests.cpp
     test/integration/header_sync_adversarial_tests.cpp
