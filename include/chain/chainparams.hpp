@@ -65,7 +65,7 @@ struct ConsensusParams {
 
 /**
  * ChainParams - Chain-specific parameters
- * Simplified modern version of Bitcoin's CChainParams
+ * Simplified  version of Bitcoin's CChainParams
  */
 class ChainParams {
 public:
@@ -120,7 +120,7 @@ public:
 
 /**
  * Global chain params singleton
- * Modern alternative to Bitcoin's global pointer
+ * Simple alternative to Bitcoin's global pointer
  */
 class GlobalChainParams {
 public:

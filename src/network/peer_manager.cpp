@@ -112,13 +112,13 @@ int PeerManager::find_peer_by_address(const std::string &address,
                                       uint16_t port) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  // Bitcoin Core pattern (net.cpp:332-341): FindNode() searches m_nodes and checks pnode->addr
+  // Bitcoin Core pattern: FindNode() searches m_nodes and checks pnode->addr
   // For outbound: addr = target address (what we're connecting to)
   // For inbound: addr = runtime address (where they connected from)
   // Both stored in the same field and searched the same way
   //
   // Bitcoin removes peers from m_nodes immediately when disconnected (net.cpp:1896)
-  // We remove peers from peers_ immediately in remove_peer() (line 88)
+  // We remove peers from peers_ immediately in remove_peer()
   // So both approaches rely on immediate removal, not filtering by connection state
   for (const auto &[id, peer] : peers_) {
     if (!peer)

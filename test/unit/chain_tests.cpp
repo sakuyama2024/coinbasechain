@@ -17,7 +17,7 @@ TEST_CASE("BlockManager basic operations", "[chain]") {
     genesis.nVersion = 1;
     genesis.hashPrevBlock.SetNull();
     genesis.minerAddress.SetNull();
-    genesis.nTime = 1231006505; // Bitcoin genesis time
+    genesis.nTime = 1231006505; // 
     genesis.nBits = 0x1d00ffff;
     genesis.nNonce = 2083236893;
     genesis.hashRandomX.SetNull();

@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2022 The Bitcoin Core developers
-// Copyright (c) 2024 Coinbase Chain
+// Copyright (c) 2025 The Unicity Foundation
 // Distributed under the MIT software license
 
 #ifndef COINBASECHAIN_CHAIN_CHAIN_HPP

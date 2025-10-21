@@ -205,7 +205,7 @@ public:
 
 // CONSENSUS-CRITICAL: Calculate proof-of-work for a block
 // Returns work = ~target / (target + 1) + 1 (mathematically equivalent to 2^256
-// / (target + 1)) Invalid targets return 0 work. Algorithm from Bitcoin Core.
+// / (target + 1)) Invalid targets return 0 work. 
 [[nodiscard]] arith_uint256 GetBlockProof(const CBlockIndex &block);
 
 // Find last common ancestor of two blocks (aligns heights, then walks backward

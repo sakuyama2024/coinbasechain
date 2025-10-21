@@ -40,11 +40,6 @@ int64_t GetTime();
  */
 std::chrono::steady_clock::time_point GetSteadyTime();
 
-/**
- * Get current time in milliseconds
- * Returns mock time if set, otherwise returns real system time
- */
-int64_t GetTimeMillis();
 
 /**
  * Set mock time for testing

@@ -204,7 +204,7 @@ private:
 
 /**
  * Global accessor for notifications
- * Modern alternative to Bitcoin's GetMainSignals()
+ * Simpler alternative to Bitcoin's GetMainSignals()
  */
 inline ChainNotifications &Notifications() { return ChainNotifications::Get(); }
 

@@ -3,11 +3,6 @@
 **Version:** 1.0.0
 **Date:** 2025-10-21
 **Network Type:** Headers-only blockchain (no transactions, no full blocks)
-**Compliance:** 91% Bitcoin P2P protocol compatible (wire format)
-
----
-
-## Executive Summary
 
 ### Protocol Overview
 
@@ -32,27 +27,6 @@ CoinbaseChain implements a **headers-only blockchain** using a subset of the Bit
 | Max Headers/Message | 2000 | Headers per HEADERS message |
 | Block Header Size | 100 bytes | Including RandomX field |
 
-### Critical Issues Found
-
-1. **Empty VERSION Addresses** (CRITICAL) - Must fix immediately
-2. **NODE_NETWORK Flag Misuse** (HIGH) - Claims full blocks, serves headers
-3. **Ancient Protocol Version** (HIGH) - Version 1 vs Bitcoin's 70015+
-
-### Recommendations
-
-**Immediate Action Required:**
-- Fix empty network addresses in VERSION message (`src/network/peer.cpp:251-252`)
-
-**Next Release:**
-- Correct service flags to not claim NODE_NETWORK
-- Consider updating protocol version
-- Implement orphan header limits
-
-**Future Improvements:**
-- Implement SENDHEADERS for efficiency
-- Complete orphan management system
-
----
 
 ## Detailed Specification
 
@@ -82,7 +56,6 @@ All network messages are prefixed with a fixed 24-byte header that identifies th
   TESTNET = 0xA3F8D412  // Custom value   (wire: 12 D4 F8 A3)
   REGTEST = 0x4B7C2E91  // Custom value   (wire: 91 2E 7C 4B)
   ```
-- **Note:** These values are intentionally different from Bitcoin
 
 #### Command (12 bytes)
 - **Purpose:** Identifies the message type
@@ -93,7 +66,7 @@ All network messages are prefixed with a fixed 24-byte header that identifies th
   "verack\0\0\0\0\0\0" (verack + 6 nulls)
   "ping\0\0\0\0\0\0\0\0" (ping + 8 nulls)
   ```
-- **Implementation:** `MessageHeader::set_command()` fills entire array with nulls then copies command
+
 
 #### Length (4 bytes)
 - **Purpose:** Size of the payload following the header
@@ -138,11 +111,11 @@ memcpy(checksum, data + 20, 4);                // Direct copy
 
 ### 1.4 Implementation Files
 
-- **Definition:** `include/network/protocol.hpp` (lines 135-149)
-- **Constants:** `include/network/protocol.hpp` (lines 74-77)
-- **Serialization:** `src/network/message.cpp` (lines 324-369)
-- **Checksum:** `src/network/message.cpp` (lines 299-312)
-- **Usage:** `src/network/peer.cpp` (lines 365-409)
+- **Definition:** `include/network/protocol.hpp` 
+- **Constants:** `include/network/protocol.hpp` 
+- **Serialization:** `src/network/message.cpp` 
+- **Checksum:** `src/network/message.cpp` 
+- **Usage:** `src/network/peer.cpp` 
 
 ### 1.5 Security Considerations
 
@@ -151,25 +124,6 @@ memcpy(checksum, data + 20, 4);                // Direct copy
 3. **Checksum Verification:** Detects corrupted or tampered messages
 4. **Buffer Validation:** Header parsing validates size before allocation
 
-### 1.6 Bitcoin Compatibility Assessment
-
-| Feature | Our Implementation | Bitcoin | Status |
-|---------|-------------------|---------|---------|
-| Header Size | 24 bytes | 24 bytes | ✅ Compliant |
-| Field Order | magic, command, length, checksum | Same | ✅ Compliant |
-| Checksum | Double-SHA256, first 4 bytes | Same | ✅ Compliant |
-| Byte Order | Little-endian for integers | Same | ✅ Compliant |
-| Command Padding | NULL-padded to 12 bytes | Same | ✅ Compliant |
-| Max Message Size | 4 MB | 32 MB | ⚠️ More restrictive |
-| Magic Values | Custom (0x554E4943) | 0xD9B4BEF9 | ❌ Intentionally different |
-
-### 1.7 Notes
-
-- The different magic values mean this network cannot communicate with Bitcoin nodes
-- This is intentional as we're a headers-only chain with different consensus rules
-- The message header format itself is Bitcoin-compliant except for the magic values
-
----
 
 ## 2. VERSION Message
 
@@ -189,8 +143,8 @@ The VERSION message is the first message sent when establishing a connection. It
 | addr_from | 26 bytes | NetworkAddress | Sender's address (without timestamp) |
 | nonce | 8 bytes | uint64_t (LE) | Random nonce for self-connection detection |
 | user_agent | Variable | VarString | Client software identification |
-| start_height | 4 bytes | int32_t (LE) | Current blockchain height |
-| relay | 1 byte | bool | Whether to relay transactions (if version ≥ 70001) |
+| start_heirelay | 1 byte | bool | Whether to relay transactions (if version ≥ 70001)ght | 4 bytes | int32_t (LE) | Current blockchain height |
+|  |
 
 ### 2.2 Field Details
 

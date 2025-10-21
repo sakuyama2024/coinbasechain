@@ -1,6 +1,7 @@
 // Unit tests for protocol structures and serialization
 #include "catch_amalgamated.hpp"
 #include "network/protocol.hpp"
+#include "chain/validation.hpp"
 #include <cstring>
 
 using namespace coinbasechain::protocol;
@@ -282,8 +283,7 @@ TEST_CASE("Protocol limits - Security constants", "[network][protocol]") {
     }
 
     SECTION("Time validation") {
-        CHECK(TIMESTAMP_ALLOWANCE_SEC == 2 * 60 * 60); // 2 hours
-        CHECK(MAX_FUTURE_BLOCK_TIME == 2 * 60 * 60); // 2 hours
+        CHECK(coinbasechain::validation::MAX_FUTURE_BLOCK_TIME == 2 * 60 * 60); // 2 hours
     }
 }
 
