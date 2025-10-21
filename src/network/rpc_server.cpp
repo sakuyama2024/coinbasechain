@@ -1,6 +1,20 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
+/**
+ * RPC Server Implementation - Unix Domain Sockets
+ *
+ * This RPC server uses Unix domain sockets (filesystem-based IPC) instead
+ * of TCP/IP networking. This means:
+ * - RPC is only accessible locally on the same machine
+ * - No network port is opened (no rpcport configuration)
+ * - Authentication is handled by filesystem permissions
+ * - The socket file is created at: datadir/node.sock
+ *
+ * This design prioritizes security over remote accessibility.
+ * For remote access, users must SSH to the server.
+ */
+
 #include "network/rpc_server.hpp"
 #include "chain/chainparams.hpp"
 #include "chain/miner.hpp"

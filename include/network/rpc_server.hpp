@@ -31,8 +31,32 @@ class ChainstateManager;
 
 namespace rpc {
 
-// Simple RPC server using Unix domain sockets (handles CLI queries from
-// coinbasechain-cli)
+/**
+ * RPC Server using Unix Domain Sockets (Local-Only Access)
+ *
+ * IMPORTANT DESIGN NOTE:
+ * This RPC implementation deliberately uses Unix domain sockets instead of
+ * TCP/IP networking. This is a security-focused design choice that differs
+ * from Bitcoin Core's JSON-RPC over HTTP approach.
+ *
+ * Why Unix Sockets Instead of TCP:
+ * - Security: No network exposure, eliminating remote attack vectors
+ * - Simplicity: No need for RPC credentials, ports, or firewall rules
+ * - Performance: Lower overhead for local IPC
+ * - Access Control: Managed via file system permissions on the socket
+ *
+ * Trade-offs:
+ * - No remote access (must SSH to server to run commands)
+ * - No direct integration with remote monitoring tools
+ * - Docker containers need socket volume mount for access
+ *
+ * The socket is created at: datadir/node.sock
+ *
+ * If you need remote access:
+ * 1. Use SSH to run commands on the server
+ * 2. Set up a local monitoring agent that exports metrics
+ * 3. Use a reverse proxy (not recommended for production)
+ */
 class RPCServer {
 public:
   using CommandHandler =

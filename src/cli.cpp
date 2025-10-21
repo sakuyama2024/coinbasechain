@@ -95,6 +95,8 @@ int main(int argc, char *argv[]) {
     }
 
     // Connect to node via Unix socket
+    // NOTE: RPC uses Unix domain sockets for security (local-only access)
+    // There is no network RPC port - all commands must be run locally
     std::string socket_path = datadir + "/node.sock";
     coinbasechain::rpc::RPCClient client(socket_path);
 
