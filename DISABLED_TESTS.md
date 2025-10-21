@@ -2,7 +2,7 @@
 
 These tests are marked with `[.]` tag and are skipped during normal test runs.
 
-**Total: 11 disabled tests**
+**Total: 6 disabled tests**
 
 ## Stress Tests (1)
 
@@ -30,36 +30,6 @@ These tests are marked with `[.]` tag and are skipped during normal test runs.
   - Test: "NAT Manager - Start Twice"
   - Tags: `[nat][network][integration][.]`
   - Reason: Real UPnP/NAT integration test
-
-## Inbound Slot Defense - NOT YET IMPLEMENTED (5)
-
-**NOTE:** These tests are placeholders for future defense implementations.
-Remove the `[.]` tag when the defenses are implemented.
-
-- **test/network/inbound_slot_defense_tests.cpp:24**
-  - Test: "Defense: Evict misbehaving to make room for honest"
-  - Tags: `[network][defense][slotexhaustion][.]`
-  - Status: NOT IMPLEMENTED
-
-- **test/network/inbound_slot_defense_tests.cpp:103**
-  - Test: "Defense: Rate-limit connections per IP"
-  - Tags: `[network][defense][slotexhaustion][.]`
-  - Status: NOT IMPLEMENTED
-
-- **test/network/inbound_slot_defense_tests.cpp:180**
-  - Test: "Defense: Reputation-based slot allocation"
-  - Tags: `[network][defense][slotexhaustion][.]`
-  - Status: NOT IMPLEMENTED
-
-- **test/network/inbound_slot_defense_tests.cpp:256**
-  - Test: "Defense: Evict slow/stalled peers"
-  - Tags: `[network][defense][slotexhaustion][.]`
-  - Status: NOT IMPLEMENTED
-
-- **test/network/inbound_slot_defense_tests.cpp:333**
-  - Test: "Defense: Combined defenses"
-  - Tags: `[network][defense][slotexhaustion][.]`
-  - Status: NOT IMPLEMENTED
 
 ## Scale Tests (2)
 
@@ -95,6 +65,6 @@ To run specific disabled tests:
 
 ## Test Count Summary
 
-- **Active tests:** 357 test cases
-- **Disabled tests:** 11 test cases
+- **Active tests:** 362 test cases
+- **Disabled tests:** 6 test cases
 - **Total tests:** 368 test cases

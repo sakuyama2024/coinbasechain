@@ -318,7 +318,6 @@ add_executable(coinbasechain_tests
     test/network/reorg_partition_tests.cpp
     test/network/attack_simulation_tests.cpp
     test/network/inbound_slot_attack_proof.cpp
-    test/network/inbound_slot_defense_tests.cpp
     test/network/misbehavior_penalty_tests.cpp
     test/network/peer_tests.cpp
     test/network/peer_adversarial_tests.cpp
