@@ -3,10 +3,13 @@
 
 #include "network/nat_manager.hpp"
 #include "chain/logging.hpp"
-#include <miniupnpc/miniupnpc.h>
-#include <miniupnpc/upnpcommands.h>
 #include <chrono>
 #include <cstring>
+
+#ifndef DISABLE_NAT_SUPPORT
+#include <miniupnpc/miniupnpc.h>
+#include <miniupnpc/upnpcommands.h>
+#endif
 
 namespace coinbasechain {
 namespace network {
@@ -83,6 +86,10 @@ void NATManager::Stop() {
 }
 
 void NATManager::DiscoverUPnPDevice() {
+#ifdef DISABLE_NAT_SUPPORT
+    LOG_INFO("NAT support disabled at compile time");
+    return;
+#else
     int error = 0;
     UPNPDev* devlist = upnpDiscover(
         UPNP_DISCOVER_TIMEOUT_MS,
@@ -130,9 +137,14 @@ void NATManager::DiscoverUPnPDevice() {
     }
 
     FreeUPNPUrls(&urls);
+#endif // DISABLE_NAT_SUPPORT
 }
 
 bool NATManager::MapPort(uint16_t internal_port) {
+#ifdef DISABLE_NAT_SUPPORT
+    LOG_DEBUG("NAT support disabled, skipping port mapping");
+    return false;
+#else
     if (gateway_url_.empty()) {
         return false;
     }
@@ -191,9 +203,13 @@ bool NATManager::MapPort(uint16_t internal_port) {
     port_mapped_ = true;
     LOG_INFO("UPnP port mapping created: {} -> {}", external_port_, internal_port);
     return true;
+#endif // DISABLE_NAT_SUPPORT
 }
 
 void NATManager::UnmapPort() {
+#ifdef DISABLE_NAT_SUPPORT
+    return;
+#else
     if (!port_mapped_ || gateway_url_.empty()) {
         return;
     }
@@ -233,6 +249,7 @@ void NATManager::UnmapPort() {
 
     port_mapped_ = false;
     LOG_INFO("UPnP port mapping removed");
+#endif // DISABLE_NAT_SUPPORT
 }
 
 void NATManager::RefreshMapping() {

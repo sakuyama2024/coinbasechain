@@ -36,9 +36,11 @@ COPY tools/ ./tools/
 # Configure CMake build
 # Build in Release mode for optimized binaries
 # Note: We still need test/ directory for CMake configuration
+# Disable NAT/UPnP support due to API compatibility issues
 RUN cmake -B build -S . \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CXX_STANDARD=20 \
+    -DCMAKE_CXX_FLAGS="-DDISABLE_NAT_SUPPORT" \
     -DENABLE_FUZZING=OFF \
     -DBUILD_TESTING=OFF
 
