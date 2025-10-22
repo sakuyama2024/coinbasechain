@@ -147,7 +147,6 @@ public:
   uint64_t nonce;
   std::string user_agent;
   int32_t start_height;
-  bool relay; 
 
   VersionMessage();
 

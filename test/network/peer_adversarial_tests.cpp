@@ -118,7 +118,6 @@ static std::vector<uint8_t> create_version_message(uint32_t magic, uint64_t nonc
     msg.nonce = nonce;
     msg.user_agent = "/Test:1.0.0/";
     msg.start_height = 0;
-    msg.relay = true;
 
     auto payload = msg.serialize();
     return create_test_message(magic, protocol::commands::VERSION, payload);
@@ -508,8 +507,7 @@ TEST_CASE("Adversarial - ExtremeTimestamps", "[adversarial][timing]") {
         msg.nonce = 54321;
         msg.user_agent = "/Test:1.0.0/";
         msg.start_height = 0;
-        msg.relay = true;
-
+    
         auto payload = msg.serialize();
         auto full_msg = create_test_message(magic, protocol::commands::VERSION, payload);
 
@@ -529,8 +527,7 @@ TEST_CASE("Adversarial - ExtremeTimestamps", "[adversarial][timing]") {
         msg.nonce = 54321;
         msg.user_agent = "/Test:1.0.0/";
         msg.start_height = 0;
-        msg.relay = true;
-
+    
         auto payload = msg.serialize();
         auto full_msg = create_test_message(magic, protocol::commands::VERSION, payload);
 
@@ -1310,8 +1307,7 @@ TEST_CASE("Adversarial - CommandFieldPadding", "[adversarial][malformed][p3]") {
         msg.nonce = 54321;
         msg.user_agent = "/Test:1.0.0/";
         msg.start_height = 0;
-        msg.relay = true;
-
+    
         auto payload = msg.serialize();
         header.length = payload.size();
         header.checksum = message::compute_checksum(payload);
@@ -1346,8 +1342,7 @@ TEST_CASE("Adversarial - CommandFieldPadding", "[adversarial][malformed][p3]") {
         msg.nonce = 54321;
         msg.user_agent = "/Test:1.0.0/";
         msg.start_height = 0;
-        msg.relay = true;
-
+    
         auto payload = msg.serialize();
         header.length = payload.size();
         header.checksum = message::compute_checksum(payload);

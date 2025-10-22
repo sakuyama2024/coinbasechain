@@ -401,7 +401,7 @@ std::unique_ptr<Message> create_message(const std::string &command) {
 VersionMessage::VersionMessage()
     : version(protocol::PROTOCOL_VERSION), services(protocol::NODE_NETWORK),
       timestamp(0), nonce(0), user_agent(protocol::GetUserAgent()),
-      start_height(0), relay(true) {}
+      start_height(0) {}
 
 std::vector<uint8_t> VersionMessage::serialize() const {
   MessageSerializer s;
@@ -413,9 +413,6 @@ std::vector<uint8_t> VersionMessage::serialize() const {
   s.write_uint64(nonce);
   s.write_string(user_agent);
   s.write_int32(start_height);
-  if (version >= 70001) {
-    s.write_bool(relay);
-  }
   return s.data();
 }
 
@@ -436,9 +433,6 @@ bool VersionMessage::deserialize(const uint8_t *data, size_t size) {
   }
 
   start_height = d.read_int32();
-  if (d.bytes_remaining() > 0) {
-    relay = d.read_bool();
-  }
   return !d.has_error();
 }
 

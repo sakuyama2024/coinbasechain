@@ -143,7 +143,7 @@ The VERSION message is the first message sent when establishing a connection. It
 | addr_from | 26 bytes | NetworkAddress | Sender's address (without timestamp) |
 | nonce | 8 bytes | uint64_t (LE) | Random nonce for self-connection detection |
 | user_agent | Variable | VarString | Client software identification |
-| start_heirelay | 1 byte | bool | Whether to relay transactions (if version ≥ 70001)ght | 4 bytes | int32_t (LE) | Current blockchain height |
+| start_height | 4 bytes | int32_t (LE) | Current blockchain height |
 |  |
 
 ### 2.2 Field Details
@@ -192,12 +192,6 @@ The VERSION message is the first message sent when establishing a connection. It
 - **Was:** Hardcoded to 0 (BUG)
 - **Now:** `chainstate_manager_.GetChainHeight()`
 
-#### Relay (1 byte)
-- **Condition:** Only included if version ≥ 70001
-- **Current Value:** true
-- **Purpose:** Whether to announce transactions
-- **Note:** Irrelevant for headers-only chain
-
 ### 2.3 NetworkAddress Sub-structure (26 bytes)
 
 When used in VERSION message (without timestamp):
@@ -222,9 +216,6 @@ write_network_address(addr_from);  // 26 bytes (no timestamp)
 write_uint64(nonce);               // 8 bytes LE
 write_string(user_agent);          // VarInt + string
 write_int32(start_height);         // 4 bytes LE
-if (version >= 70001) {
-    write_bool(relay);             // 1 byte
-}
 ```
 
 ### 2.5 Current Values Sent
@@ -238,7 +229,6 @@ addr_from: 00000000000000000000000000000000000000000000000000000000  // BUG!
 nonce: <random>
 user_agent: "/CoinbaseChain:1.0.0/"
 start_height: <actual_chain_height>  // Fixed!
-relay: true                         // Not sent (version < 70001)
 ```
 
 ### 2.6 Implementation Files
@@ -260,7 +250,6 @@ relay: true                         // Not sent (version < 70001)
 | addr_from | Empty (all zeros) | Our address | ❌ **BUG** |
 | User Agent | "/CoinbaseChain:1.0.0/" | Various | ✅ Valid format |
 | Start Height | Actual height | Actual height | ✅ Fixed |
-| Relay Field | Not sent (version 1) | Sent if v≥70001 | ⚠️ Old protocol |
 
 ### 2.8 Critical Issues Found
 
@@ -1744,7 +1733,6 @@ Our implementation is a **headers-only blockchain** using a **subset** of the Bi
 | nonce | Random | Same | ✅ |
 | user_agent | "/CoinbaseChain:1.0.0/" | Various | ✅ |
 | start_height | Actual height | Same | ✅ Fixed |
-| relay | true (not sent) | true/false | ⚠️ Old protocol |
 
 #### 17.3.3 Message Support
 
@@ -1985,19 +1973,6 @@ ORPHAN_HEADER_EXPIRE_TIME = 600
 3. Set flag to push headers directly
 4. Skip INV for header announcements
 
----
-
-#### 🟢 IMP-002: Relay Field Not Sent
-
-**Severity:** LOW
-**Impact:** Minor protocol incompleteness
-**Location:** `src/network/peer.cpp:258`
-
-**Issue:** relay field only sent if version >= 70001, but our version is 1
-
-**Fix:** Either update protocol version or remove relay field entirely
-
----
 
 ### 18.5 Bug Summary Table
 
@@ -2009,7 +1984,6 @@ ORPHAN_HEADER_EXPIRE_TIME = 600
 | BUG-004 | Unused peer state | MEDIUM | Tiny | Code confusion |
 | BUG-005 | No orphan management | MEDIUM | Large | Memory exhaustion |
 | IMP-001 | No SENDHEADERS | LOW | Medium | Slower propagation |
-| IMP-002 | Relay field missing | LOW | Tiny | Minor incompleteness |
 
 ### 18.6 Fix Order Recommendation
 
@@ -2024,7 +1998,6 @@ ORPHAN_HEADER_EXPIRE_TIME = 600
 **Phase 3 - Future (Nice to Have):**
 1. Implement orphan management (BUG-005)
 2. Add SENDHEADERS support (IMP-001)
-3. Fix relay field (IMP-002)
 
 ### 18.7 Testing Requirements
 

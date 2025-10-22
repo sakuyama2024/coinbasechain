@@ -306,7 +306,6 @@ void Peer::send_version() {
   version_msg->nonce = local_nonce_;
   version_msg->user_agent = protocol::GetUserAgent();
   version_msg->start_height = local_start_height_;
-  version_msg->relay = true;
 
   send_message(std::move(version_msg));
   state_ = PeerState::VERSION_SENT;

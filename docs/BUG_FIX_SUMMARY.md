@@ -79,7 +79,6 @@ All tests passing after fixes:
 These are not bugs but potential future enhancements:
 
 1. **SENDHEADERS Support:** Could improve header propagation efficiency
-2. **Relay Field:** Minor VERSION message field currently unused
 
 ## Files Modified
 

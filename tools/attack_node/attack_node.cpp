@@ -61,7 +61,6 @@ public:
         msg.nonce = 0x123456789ABCDEF0ULL;  // Fixed nonce for testing
         msg.user_agent = "/AttackNode:0.1.0/";
         msg.start_height = 0;
-        msg.relay = true;
 
         auto payload = msg.serialize();
         send_raw_message(protocol::commands::VERSION, payload);

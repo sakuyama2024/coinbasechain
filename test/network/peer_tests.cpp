@@ -144,7 +144,6 @@ static std::vector<uint8_t> create_version_message(uint32_t magic, uint64_t nonc
     msg.nonce = nonce;
     msg.user_agent = "/Test:1.0.0/";
     msg.start_height = 0;
-    msg.relay = true;
 
     auto payload = msg.serialize();
     return create_test_message(magic, protocol::commands::VERSION, payload);
@@ -524,7 +523,6 @@ TEST_CASE("Peer - UserAgentLengthValidation", "[peer][security]") {
     msg.nonce = 54321;
     msg.user_agent = std::string(protocol::MAX_SUBVERSION_LENGTH + 1, 'X');  // Too long!
     msg.start_height = 0;
-    msg.relay = true;
 
     auto payload = msg.serialize();
     auto full_msg = create_test_message(magic, protocol::commands::VERSION, payload);
@@ -683,7 +681,6 @@ TEST_CASE("Peer - PeerInfo", "[peer][info]") {
     version_msg.nonce = peer_nonce;
     version_msg.user_agent = "/TestPeer:2.0.0/";
     version_msg.start_height = 100;
-    version_msg.relay = true;
 
     auto payload = version_msg.serialize();
     auto full_msg = create_test_message(magic, protocol::commands::VERSION, payload);
@@ -734,7 +731,6 @@ TEST_CASE("Peer - DuplicateVersionRejection", "[peer][security][critical]") {
     msg2.nonce = 11111;  // Different nonce
     msg2.user_agent = "/Attacker:6.6.6/";  // Different user agent
     msg2.start_height = 999;
-    msg2.relay = true;
 
     auto payload2 = msg2.serialize();
     auto version2 = create_test_message(magic, protocol::commands::VERSION, payload2);

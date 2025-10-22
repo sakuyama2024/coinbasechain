@@ -178,7 +178,6 @@ This document identifies all deviations between the CoinbaseChain protocol and B
 | Feature | Priority | Impact |
 |---------|----------|--------|
 | **SENDHEADERS** | Low | Performance optimization |
-| **Relay field** | Low | Minor completeness |
 
 ---
 
@@ -192,7 +191,6 @@ This document identifies all deviations between the CoinbaseChain protocol and B
 
 ### Future Improvements (Optional)
 1. Implement SENDHEADERS for efficiency
-2. Fix relay field in VERSION (minor)
 
 ### Keep As Is (Intentional Design)
 1. Protocol version = 1 (correct for our network) ✅
