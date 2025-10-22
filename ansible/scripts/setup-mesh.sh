@@ -14,15 +14,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Node list with names
-declare -A NODES=(
-    ["ct20"]="178.18.251.16"
-    ["ct21"]="185.225.233.49"
-    ["ct22"]="207.244.248.15"
-    ["ct23"]="194.140.197.98"
-    ["ct24"]="173.212.251.205"
-    ["ct25"]="144.126.138.46"
-)
+# Node list - parallel arrays for names and IPs
+NODE_NAMES=("ct20" "ct21" "ct22" "ct23" "ct24" "ct25")
+NODE_IPS=("178.18.251.16" "185.225.233.49" "207.244.248.15" "194.140.197.98" "173.212.251.205" "144.126.138.46")
 
 # Helper function to run remote commands
 run_remote() {
@@ -46,20 +40,22 @@ main() {
     echo " CoinbaseChain Mesh Network Setup"
     echo "=========================================="
     echo
-    echo "Establishing connections between ${#NODES[@]} nodes..."
+    echo "Establishing connections between ${#NODE_IPS[@]} nodes..."
     echo
 
     local total_connections=0
-    local expected_connections=$((${#NODES[@]} * (${#NODES[@]} - 1)))
+    local expected_connections=$((${#NODE_IPS[@]} * (${#NODE_IPS[@]} - 1)))
 
     # Iterate through all nodes and connect each to all others
-    for from_name in "${!NODES[@]}"; do
-        from_ip="${NODES[$from_name]}"
+    for i in "${!NODE_IPS[@]}"; do
+        from_name="${NODE_NAMES[$i]}"
+        from_ip="${NODE_IPS[$i]}"
         echo -e "${GREEN}Connecting $from_name ($from_ip) to other nodes...${NC}"
 
-        for to_name in "${!NODES[@]}"; do
-            if [[ "$from_name" != "$to_name" ]]; then
-                to_ip="${NODES[$to_name]}"
+        for j in "${!NODE_IPS[@]}"; do
+            if [[ $i -ne $j ]]; then
+                to_name="${NODE_NAMES[$j]}"
+                to_ip="${NODE_IPS[$j]}"
                 echo -n "  → $to_name ($to_ip): "
 
                 if add_peer "$from_ip" "$to_ip" "$P2P_PORT"; then
@@ -80,8 +76,9 @@ main() {
     echo
     echo "Connection Summary:"
     echo "-------------------"
-    for name in "${!NODES[@]}"; do
-        ip="${NODES[$name]}"
+    for i in "${!NODE_IPS[@]}"; do
+        name="${NODE_NAMES[$i]}"
+        ip="${NODE_IPS[$i]}"
         peer_count=$(run_remote "$ip" "docker exec $CONTAINER_NAME coinbasechain-cli getconnectioncount 2>&1" || echo "0")
         echo "  $name: $peer_count peers connected"
     done
