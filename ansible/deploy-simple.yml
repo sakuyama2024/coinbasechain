@@ -65,8 +65,21 @@
         path: "{{ docker_data_dir }}"
         owner: 1000
         group: 1000
+        mode: '0755'
         recurse: yes
+        state: directory
       tags: [deploy]
+
+    - name: Generate CoinbaseChain configuration file
+      template:
+        src: templates/coinbasechain.conf.j2
+        dest: "{{ docker_data_dir }}/coinbasechain.conf"
+        owner: 1000
+        group: 1000
+        mode: '0644'
+      vars:
+        max_connections: 20
+      tags: [deploy, config]
 
     - name: Stop and remove existing container (if any)
       shell: |
@@ -83,6 +96,7 @@
           -p {{ rpc_port }}:{{ rpc_port }} \
           -v {{ docker_data_dir }}:/home/coinbasechain/.coinbasechain \
           -e COINBASECHAIN_NETWORK={{ coinbasechain_network }} \
+          -e COINBASECHAIN_PORT={{ p2p_port }} \
           -e COINBASECHAIN_LISTEN=1 \
           -e COINBASECHAIN_SERVER=1 \
           -e COINBASECHAIN_THREADS=2 \
@@ -96,7 +110,7 @@
       tags: [deploy]
 
     - name: Check container status
-      shell: docker ps -f name={{ container_name }} --format "{{{{.Names}}}}\t{{{{.Status}}}}\t{{{{.Ports}}}}"
+      shell: docker ps -f name={{ container_name }} --format "\{\{.Names\}\}\t\{\{.Status\}\}\t\{\{.Ports\}\}"
       register: container_status
       tags: [deploy, info]
 
@@ -104,6 +118,27 @@
       debug:
         msg: "{{ container_status.stdout_lines }}"
       tags: [deploy, info]
+
+    - name: Wait for nodes to stabilize
+      pause:
+        seconds: 15
+      run_once: true
+      tags: [deploy, verify]
+
+    - name: Run deployment verification
+      local_action:
+        module: shell
+        cmd: bash {{ playbook_dir }}/scripts/verify-deployment.sh
+      run_once: true
+      register: verification_result
+      ignore_errors: yes
+      tags: [deploy, verify]
+
+    - name: Display verification results
+      debug:
+        msg: "{{ verification_result.stdout_lines }}"
+      run_once: true
+      tags: [deploy, verify]
 
     # =========================================================================
     # 4. Display node info

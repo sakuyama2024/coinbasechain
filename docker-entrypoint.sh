@@ -29,15 +29,30 @@ ARGS+=("--threads=$THREADS")
 case "$NETWORK" in
   testnet)
     ARGS+=("--testnet")
-    PORT="${COINBASECHAIN_PORT:-19590}"
+    # If COINBASECHAIN_PORT is explicitly set, use it; otherwise use default
+    if [ -n "$COINBASECHAIN_PORT" ]; then
+      PORT="$COINBASECHAIN_PORT"
+    else
+      PORT="19590"
+    fi
     ;;
   regtest)
     ARGS+=("--regtest")
-    PORT="${COINBASECHAIN_PORT:-29590}"
+    # If COINBASECHAIN_PORT is explicitly set, use it; otherwise use default
+    if [ -n "$COINBASECHAIN_PORT" ]; then
+      PORT="$COINBASECHAIN_PORT"
+    else
+      PORT="29590"
+    fi
     ;;
   mainnet|*)
     # Default is mainnet, no flag needed
-    PORT="${COINBASECHAIN_PORT:-9590}"
+    # If COINBASECHAIN_PORT is explicitly set, use it; otherwise use default
+    if [ -n "$COINBASECHAIN_PORT" ]; then
+      PORT="$COINBASECHAIN_PORT"
+    else
+      PORT="9590"
+    fi
     ;;
 esac
 
