@@ -57,10 +57,16 @@ struct ConsensusParams {
   // Hash of genesis block
   uint256 hashGenesisBlock;
 
-  // Minimum cumulative chain work for IBD completion Set to 0 to disable check 
+  // Minimum cumulative chain work for IBD completion Set to 0 to disable check
   // (regtest), or to actual chain work
   // (mainnet/testnet)
   uint256 nMinimumChainWork;
+
+  // Network expiration (timebomb) - forces updates every ~3 months
+  // Set to 0 to disable expiration (e.g., for mainnet)
+  // With 1 hour blocks: 3 months = 2,160 blocks
+  int32_t nNetworkExpirationInterval{0};  // Block height where network expires
+  int32_t nNetworkExpirationGracePeriod{24}; // 24 blocks = 1 day grace period for warnings
 };
 
 /**

@@ -109,7 +109,9 @@ CMainParams::CMainParams() {
          uint256S("0x36de9b76dcd7899a52bab783f185c2563884afb4c6ee9f3b20a51e13a2"
                   "84cfa7"));
 
- 
+  // Network expiration disabled for mainnet (no forced updates)
+  consensus.nNetworkExpirationInterval = 0;
+  consensus.nNetworkExpirationGracePeriod = 0;
 
   // Hardcoded seed node addresses (ct20-ct26)
   // These are reliable seed nodes for initial peer discovery
@@ -144,6 +146,11 @@ CTestNetParams::CTestNetParams() {
   // Set to 0 for fresh testnet - update as the network grows
   consensus.nMinimumChainWork = uint256S(
       "0x0000000000000000000000000000000000000000000000000000000000000000");
+
+  // Network expiration enabled for testnet - forces updates every 3 months
+  // 1 hour blocks × 24 hours × 90 days = 2,160 blocks
+  consensus.nNetworkExpirationInterval = 2160;
+  consensus.nNetworkExpirationGracePeriod = 24;  // 1 day warning period
 
   // Network configuration
   nDefaultPort = protocol::ports::TESTNET;
@@ -186,10 +193,14 @@ CRegTestParams::CRegTestParams() {
   consensus.nRandomXEpochDuration =
       365ULL * 24 * 60 * 60 * 100; // 100 year (so all regtest blocks stay in same epoch)
 
-  // Minimum chain work 
+  // Minimum chain work
   // Disabled for regtest - we want to generate chains from scratch
   consensus.nMinimumChainWork = uint256S(
       "0x0000000000000000000000000000000000000000000000000000000000000000");
+
+  // Network expiration for regtest - short interval for easy testing
+  consensus.nNetworkExpirationInterval = 100;  // 100 blocks for testing
+  consensus.nNetworkExpirationGracePeriod = 10;  // 10 blocks warning
 
   // Network configuration
   nDefaultPort = protocol::ports::REGTEST;

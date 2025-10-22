@@ -68,6 +68,26 @@ bool ContextualCheckBlockHeader(const CBlockHeader &header,
                                             std::to_string(header.nVersion));
   }
 
+  // Network expiration (timebomb) check - forces regular updates
+  const chain::ConsensusParams& consensus = params.GetConsensus();
+  if (consensus.nNetworkExpirationInterval > 0) {
+    int32_t currentHeight = pindexPrev ? pindexPrev->nHeight + 1 : 0;
+    int32_t expirationHeight = consensus.nNetworkExpirationInterval;
+
+    // Reject blocks beyond expiration height
+    if (currentHeight > expirationHeight) {
+      return state.Invalid("network-expired",
+        "Network expired at block " + std::to_string(expirationHeight) +
+        ". This version is outdated. Please update to the latest version to continue.");
+    }
+
+    // Log warning when approaching expiration
+    if (currentHeight > expirationHeight - consensus.nNetworkExpirationGracePeriod) {
+      LOG_CHAIN_WARN("WARNING: Network will expire at block {} (current: {}). Please update to the latest version soon!",
+                     expirationHeight, currentHeight);
+    }
+  }
+
   return true;
 }
 
