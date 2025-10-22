@@ -13,8 +13,13 @@
 namespace coinbasechain {
 namespace crypto {
 
-// Seed string for epoch key generation
-static const char *RANDOMX_EPOCH_SEED_STRING = "CoinbaseChain/RandomX/Epoch/%d";
+// RandomX epoch seed string - MUST match Unicity Consensus for compatibility
+// Using Unicity's Alpha seed string ensures:
+// - Same RandomX cache keys per epoch as Unicity Alpha network
+// - Compatible block hashes with Unicity Alpha network
+// - Potential for shared mining infrastructure
+// See: unicity-consensus/src/pow.cpp (RANDOMX_EPOCH_SEED_STRING_ALPHA)
+static const char *RANDOMX_EPOCH_SEED_STRING = "Alpha/RandomX/Epoch/%d";
 
 // Mutex for cache access
 static std::mutex g_randomx_mutex;

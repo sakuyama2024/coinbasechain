@@ -57,9 +57,8 @@ static constexpr int DEFAULT_RANDOMX_VM_CACHE_SIZE = 2;
 // Calculate epoch from timestamp: epoch = timestamp / duration (seconds)
 uint32_t GetEpoch(uint32_t nTime, uint32_t nDuration);
 
-// TODO check Alpha
 // Calculate RandomX key (seed hash) for epoch:
-// SHA256d("CoinbaseChain/RandomX/Epoch/N")
+// SHA256d("Alpha/RandomX/Epoch/N") - matches Unicity Alpha network
 uint256 GetSeedHash(uint32_t nEpoch);
 
 // Calculate RandomX commitment from block header
