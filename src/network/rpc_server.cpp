@@ -1062,16 +1062,17 @@ std::string RPCServer::HandleGenerate(const std::vector<std::string> &params) {
     miner_->SetMiningAddress(mining_address);
   }
 
-  // Get starting height
-  auto *start_tip = chainstate_manager_.GetTip();
-  int start_height = start_tip ? start_tip->nHeight : -1;
-
   std::vector<std::string> block_hashes;
 
   // Mine blocks one at a time
   for (int i = 0; i < num_blocks; i++) {
-    // Start mining (single-threaded for regtest)
-    if (!miner_->Start()) {
+    // Get current height before mining this block
+    auto *prev_tip = chainstate_manager_.GetTip();
+    int prev_height = prev_tip ? prev_tip->nHeight : -1;
+    int expected_height = prev_height + 1;  // We want to mine exactly ONE block
+
+    // Start mining in one-block mode (stops automatically after finding one block)
+    if (!miner_->Start(true)) {
       std::ostringstream oss;
       oss << "{\"error\":\"Failed to start mining at block " << i << "\"}\n";
       return oss.str();
@@ -1081,7 +1082,6 @@ std::string RPCServer::HandleGenerate(const std::vector<std::string> &params) {
     int wait_count = 0;
     auto *current_tip = chainstate_manager_.GetTip();
     int current_height = current_tip ? current_tip->nHeight : -1;
-    int expected_height = start_height + i + 1;
 
     while (current_height < expected_height && wait_count < 600) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));

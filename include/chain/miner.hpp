@@ -43,7 +43,7 @@ public:
            validation::ChainstateManager &chainstate);
   ~CPUMiner();
 
-  bool Start();
+  bool Start(bool one_block_only = false);
   void Stop();
 
   bool IsMining() const { return mining_.load(); }
@@ -76,6 +76,7 @@ private:
 
   // Mining state (atomics for RPC thread safety)
   std::atomic<bool> mining_{false};
+  std::atomic<bool> one_block_only_{false};  // Stop after finding one block
   std::atomic<uint64_t> total_hashes_{0};
   std::atomic<int> blocks_found_{0};
   std::atomic<bool> template_invalidated_{false};

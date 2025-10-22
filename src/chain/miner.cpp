@@ -27,16 +27,22 @@ CPUMiner::~CPUMiner() { Stop(); }
 
   // Single-threaded CPU mining
   
-bool CPUMiner::Start() {
+bool CPUMiner::Start(bool one_block_only) {
   if (mining_.load()) {
     LOG_WARN("Miner: Already mining");
     return false;
   }
 
+  // Join any previous thread that finished (e.g., from one-block mode)
+  if (worker_.joinable()) {
+    worker_.join();
+  }
 
-  LOG_INFO("Miner: Starting (chain: {})", params_.GetChainTypeString());
+  LOG_INFO("Miner: Starting (chain: {}, one_block_only: {})",
+           params_.GetChainTypeString(), one_block_only);
 
   mining_.store(true);
+  one_block_only_.store(one_block_only);
   total_hashes_.store(0);
   start_time_ = std::chrono::steady_clock::now();
 
@@ -136,6 +142,18 @@ void CPUMiner::MiningWorker() {
       if (!chainstate_.ProcessNewBlockHeader(found_header, state)) {
         LOG_ERROR("Miner: Failed to process mined block: {} - {}",
                   state.GetRejectReason(), state.GetDebugMessage());
+      }
+
+      // Check if we should stop before mining next block
+      if (!mining_.load()) {
+        break;
+      }
+
+      // In one-block mode, stop after finding one block
+      if (one_block_only_.load()) {
+        LOG_INFO("Miner: One-block mode - stopping after finding block");
+        mining_.store(false);
+        break;
       }
 
       // Continue mining next block
