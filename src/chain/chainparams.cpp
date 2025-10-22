@@ -161,7 +161,15 @@ CTestNetParams::CTestNetParams() {
          uint256S("0xcb608755c4b2bee0b929fe5760dec6cc578b48976ee164bb06eb9597c1"
                   "7575f8"));
 
-  vFixedSeeds.clear(); // No hardcoded seeds for testnet
+  // Hardcoded seed node addresses (ct20-ct26)
+  // These are reliable seed nodes for initial peer discovery
+  vFixedSeeds.push_back("178.18.251.16:19590");
+  vFixedSeeds.push_back("185.225.233.49:19590");
+  vFixedSeeds.push_back("207.244.248.15:19590");
+  vFixedSeeds.push_back("194.140.197.98:19590");
+  vFixedSeeds.push_back("173.212.251.205:19590");
+  vFixedSeeds.push_back("144.126.138.46:19590");
+  vFixedSeeds.push_back("194.163.184.29:19590");
 }
 
 // ============================================================================
