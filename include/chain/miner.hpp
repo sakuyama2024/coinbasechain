@@ -51,6 +51,11 @@ public:
   uint64_t GetTotalHashes() const { return total_hashes_.load(); }
   int GetBlocksFound() const { return blocks_found_.load(); }
 
+  // Set mining address for block rewards
+  // Must be called before Start() or while mining is stopped
+  void SetMiningAddress(const uint160& address) { mining_address_ = address; }
+  uint160 GetMiningAddress() const { return mining_address_; }
+
   // Invalidate current block template (called when chain tip changes)
   // Thread-safe: uses atomic flag checked by mining thread
   void InvalidateTemplate() { template_invalidated_.store(true); }
@@ -64,6 +69,9 @@ private:
   // Chain params
   const chain::ChainParams &params_;
   validation::ChainstateManager &chainstate_;
+
+  // Mining configuration
+  uint160 mining_address_; // Address to receive block rewards
 
   // Mining state (atomics for RPC thread safety)
   std::atomic<bool> mining_{false};

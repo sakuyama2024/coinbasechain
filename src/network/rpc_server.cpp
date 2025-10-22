@@ -960,7 +960,29 @@ RPCServer::HandleStartMining(const std::vector<std::string> &params) {
     return "{\"error\":\"Already mining\"}\n";
   }
 
-  // Note: Miner is now single-threaded for regtest (params ignored)
+  // Parse optional mining address parameter
+  if (!params.empty()) {
+    const std::string& address_str = params[0];
+
+    // Validate address is 40 hex characters (160 bits / 4 bits per hex char)
+    if (address_str.length() != 40) {
+      return "{\"error\":\"Invalid mining address (must be 40 hex characters)\"}\n";
+    }
+
+    // Validate all characters are hex
+    for (char c : address_str) {
+      if (!std::isxdigit(c)) {
+        return "{\"error\":\"Invalid mining address (must contain only hex characters)\"}\n";
+      }
+    }
+
+    // Parse and set mining address
+    uint160 mining_address;
+    mining_address.SetHex(address_str);
+    miner_->SetMiningAddress(mining_address);
+  }
+  // If no address provided, mining_address_ will be zero (null address)
+
   bool started = miner_->Start();
   if (!started) {
     return "{\"error\":\"Failed to start mining\"}\n";
@@ -969,7 +991,8 @@ RPCServer::HandleStartMining(const std::vector<std::string> &params) {
   std::ostringstream oss;
   oss << "{\n"
       << "  \"mining\": true,\n"
-      << "  \"message\": \"Mining started\"\n"
+      << "  \"message\": \"Mining started\",\n"
+      << "  \"address\": \"" << miner_->GetMiningAddress().GetHex() << "\"\n"
       << "}\n";
   return oss.str();
 }
@@ -1015,6 +1038,29 @@ std::string RPCServer::HandleGenerate(const std::vector<std::string> &params) {
   }
 
   int num_blocks = *num_blocks_opt;
+
+  // Parse optional mining address parameter (second parameter)
+  if (params.size() >= 2) {
+    const std::string& address_str = params[1];
+
+    // Validate address is 40 hex characters (160 bits / 4 bits per hex char)
+    if (address_str.length() != 40) {
+      return "{\"error\":\"Invalid mining address (must be 40 hex characters)\"}\n";
+    }
+
+    // Validate all characters are hex
+    for (char c : address_str) {
+      if (!std::isxdigit(c)) {
+        return "{\"error\":\"Invalid mining address (must contain only hex characters)\"}\n";
+      }
+    }
+
+    // Parse and set mining address
+    uint160 mining_address;
+    mining_address.SetHex(address_str);
+    miner_->SetMiningAddress(mining_address);
+  }
+  // If no address provided, mining_address_ will be zero (null address)
 
   // Get starting height
   auto *start_tip = chainstate_manager_.GetTip();

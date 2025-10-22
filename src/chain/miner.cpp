@@ -180,7 +180,7 @@ BlockTemplate CPUMiner::CreateBlockTemplate() {
   // Fill header
   tmpl.header.nVersion = 1;
   tmpl.header.hashPrevBlock = tmpl.hashPrevBlock;
-  tmpl.header.minerAddress.SetNull(); // TODO: Set miner address
+  tmpl.header.minerAddress = mining_address_;
   tmpl.header.nTime = static_cast<uint32_t>(std::time(nullptr));
   tmpl.header.nBits = tmpl.nBits;
   tmpl.header.nNonce = 0;
