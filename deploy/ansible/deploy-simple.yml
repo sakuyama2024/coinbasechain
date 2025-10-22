@@ -41,7 +41,7 @@
     - name: Build Docker image
       shell: |
         cd /tmp/coinbasechain-build
-        docker build -t coinbasechain:latest .
+        docker build -t coinbasechain:latest -f deploy/docker/Dockerfile .
       tags: [build]
 
     - name: Clean up build directory
