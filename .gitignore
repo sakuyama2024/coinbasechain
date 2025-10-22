@@ -34,3 +34,15 @@ _deps/
 # Static analysis
 .scannerwork/
 cppcheck-report.txt
+
+# Sensitive deployment configuration
+deploy/ansible/inventory.yml
+deploy/ansible/hosts
+deploy/ansible/*.vault
+
+# Keep example/template files
+!deploy/ansible/inventory.yml.example
+# Environment files with secrets
+.env
+*.env.local
+!.env.example
