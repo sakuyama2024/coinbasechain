@@ -39,6 +39,25 @@ CoinbaseChain implements a simplified blockchain architecture:
    - Half-life: 48 blocks (2 days)
 
 
+## Project Structure
+
+```
+coinbasechain-docker/
+├── src/                 # C++ source code
+├── include/             # C++ headers
+├── test/                # Unit tests
+├── fuzz/                # Fuzzing tests
+├── deploy/              # Deployment and operations
+│   ├── ansible/         # Ansible automation
+│   ├── docker/          # Docker containerization
+│   └── scripts/         # Helper scripts
+├── cmake/               # CMake modules
+└── tools/               # Development tools
+```
+
+For deployment instructions, see [deploy/README.md](deploy/README.md).
+
+
 ## Summary of Key Features
 
 ### Headers-Only Design
@@ -166,11 +185,11 @@ docker run -d --name unicity-pow \
 ### Building Docker Image
 
 ```bash
-# Build from source
-docker build -t unicity-pow .
+# Build from source (Dockerfile is at deploy/docker/Dockerfile)
+docker build -f deploy/docker/Dockerfile -t unicity-pow .
 
-# Multi-stage build for smaller image
-docker build -f Dockerfile.alpine -t unicity-pow:alpine .
+# Or use the convenience symlink
+docker build -f Dockerfile -t unicity-pow .
 ```
 
 ### Docker Compose
