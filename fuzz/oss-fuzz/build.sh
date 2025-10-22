@@ -95,9 +95,9 @@ EOF
 # Generate seed corpus for chain reorganization fuzzer
 cd $SRC/coinbasechain
 python3 fuzz/generate_chain_seeds.py
-if [ -d "fuzz_chain_reorg_corpus" ]; then
+if [ -d "fuzz/corpus" ]; then
     mkdir -p $OUT/fuzz_chain_reorg_seed_corpus
-    cp fuzz_chain_reorg_corpus/* $OUT/fuzz_chain_reorg_seed_corpus/
+    cp fuzz/corpus/* $OUT/fuzz_chain_reorg_seed_corpus/
     zip -j $OUT/fuzz_chain_reorg_seed_corpus.zip $OUT/fuzz_chain_reorg_seed_corpus/*
 fi
 

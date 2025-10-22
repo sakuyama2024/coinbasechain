@@ -56,8 +56,8 @@ mkdir -p corpus/block_header
 ./fuzz/fuzz_block_header corpus/block_header -max_total_time=300
 
 # Run chain reorganization fuzzer (with seed corpus)
-python3 ../fuzz/generate_chain_seeds.py  # Creates fuzz_chain_reorg_corpus/
-./fuzz/fuzz_chain_reorg fuzz_chain_reorg_corpus/ -max_total_time=300
+python3 ../fuzz/generate_chain_seeds.py  # Creates fuzz/corpus/
+./fuzz/fuzz_chain_reorg ../fuzz/corpus/ -max_total_time=300
 
 # Run with AddressSanitizer for better bug detection
 cmake .. -DENABLE_FUZZING=ON -DCMAKE_CXX_COMPILER=clang++ -DSANITIZE=address

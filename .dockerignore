@@ -32,7 +32,7 @@ debug.log
 
 # CI/CD files
 .claude/
-oss-fuzz/
+fuzz/oss-fuzz/
 
 # CMake cache
 CMakeCache.txt

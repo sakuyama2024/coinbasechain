@@ -4,7 +4,7 @@
 import struct
 import os
 
-CORPUS_DIR = "fuzz_chain_reorg_corpus"
+CORPUS_DIR = "fuzz/corpus"
 
 def write_seed(filename, data):
     """Write seed file to corpus directory"""

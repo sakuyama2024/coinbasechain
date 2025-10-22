@@ -194,7 +194,7 @@ jobs:
 
           # Generate seed corpus and test chain reorg fuzzer
           python3 ../fuzz/generate_chain_seeds.py
-          ./fuzz/fuzz_chain_reorg fuzz_chain_reorg_corpus/ -runs=10000
+          ./fuzz/fuzz_chain_reorg ../fuzz/corpus/ -runs=10000
 
       - name: Upload fuzz corpus on crash
         if: failure()
