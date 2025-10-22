@@ -52,7 +52,8 @@ public:
   int GetBlocksFound() const { return blocks_found_.load(); }
 
   // Set mining address for block rewards
-  // Must be called before Start() or while mining is stopped
+  // Address is "sticky" - persists across mining sessions until explicitly changed
+  // Can be called before Start() or while mining is stopped
   void SetMiningAddress(const uint160& address) { mining_address_ = address; }
   uint160 GetMiningAddress() const { return mining_address_; }
 

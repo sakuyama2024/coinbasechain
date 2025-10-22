@@ -961,6 +961,7 @@ RPCServer::HandleStartMining(const std::vector<std::string> &params) {
   }
 
   // Parse optional mining address parameter
+  // Note: Address is "sticky" - if not provided, previous address is retained
   if (!params.empty()) {
     const std::string& address_str = params[0];
 
@@ -976,12 +977,11 @@ RPCServer::HandleStartMining(const std::vector<std::string> &params) {
       }
     }
 
-    // Parse and set mining address
+    // Parse and set mining address (persists across subsequent calls)
     uint160 mining_address;
     mining_address.SetHex(address_str);
     miner_->SetMiningAddress(mining_address);
   }
-  // If no address provided, mining_address_ will be zero (null address)
 
   bool started = miner_->Start();
   if (!started) {
@@ -1040,6 +1040,7 @@ std::string RPCServer::HandleGenerate(const std::vector<std::string> &params) {
   int num_blocks = *num_blocks_opt;
 
   // Parse optional mining address parameter (second parameter)
+  // Note: Address is "sticky" - if not provided, previous address is retained
   if (params.size() >= 2) {
     const std::string& address_str = params[1];
 
@@ -1055,12 +1056,11 @@ std::string RPCServer::HandleGenerate(const std::vector<std::string> &params) {
       }
     }
 
-    // Parse and set mining address
+    // Parse and set mining address (persists across subsequent calls)
     uint160 mining_address;
     mining_address.SetHex(address_str);
     miner_->SetMiningAddress(mining_address);
   }
-  // If no address provided, mining_address_ will be zero (null address)
 
   // Get starting height
   auto *start_tip = chainstate_manager_.GetTip();
