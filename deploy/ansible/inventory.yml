@@ -115,6 +115,6 @@ all:
     # Combined group for all nodes (useful for common operations)
     coinbasechain_nodes:
       children:
-        - coinbasechain_regtest
-        - coinbasechain_testnet
-        - coinbasechain_mainnet
+        coinbasechain_regtest:
+        coinbasechain_testnet:
+        coinbasechain_mainnet:

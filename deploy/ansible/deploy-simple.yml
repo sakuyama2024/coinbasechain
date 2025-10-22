@@ -22,7 +22,7 @@
 
     - name: Copy project files to server
       synchronize:
-        src: "{{ playbook_dir }}/../"
+        src: "{{ playbook_dir }}/../../"
         dest: /tmp/coinbasechain-build/
         delete: yes
         rsync_opts:
@@ -32,7 +32,7 @@
           - "--exclude=.vscode"
           - "--exclude=*.o"
           - "--exclude=*.a"
-          - "--exclude=ansible"
+          - "--exclude=deploy/ansible"
       tags: [build]
 
     # =========================================================================
@@ -82,7 +82,6 @@
           --name {{ container_name }} \
           --restart unless-stopped \
           -p {{ p2p_port }}:{{ p2p_port }} \
-          -p {{ rpc_port }}:{{ rpc_port }} \
           -v {{ docker_data_dir }}:/home/coinbasechain/.coinbasechain \
           -e COINBASECHAIN_NETWORK={{ coinbasechain_network }} \
           -e COINBASECHAIN_PORT={{ p2p_port }} \
