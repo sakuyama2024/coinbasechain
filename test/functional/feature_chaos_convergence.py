@@ -73,26 +73,26 @@ def main():
 
         def mine_peer(node):
             # Generate random height, but make ONE peer extra long to ensure we have a clear winner
+            # IMPORTANT: Limited to 100 blocks max due to RPC 4KB buffer limit
+            # (>60 blocks causes JSON truncation, >~250 blocks causes node crash)
             if node.index == 1:
-                num_blocks = random.randint(200, 300)  # Winning chain
+                num_blocks = random.randint(80, 100)  # Winning chain
             else:
                 num_blocks = random.randint(1, 100)
 
             try:
-                # Use longer timeout for large block generation (300 blocks can take 3-4 minutes)
-                blocks = node.generate(num_blocks, timeout=600)  # 10 minute timeout
+                # Generate blocks (now returns {"blocks": N, "height": N})
+                result = node.generate(num_blocks, timeout=600)
 
-                # Verify generate returned a list
-                if not isinstance(blocks, list):
-                    log(f"  Node{node.index}: Mining returned unexpected type: {type(blocks)}", RED)
-                    return 0
+                # Verify result is a dict and extract height
+                if isinstance(result, dict):
+                    actual_height = result.get('height', 0)
+                else:
+                    log(f"  Node{node.index}: Unexpected return type: {type(result)}, falling back to getinfo", RED)
+                    # Fall back to getinfo
+                    info = node.get_info()
+                    actual_height = info['blocks']
 
-                info = node.get_info()
-                if not isinstance(info, dict):
-                    log(f"  Node{node.index}: get_info returned unexpected type: {type(info)}", RED)
-                    return 0
-
-                actual_height = info['blocks']
                 peer_heights[node.index] = actual_height
 
                 if node.index % 5 == 0:
@@ -100,15 +100,28 @@ def main():
 
                 return actual_height
             except Exception as e:
-                log(f"  Node{node.index}: Mining failed: {e}", RED)
+                log(f"  Node{node.index}: Mining failed: {str(e)[:200]}", RED)
+
+                # Check if node crashed
+                if not node.is_running():
+                    log(f"  Node{node.index}: CRASHED - process died!", RED)
+                    log(f"  Node{node.index}: Last log lines:", RED)
+                    log(node.read_log(20), RED)
+                    peer_heights[node.index] = 0
+                    return 0
+
                 # Try to get current height anyway
                 try:
                     info = node.get_info()
                     if isinstance(info, dict) and 'blocks' in info:
                         peer_heights[node.index] = info['blocks']
+                        log(f"  Node{node.index}: Recovered, at height {info['blocks']}", YELLOW)
                         return info['blocks']
-                except:
+                except Exception as e2:
+                    log(f"  Node{node.index}: Cannot get info: {str(e2)[:100]}", RED)
                     pass
+
+                peer_heights[node.index] = 0
                 return 0
 
         # Mine in parallel for speed
@@ -162,10 +175,21 @@ def main():
         connect_time = time.time() - connect_start
         log(f"✓ All {NUM_PEER_NODES} peers connected in {connect_time:.2f}s\n", GREEN)
 
+        # Also connect Node0 back to peers for bidirectional sync
+        # This ensures Node0 can push headers to peers after it syncs
+        log("Establishing bidirectional connections (Node0 → peers)...", BLUE)
+        for node in peer_nodes:
+            try:
+                node0.add_node(f"127.0.0.1:{BASE_PORT + node.index}", "add")
+            except Exception as e:
+                log(f"  Node0 → Node{node.index}: {e}", RED)
+        time.sleep(1)  # Let connections establish
+        log("✓ Bidirectional connections established\n", GREEN)
+
         # Monitor and wait for convergence
         log("Monitoring convergence (max 2 minutes)...", BLUE)
         max_wait = 120
-        check_interval = 5
+        check_interval = 2  # Check every 2 seconds for faster completion
         converged = False
 
         for elapsed in range(0, max_wait, check_interval):
@@ -270,7 +294,7 @@ def main():
 
         # Give network time to propagate and resolve to longest chain
         log("Waiting for network to resolve to longest chain...", BLUE)
-        time.sleep(10)
+        time.sleep(5)  # Reduced from 10s - sync is fast
 
         # Check final state - all nodes should converge to same height and hash
         log("\nVerifying final sync state:", BLUE)

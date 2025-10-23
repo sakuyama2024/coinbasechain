@@ -63,8 +63,10 @@ def main():
         def mine_peer(node):
             num_blocks = BLOCKS_WINNING_PEER if node.index == 1 else BLOCKS_PER_PEER
             try:
-                blocks = node.generate(num_blocks)
-                log(f"  Node{node.index}: {len(blocks)} blocks", BLUE)
+                result = node.generate(num_blocks)
+                # generate() now returns {"blocks": N, "height": N}
+                blocks_mined = result.get('blocks', 0) if isinstance(result, dict) else 0
+                log(f"  Node{node.index}: {blocks_mined} blocks", BLUE)
             except Exception as e:
                 log(f"  Node{node.index}: Mining failed: {e}", RED)
 
@@ -99,8 +101,11 @@ def main():
 
         log("All peers connected\n", GREEN)
 
-        # Monitor for 30 seconds
-        log("Monitoring for 30 seconds...", BLUE)
+        # Monitor for convergence (max 30 seconds)
+        log("Monitoring for convergence (max 30 seconds)...", BLUE)
+        expected_height = BLOCKS_WINNING_PEER
+        converged = False
+
         for i in range(30):
             time.sleep(1)
             if not node0.is_running():
@@ -117,10 +122,23 @@ def main():
                     log(node.read_log(30))
                     log("=" * 60)
 
+            # Check if Node0 has converged to expected height
+            try:
+                info = node0.get_info()
+                if info['blocks'] >= expected_height:
+                    log(f"  {i+1}s: Node0 converged to height {info['blocks']} ✓", GREEN)
+                    converged = True
+                    break
+            except:
+                pass
+
             if (i + 1) % 5 == 0:
                 log(f"  {i+1}/30 seconds - Node0 running ✓")
 
-        log("\n✓ Survived 30 seconds!", GREEN)
+        if converged:
+            log(f"\n✓ Test passed - Node0 converged successfully!", GREEN)
+        else:
+            log(f"\n✓ Test passed - survived 30 seconds without crash!", GREEN)
 
         # Check final state
         log("\nFinal chain state:", BLUE)

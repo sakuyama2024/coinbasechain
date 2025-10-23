@@ -25,11 +25,22 @@ def main():
     """Run all functional tests."""
     test_dir = Path(__file__).parent
 
-    # Find all test scripts (exclude test_framework and test_runner.py)
+    # Files to exclude (setup scripts, debug scripts, and infrastructure)
+    exclude_files = {
+        "test_runner.py",
+        "generate_test_chain.py",    # Setup script, not a test
+        "generate_test_chains.py",   # Setup script, not a test
+        "regenerate_test_chains.py", # Setup script, not a test
+        "debug_sync_issue.py",       # Debug script, not a test
+    }
+
+    # Find all test scripts (only feature_* and test_* files)
     test_scripts = []
     for file in sorted(test_dir.glob("*.py")):
-        if file.name != "test_runner.py" and not file.name.startswith("_"):
-            test_scripts.append(file)
+        if file.name not in exclude_files and not file.name.startswith("_"):
+            # Only include files that start with "feature_" or "test_"
+            if file.name.startswith("feature_") or file.name.startswith("test_"):
+                test_scripts.append(file)
 
     if not test_scripts:
         print("No test scripts found!")
