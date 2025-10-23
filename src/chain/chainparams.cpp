@@ -198,9 +198,9 @@ CRegTestParams::CRegTestParams() {
   consensus.nMinimumChainWork = uint256S(
       "0x0000000000000000000000000000000000000000000000000000000000000000");
 
-  // Network expiration for regtest - short interval for easy testing
-  consensus.nNetworkExpirationInterval = 100;  // 100 blocks for testing
-  consensus.nNetworkExpirationGracePeriod = 10;  // 10 blocks warning
+  // Network expiration disabled for regtest (testing environment)
+  consensus.nNetworkExpirationInterval = 0;  // Disabled
+  consensus.nNetworkExpirationGracePeriod = 0;  // Disabled
 
   // Network configuration
   nDefaultPort = protocol::ports::REGTEST;
@@ -212,6 +212,9 @@ CRegTestParams::CRegTestParams() {
                                1);
 
   consensus.hashGenesisBlock = genesis.GetHash();
+  assert(consensus.hashGenesisBlock ==
+         uint256S("0x0233b37bb6942bfb471cfd7fb95caab0e0f7b19cc8767da65fbef59eb4"
+                  "9e45bd"));
 
   vFixedSeeds.clear();  // No hardcoded seeds for local testing
 }

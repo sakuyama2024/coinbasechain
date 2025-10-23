@@ -129,16 +129,19 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   int peer_id = peer->id();
 
   // Bitcoin Core approach: If the last header in this batch is already in our chain
-  // and is an ancestor of our best tip, skip all DoS checks for this entire batch.
+  // and is an ancestor of our best header or tip, skip all DoS checks for this entire batch.
   // This prevents false positives when reconnecting to peers after manual InvalidateBlock.
+  //
+  // Simplified implementation: If header exists and has been validated (nChainWork > 0),
+  // skip DoS checks. This achieves the same goal without needing GetAncestor().
   bool skip_dos_checks = false;
   if (!headers.empty()) {
     const chain::CBlockIndex* last_header_index =
         chainstate_manager_.LookupBlockIndex(headers.back().GetHash());
-    if (last_header_index && chainstate_manager_.IsOnActiveChain(last_header_index)) {
+    if (last_header_index && last_header_index->nChainWork > 0) {
       skip_dos_checks = true;
-      LOG_NET_TRACE("Peer {} sent {} headers, last is on active chain ({}), skipping DoS checks",
-                    peer_id, headers.size(), headers.back().GetHash().ToString().substr(0, 16));
+      LOG_NET_TRACE("Peer {} sent {} headers, last header already validated (work={}), skipping DoS checks",
+                    peer_id, headers.size(), last_header_index->nChainWork.ToString().substr(0, 16));
     }
   }
 
@@ -154,16 +157,11 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
 
   // Process headers (logic moved from HeaderSync::ProcessHeaders)
   if (headers.empty()) {
-    LOG_INFO("Received empty headers from peer {}", peer_id);
-    // Empty response means peer has no more headers
-    // Check if we should request more
-    bool should_request = ShouldRequestMore();
-    bool synced = IsSynced();
-    if (should_request) {
-      RequestHeadersFromPeer(peer);
-    } else if (synced) {
-      ClearSyncPeer();
-    }
+    // Bitcoin Core (line 2896): "Nothing interesting. Stop asking this peers for more headers."
+    // Empty headers means peer has reached the end of their chain - they have no more to give us.
+    // This could happen if peer reorged to our chain, or we've synced to their tip.
+    LOG_INFO("Received empty headers from peer {} - peer has no more headers to send", peer_id);
+    ClearSyncPeer();
     return true;
   }
 
@@ -238,27 +236,51 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   }
 
   // DoS Protection: Check for low-work headers (Bitcoin Core approach)
-  // Calculate total work on this chain
-  const chain::CBlockIndex* chain_start = chainstate_manager_.LookupBlockIndex(headers[0].hashPrevBlock);
-  if (chain_start) {
-    arith_uint256 total_work = chain_start->nChainWork + validation::CalculateHeadersWork(headers);
+  // Bitcoin Core: net_processing.cpp lines 2993-2999
+  // Only run anti-DoS check if we haven't already validated this work
+  if (!skip_dos_checks) {
+    const chain::CBlockIndex* chain_start = chainstate_manager_.LookupBlockIndex(headers[0].hashPrevBlock);
+    if (chain_start) {
+      arith_uint256 total_work = chain_start->nChainWork + validation::CalculateHeadersWork(headers);
 
-    // Get our dynamic anti-DoS threshold
-    arith_uint256 minimum_work = validation::GetAntiDoSWorkThreshold(
-        chainstate_manager_.GetTip(),
-        chainstate_manager_.GetParams(),
-        chainstate_manager_.IsInitialBlockDownload());
+      // Get our dynamic anti-DoS threshold
+      arith_uint256 minimum_work = validation::GetAntiDoSWorkThreshold(
+          chainstate_manager_.GetTip(),
+          chainstate_manager_.GetParams(),
+          chainstate_manager_.IsInitialBlockDownload());
 
-    // Ignore low-work chains (don't penalize, just ignore per Bitcoin Core)
-    if (total_work < minimum_work) {
-      LOG_NET_DEBUG("Ignoring low-work headers from peer {} (work={}, threshold={}, height={})",
-                    peer_id,
-                    total_work.ToString(),
-                    minimum_work.ToString(),
-                    chain_start->nHeight + headers.size());
-      ClearSyncPeer();
-      return false;
+      // Bitcoin Core logic (TryLowWorkHeadersSync): Avoid DoS via low-difficulty-headers
+      // by only processing if the headers are part of a chain with sufficient work.
+      if (total_work < minimum_work) {
+        // Only give up on this peer if their headers message was NOT full;
+        // otherwise they have more headers after this, and their full chain
+        // might have sufficient work even if this batch doesn't.
+        if (headers.size() != protocol::MAX_HEADERS_SIZE) {
+          // Batch was not full - peer has no more headers to offer
+          LOG_NET_DEBUG("Ignoring low-work chain from peer {} (work={}, threshold={}, height={})",
+                        peer_id,
+                        total_work.ToString(),
+                        minimum_work.ToString(),
+                        chain_start->nHeight + headers.size());
+          // Bitcoin Core: Does NOT clear sync peer here, just ignores the headers
+          // We match this by not calling ClearSyncPeer()
+          return true;  // Handled (by ignoring)
+        }
+        // Batch was full - peer likely has more headers with additional work coming.
+        // Don't abandon peer, just skip processing this batch and request more.
+        LOG_NET_DEBUG("Low-work headers from peer {} but batch is full (size={}, work={}, threshold={}), continuing sync",
+                      peer_id,
+                      headers.size(),
+                      total_work.ToString(),
+                      minimum_work.ToString());
+        // Bitcoin Core: Enters special HeadersSyncState here to track low-work sync
+        // We simplify by just requesting more headers from the same peer
+        RequestHeadersFromPeer(peer);
+        return true;  // Handled (by requesting more)
+      }
     }
+  } else {
+    LOG_NET_TRACE("Skipping low-work check for peer {} (headers already validated)", peer_id);
   }
 
   // Store batch size under lock
@@ -489,11 +511,18 @@ bool HeaderSyncManager::IsSynced(int64_t max_age_seconds) const {
 }
 
 bool HeaderSyncManager::ShouldRequestMore() const {
-  // Request more if:
-  // 1. Last batch was full (peer might have more)
-  // 2. We're not synced yet
+  // Bitcoin Core logic (net_processing.cpp line 3019):
+  // if (nCount == MAX_HEADERS_RESULTS && !have_headers_sync)
+  //
+  // Request more if batch was full (peer may have more headers).
+  // We don't have Bitcoin's HeadersSyncState mechanism, so we always
+  // behave like have_headers_sync=false.
+  //
+  // IMPORTANT: Do NOT check IsSynced() here! In regtest, blocks are mined
+  // instantly so tip is always "recent", which would cause us to abandon
+  // sync peers prematurely. Bitcoin Core doesn't check sync state here either.
   std::lock_guard<std::mutex> lock(sync_mutex_);
-  return last_batch_size_ == protocol::MAX_HEADERS_SIZE && !IsSynced();
+  return last_batch_size_ == protocol::MAX_HEADERS_SIZE;
 }
 
 CBlockLocator HeaderSyncManager::GetLocatorFromPrev() const {

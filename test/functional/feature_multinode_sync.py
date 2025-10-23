@@ -37,26 +37,26 @@ def log(msg, color=None):
         print(msg)
 
 class TestNode:
-    def __init__(self, node_id, datadir, port, rpc_port):
+    def __init__(self, node_id, datadir, port):
         self.node_id = node_id
         self.datadir = datadir
         self.port = port
-        self.rpc_port = rpc_port
         self.process = None
 
-    def start(self, connect_to=None, extra_args=None):
+    def start(self, extra_args=None, binary_path=None):
         """Start the node"""
+        if binary_path is None:
+            import os
+            # Try to find binary relative to script
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            binary_path = os.path.join(script_dir, '../../build/bin/coinbasechain')
+
         args = [
-            './build/bin/coinbasechain',
+            binary_path,
             '--regtest',
             f'--datadir={self.datadir}',
             f'--port={self.port}',
-            f'--rpcport={self.rpc_port}',
         ]
-
-        if connect_to:
-            for peer_port in connect_to:
-                args.append(f'--addnode=127.0.0.1:{peer_port}')
 
         if extra_args:
             args.extend(extra_args)
@@ -76,7 +76,7 @@ class TestNode:
             stdout, stderr = self.process.communicate()
             raise RuntimeError(f"Node{self.node_id} failed to start:\nSTDOUT: {stdout}\nSTDERR: {stderr}")
 
-        log(f"Node{self.node_id} started (port={self.port}, rpc={self.rpc_port})", GREEN)
+        log(f"Node{self.node_id} started (port={self.port})", GREEN)
 
     def stop(self):
         """Stop the node"""
@@ -90,38 +90,38 @@ class TestNode:
             log(f"Node{self.node_id} stopped", YELLOW)
 
     def rpc(self, method, params=None):
-        """Call RPC method"""
-        import socket
+        """Call RPC method via coinbasechain-cli"""
         import json
 
-        request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": method,
-            "params": params or []
-        }
+        # Find coinbasechain-cli binary
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        cli_binary = os.path.join(script_dir, '../../build/bin/coinbasechain-cli')
+
+        args = [
+            cli_binary,
+            f'--datadir={self.datadir}',
+            method
+        ]
+
+        if params:
+            args.extend(str(p) for p in params)
 
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2.0)
-            sock.connect(('127.0.0.1', self.rpc_port))
-            sock.sendall((json.dumps(request) + '\n').encode())
+            result = subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
 
-            response = b''
-            while True:
-                chunk = sock.recv(4096)
-                if not chunk:
-                    break
-                response += chunk
-                if b'\n' in response:
-                    break
+            if result.returncode != 0:
+                raise RuntimeError(f"RPC {method} failed: {result.stderr}")
 
-            sock.close()
-
-            result = json.loads(response.decode())
-            if 'error' in result and result['error']:
-                raise RuntimeError(f"RPC error: {result['error']}")
-            return result.get('result')
+            # Try to parse JSON response
+            try:
+                return json.loads(result.stdout)
+            except json.JSONDecodeError:
+                return result.stdout.strip()
 
         except Exception as e:
             raise RuntimeError(f"RPC call failed: {e}")
@@ -129,23 +129,33 @@ class TestNode:
     def getblockcount(self):
         """Get current block height"""
         try:
-            return self.rpc('getblockcount')
+            info = self.rpc('getinfo')
+            return info.get('blocks', 0) if isinstance(info, dict) else 0
         except:
             return 0
 
     def mine_blocks(self, n):
         """Mine n blocks"""
-        for i in range(n):
-            try:
-                self.rpc('generate', [1])
-            except Exception as e:
-                log(f"Warning: Mining block {i+1}/{n} failed: {e}", YELLOW)
-                time.sleep(0.1)
+        try:
+            # Generate all blocks at once
+            address = "0000000000000000000000000000000000000000"
+            self.rpc('generate', [n, address])
+        except Exception as e:
+            log(f"Warning: Mining {n} blocks failed: {e}", YELLOW)
+            time.sleep(0.1)
 
         # Verify we mined them
         height = self.getblockcount()
         log(f"Node{self.node_id} mined {n} blocks, now at height {height}", BLUE)
         return height
+
+    def connect_to_peer(self, peer_addr):
+        """Connect to a peer node"""
+        try:
+            return self.rpc('addnode', [peer_addr, 'add'])
+        except Exception as e:
+            log(f"Warning: Connection to {peer_addr} failed: {e}", YELLOW)
+            return None
 
 def wait_for_sync(nodes, target_height, timeout=30):
     """Wait for all nodes to sync to target height"""
@@ -184,7 +194,6 @@ def main():
     NUM_SYNC_NODES = 10  # 10 nodes syncing from Node0
     CHAIN_LENGTH = 50
     BASE_PORT = 18444
-    BASE_RPC_PORT = 18332
 
     test_dir = tempfile.mkdtemp(prefix='cbc_multinode_')
     log(f"Test directory: {test_dir}\n")
@@ -195,14 +204,14 @@ def main():
         # Create Node0 (the node with the chain)
         node0_dir = os.path.join(test_dir, 'node0')
         os.makedirs(node0_dir)
-        node0 = TestNode(0, node0_dir, BASE_PORT, BASE_RPC_PORT)
+        node0 = TestNode(0, node0_dir, BASE_PORT)
         nodes.append(node0)
 
         # Create syncing nodes (Node1-10)
         for i in range(1, NUM_SYNC_NODES + 1):
             node_dir = os.path.join(test_dir, f'node{i}')
             os.makedirs(node_dir)
-            node = TestNode(i, node_dir, BASE_PORT + i, BASE_RPC_PORT + i)
+            node = TestNode(i, node_dir, BASE_PORT + i)
             nodes.append(node)
 
         # Step 1: Start Node0 and mine chain
@@ -226,10 +235,18 @@ def main():
         log("This tests concurrent header processing from multiple network threads\n")
 
         for node in nodes[1:]:
-            node.start(connect_to=[BASE_PORT])  # All connect to Node0
-            time.sleep(0.1)  # Small delay between starts
+            node.start()
+            time.sleep(0.5)  # Wait for node to be ready
 
         log(f"✓ All {NUM_SYNC_NODES} sync nodes started\n", GREEN)
+
+        # Now connect all nodes to Node0 via RPC
+        log("Connecting all sync nodes to Node0 via RPC...", BLUE)
+        for node in nodes[1:]:
+            node.connect_to_peer(f'127.0.0.1:{BASE_PORT}')
+            time.sleep(0.1)
+
+        log(f"✓ All nodes connected to Node0\n", GREEN)
 
         # Step 3: Wait for all nodes to sync
         log(f"Step 3: Waiting for all nodes to sync to height {CHAIN_LENGTH}...", BLUE)

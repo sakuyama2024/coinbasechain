@@ -193,10 +193,8 @@ void NetworkManager::stop() {
     nat_manager_->Stop();
   }
 
-  // Stop transport (stops listening and closes connections)
-  if (transport_) {
-    transport_->stop();
-  }
+  // Disconnect all peers FIRST (closes their connections and cancels pending async ops)
+  peer_manager_->disconnect_all();
 
   // Cancel timers
   if (connect_timer_) {
@@ -205,9 +203,15 @@ void NetworkManager::stop() {
   if (maintenance_timer_) {
     maintenance_timer_->cancel();
   }
+  if (feeler_timer_) {
+    feeler_timer_->cancel();
+  }
 
-  // Disconnect all peers
-  peer_manager_->disconnect_all();
+  // Stop transport (stops listening and joins IO threads)
+  // Must be done AFTER disconnecting peers to avoid hanging on pending async operations
+  if (transport_) {
+    transport_->stop();
+  }
 
   // Stop IO threads
   work_guard_.reset(); // Allow io_context to finish

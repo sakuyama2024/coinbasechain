@@ -83,6 +83,7 @@ public:
       std::function<void(const chain::CBlockIndex *pindexNew, int height)>;
   using SyncStateCallback = std::function<void(bool syncing, double progress)>;
   using SuspiciousReorgCallback = std::function<void(int reorg_depth, int max_allowed)>;
+  using NetworkExpiredCallback = std::function<void(int current_height, int expiration_height)>;
 
   /**
    * Subscribe to block connected events
@@ -116,6 +117,13 @@ public:
    */
   [[nodiscard]] Subscription
   SubscribeSuspiciousReorg(SuspiciousReorgCallback callback);
+
+  /**
+   * Subscribe to network expiration detection
+   * Returns RAII subscription handle
+   */
+  [[nodiscard]] Subscription
+  SubscribeNetworkExpired(NetworkExpiredCallback callback);
 
   /**
    * Notify all subscribers of block connected
@@ -178,6 +186,12 @@ public:
   void NotifySuspiciousReorg(int reorg_depth, int max_allowed);
 
   /**
+   * Notify all subscribers of network expiration
+   * Called by ChainstateManager when network expiration timebomb is triggered
+   */
+  void NotifyNetworkExpired(int current_height, int expiration_height);
+
+  /**
    * Get singleton instance
    */
   static ChainNotifications &Get();
@@ -195,6 +209,7 @@ private:
     ChainTipCallback chain_tip;
     SyncStateCallback sync_state;
     SuspiciousReorgCallback suspicious_reorg;
+    NetworkExpiredCallback network_expired;
   };
 
   std::mutex mutex_;

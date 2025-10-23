@@ -489,19 +489,19 @@ TEST_CASE("Network Expiration (Timebomb) - validation checks", "[validation][tim
         REQUIRE(params.GetConsensus().nNetworkExpirationGracePeriod == 24);
     }
 
-    SECTION("RegTest expires at 100 blocks for easy testing") {
+    SECTION("RegTest has expiration disabled for testing") {
         // Initialize regtest params
         GlobalChainParams::Select(ChainType::REGTEST);
         const ChainParams& params = GlobalChainParams::Get();
 
-        // Verify expiration is set for testing
-        REQUIRE(params.GetConsensus().nNetworkExpirationInterval == 100);
-        REQUIRE(params.GetConsensus().nNetworkExpirationGracePeriod == 10);
+        // Verify expiration is disabled for regtest (testing environment)
+        REQUIRE(params.GetConsensus().nNetworkExpirationInterval == 0);
+        REQUIRE(params.GetConsensus().nNetworkExpirationGracePeriod == 0);
     }
 
     SECTION("Expiration check logic is correct") {
-        // Initialize regtest params for easier testing
-        GlobalChainParams::Select(ChainType::REGTEST);
+        // Use testnet params since it has expiration enabled (2160 blocks)
+        GlobalChainParams::Select(ChainType::TESTNET);
         const ChainParams& params = GlobalChainParams::Get();
         const auto& consensus = params.GetConsensus();
 
@@ -509,8 +509,8 @@ TEST_CASE("Network Expiration (Timebomb) - validation checks", "[validation][tim
         int32_t expirationHeight = consensus.nNetworkExpirationInterval;
         int32_t gracePeriod = consensus.nNetworkExpirationGracePeriod;
 
-        REQUIRE(expirationHeight == 100);
-        REQUIRE(gracePeriod == 10);
+        REQUIRE(expirationHeight == 2160);
+        REQUIRE(gracePeriod == 24);
 
         // Block at expiration height should be the last valid block
         int32_t currentHeight = expirationHeight;
@@ -521,8 +521,9 @@ TEST_CASE("Network Expiration (Timebomb) - validation checks", "[validation][tim
         REQUIRE(currentHeight > expirationHeight);  // Would trigger rejection
 
         // Grace period starts at (expiration - gracePeriod)
+        // For testnet: 2160 - 24 = 2136
         int32_t gracePeriodStart = expirationHeight - gracePeriod;
-        REQUIRE(gracePeriodStart == 90);
+        REQUIRE(gracePeriodStart == 2136);
 
         // Blocks in grace period should log warning but still be valid
         currentHeight = gracePeriodStart;

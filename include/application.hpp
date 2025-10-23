@@ -95,6 +95,7 @@ private:
   // Notification subscriptions
   ChainNotifications::Subscription block_sub_;
   ChainNotifications::Subscription reorg_sub_;
+  ChainNotifications::Subscription network_expired_sub_;
   ChainNotifications::Subscription tip_sub_;
 
   // Initialization steps

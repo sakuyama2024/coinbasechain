@@ -146,16 +146,17 @@ def main():
         expected_hash_20 = info['bestblockhash']
         log(f"✓ Node3: height={info['blocks']}, hash={expected_hash_20[:16]}...", GREEN)
 
-        # Reconnect Node0 to Node1 and Node2 (they disconnected when Node0 restarted)
-        log("\nReconnecting Node0 to network...", YELLOW)
+        # Connect Node3 to Node0 FIRST (before reconnecting to shorter chains)
+        log("\nConnecting Node3 to Node0...", YELLOW)
+        node3.add_node(f"127.0.0.1:{BASE_PORT}", "add")
+        node0.add_node(f"127.0.0.1:{BASE_PORT + 3}", "add")  # Bidirectional
+        time.sleep(2)
+
+        # Now reconnect Node0 to Node1 and Node2
+        log("Reconnecting Node0 to rest of network...", YELLOW)
         node0.add_node(f"127.0.0.1:{BASE_PORT + 1}", "add")
         node0.add_node(f"127.0.0.1:{BASE_PORT + 2}", "add")
-        time.sleep(1)
-
-        # Connect Node3 to Node0
-        log("Connecting Node3 to Node0...", YELLOW)
-        node3.add_node(f"127.0.0.1:{BASE_PORT}", "add")
-        time.sleep(3)
+        time.sleep(2)
 
         # Verify Node0 re-orged to 20 blocks
         log("Verifying Node0 re-orged to 20 blocks...", YELLOW)

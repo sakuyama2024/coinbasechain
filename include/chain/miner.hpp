@@ -10,6 +10,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -43,7 +44,7 @@ public:
            validation::ChainstateManager &chainstate);
   ~CPUMiner();
 
-  bool Start(bool one_block_only = false);
+  bool Start(int target_height = -1);  // -1 = mine forever
   void Stop();
 
   bool IsMining() const { return mining_.load(); }
@@ -54,8 +55,16 @@ public:
   // Set mining address for block rewards
   // Address is "sticky" - persists across mining sessions until explicitly changed
   // Can be called before Start() or while mining is stopped
-  void SetMiningAddress(const uint160& address) { mining_address_ = address; }
-  uint160 GetMiningAddress() const { return mining_address_; }
+  // Thread-safe: uses mutex protection
+  void SetMiningAddress(const uint160& address) {
+    std::lock_guard<std::mutex> lock(address_mutex_);
+    mining_address_ = address;
+  }
+
+  uint160 GetMiningAddress() const {
+    std::lock_guard<std::mutex> lock(address_mutex_);
+    return mining_address_;
+  }
 
   // Invalidate current block template (called when chain tip changes)
   // Thread-safe: uses atomic flag checked by mining thread
@@ -64,7 +73,7 @@ public:
 private:
   void MiningWorker();
   BlockTemplate CreateBlockTemplate();
-  bool ShouldRegenerateTemplate(); // e.g., chain tip changed
+  bool ShouldRegenerateTemplate(const uint256& prev_hash); // e.g., chain tip changed
 
 private:
   // Chain params
@@ -73,21 +82,23 @@ private:
 
   // Mining configuration
   uint160 mining_address_; // Address to receive block rewards
+  mutable std::mutex address_mutex_; // Protects mining_address_ from concurrent access
 
   // Mining state (atomics for RPC thread safety)
   std::atomic<bool> mining_{false};
-  std::atomic<bool> one_block_only_{false};  // Stop after finding one block
   std::atomic<uint64_t> total_hashes_{0};
   std::atomic<int> blocks_found_{0};
   std::atomic<bool> template_invalidated_{false};
+  std::atomic<int> target_height_{-1};  // -1 = mine forever, else stop at height
 
-  // Current template
+  // Current template (unused after local template refactor, kept for ABI compatibility)
   BlockTemplate current_template_;
-  uint256 template_prev_hash_;
   std::chrono::steady_clock::time_point start_time_;
+  mutable std::mutex time_mutex_; // Protects start_time_ from concurrent access
 
   // Mining thread
   std::thread worker_;
+  mutable std::mutex stop_mutex_; // Protects Stop() from concurrent calls
 };
 
 } // namespace mining
