@@ -13,7 +13,7 @@
   tasks:
     - name: Mine {{ blocks }} block(s) on {{ inventory_hostname }}
       shell: |
-        docker exec {{ container_name }} coinbasechain-cli -regtest generate {{ blocks }}
+        docker exec {{ container_name }} coinbasechain-cli generate {{ blocks }}
       register: mine_result
       tags: [mine]
 
@@ -24,7 +24,7 @@
 
     - name: Get blockchain info
       shell: |
-        docker exec {{ container_name }} coinbasechain-cli -regtest getblockchaininfo
+        docker exec {{ container_name }} coinbasechain-cli getblockchaininfo
       register: blockchain_info
       tags: [info]
 

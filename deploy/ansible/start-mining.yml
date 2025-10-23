@@ -1,0 +1,30 @@
+---
+# Ansible Playbook: Start mining on CoinbaseChain nodes
+# Usage: ansible-playbook -i inventory.yml start-mining.yml
+
+- name: Start mining on CoinbaseChain nodes
+  hosts: coinbasechain_nodes
+  become: true
+
+  vars:
+    container_name: "coinbasechain-{{ coinbasechain_network }}"
+
+  tasks:
+    - name: Start mining on {{ inventory_hostname }}
+      shell: |
+        docker exec {{ container_name }} coinbasechain-cli startmining
+      register: mining_result
+      ignore_errors: yes
+
+    - name: Display mining result
+      debug:
+        msg: "{{ inventory_hostname }}: {{ mining_result.stdout }}"
+
+    - name: Get mining info
+      shell: |
+        docker exec {{ container_name }} coinbasechain-cli getmininginfo
+      register: mining_info
+
+    - name: Display mining info
+      debug:
+        var: mining_info.stdout_lines

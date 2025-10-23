@@ -55,7 +55,7 @@ public:
   // Create outbound peer (we initiate connection)
   static PeerPtr create_outbound(boost::asio::io_context &io_context,
                                  TransportConnectionPtr connection,
-                                 uint32_t network_magic, uint64_t local_nonce,
+                                 uint32_t network_magic,
                                  int32_t start_height,
                                  const std::string &target_address = "",
                                  uint16_t target_port = 0,
@@ -64,7 +64,7 @@ public:
   // Create inbound peer (they connected to us)
   static PeerPtr create_inbound(boost::asio::io_context &io_context,
                                 TransportConnectionPtr connection,
-                                uint32_t network_magic, uint64_t local_nonce,
+                                uint32_t network_magic,
                                 int32_t start_height);
 
   ~Peer();
@@ -99,6 +99,7 @@ public:
 
   const std::string& target_address() const { return target_address_; }
   uint16_t target_port() const { return target_port_; }
+  uint64_t get_local_nonce() const { return local_nonce_; }
 
   bool is_inbound() const { return is_inbound_; }
   ConnectionType connection_type() const { return connection_type_; }
@@ -115,7 +116,7 @@ public:
 private:
   // Private constructor - use create_outbound/create_inbound
   Peer(boost::asio::io_context &io_context, TransportConnectionPtr connection,
-       uint32_t network_magic, bool is_inbound, uint64_t local_nonce,
+       uint32_t network_magic, bool is_inbound,
        int32_t start_height,
        const std::string &target_address = "", uint16_t target_port = 0,
        ConnectionType conn_type = ConnectionType::OUTBOUND);

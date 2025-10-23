@@ -93,6 +93,11 @@ public:
   // Self-connection prevention
   uint64_t get_local_nonce() const { return local_nonce_; }
 
+  // Bitcoin Core CheckIncomingNonce pattern - checks if incoming nonce matches
+  // any of our outbound peers' local nonces (indicates self-connection)
+  // Returns true if nonce is OK (not a self-connection), false if self-connection detected
+  bool check_incoming_nonce(uint64_t nonce);
+
   // Test-only: Set default permissions for inbound connections
   void set_default_inbound_permissions(NetPermissionFlags flags) {
     default_inbound_permissions_ = flags;

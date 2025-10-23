@@ -36,7 +36,6 @@ public:
             io_context,
             nullptr,
             0x12345678,
-            0xabcdef,
             0,  // start_height
             "127.0.0.1",
             8333

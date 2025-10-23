@@ -36,7 +36,6 @@ public:
             io_context,
             nullptr,  // No actual transport needed for these tests
             0x12345678,  // network magic
-            0xabcdef,    // local nonce
             0,           // start_height
             address,
             port

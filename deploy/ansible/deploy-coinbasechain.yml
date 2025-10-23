@@ -14,10 +14,18 @@
     # =========================================================================
     # 1. Install Docker
     # =========================================================================
+    - name: Check if Docker is installed
+      command: docker --version
+      register: docker_check
+      ignore_errors: yes
+      changed_when: false
+      tags: [install]
+
     - name: Update apt cache
       apt:
         update_cache: yes
         cache_valid_time: 3600
+      when: docker_check.rc != 0
       tags: [install]
 
     - name: Install required packages
@@ -29,18 +37,21 @@
           - gnupg
           - lsb-release
         state: present
+      when: docker_check.rc != 0
       tags: [install]
 
     - name: Add Docker GPG key
       apt_key:
         url: https://download.docker.com/linux/ubuntu/gpg
         state: present
+      when: docker_check.rc != 0
       tags: [install]
 
     - name: Add Docker repository
       apt_repository:
         repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
         state: present
+      when: docker_check.rc != 0
       tags: [install]
 
     - name: Install Docker
@@ -51,6 +62,7 @@
           - containerd.io
         state: present
         update_cache: yes
+      when: docker_check.rc != 0
       tags: [install]
 
     - name: Start and enable Docker service
@@ -63,6 +75,25 @@
     # =========================================================================
     # 2. Build/Transfer Docker Image
     # =========================================================================
+    - name: Remove duplicate Docker repository file (if exists)
+      file:
+        path: /etc/apt/sources.list.d/download_docker_com_linux_ubuntu.list
+        state: absent
+      tags: [build]
+
+    - name: Update apt cache after cleanup
+      apt:
+        update_cache: yes
+      tags: [build]
+
+    - name: Install Python Docker dependencies
+      apt:
+        name:
+          - python3-requests
+          - python3-docker
+        state: present
+      tags: [build]
+
     - name: Create temporary build directory
       file:
         path: /tmp/coinbasechain-build
@@ -72,7 +103,7 @@
 
     - name: Copy project files to server
       synchronize:
-        src: "{{ playbook_dir }}/../"
+        src: "{{ playbook_dir }}/../../"
         dest: /tmp/coinbasechain-build/
         delete: yes
         rsync_opts:
@@ -82,6 +113,7 @@
           - "--exclude=.vscode"
           - "--exclude=*.o"
           - "--exclude=*.a"
+          - "--exclude=deploy/ansible"
       tags: [build]
 
     - name: Build Docker image on remote server
@@ -90,6 +122,7 @@
         source: build
         build:
           path: /tmp/coinbasechain-build
+          dockerfile: deploy/docker/Dockerfile
           pull: yes
         state: present
         force_source: yes
@@ -128,7 +161,6 @@
         restart_policy: unless-stopped
         ports:
           - "{{ p2p_port }}:{{ p2p_port }}"
-          - "{{ rpc_port }}:{{ rpc_port }}"
         volumes:
           - "{{ docker_data_dir }}:/home/coinbasechain/.coinbasechain"
         env:

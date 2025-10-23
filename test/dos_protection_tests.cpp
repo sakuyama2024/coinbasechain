@@ -16,8 +16,8 @@ static PeerPtr create_test_peer(boost::asio::io_context &io_context,
                                 bool is_inbound = true) {
     // Create a dummy transport connection (nullptr is fine for unit tests)
     auto peer = is_inbound
-        ? Peer::create_inbound(io_context, nullptr, protocol::magic::REGTEST, 12345, 0)
-        : Peer::create_outbound(io_context, nullptr, protocol::magic::REGTEST, 12345, 0);
+        ? Peer::create_inbound(io_context, nullptr, protocol::magic::REGTEST, 0)
+        : Peer::create_outbound(io_context, nullptr, protocol::magic::REGTEST, 0);
     return peer;
 }
 

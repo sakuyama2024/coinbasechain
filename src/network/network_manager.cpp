@@ -319,7 +319,7 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
   // Create outbound peer with the connection (will be in CONNECTING state)
   // Store target address for duplicate connection prevention (Bitcoin Core pattern)
   auto peer = Peer::create_outbound(io_context_, connection, config_.network_magic,
-                                     local_nonce_, current_height, address, port);
+                                     current_height, address, port);
   if (!peer) {
     LOG_NET_ERROR("Failed to create peer for {}:{}", address, port);
     return false;
@@ -564,9 +564,9 @@ void NetworkManager::handle_inbound_connection(
   // Get current blockchain height for VERSION message
   int32_t current_height = chainstate_manager_.GetChainHeight();
 
-  // Create inbound peer with our local nonce
+  // Create inbound peer
   auto peer = Peer::create_inbound(io_context_, connection,
-                                   config_.network_magic, local_nonce_, current_height);
+                                   config_.network_magic, current_height);
   if (peer) {
     // Setup message handler
     setup_peer_message_handler(peer.get());
@@ -710,7 +710,7 @@ void NetworkManager::attempt_feeler_connection() {
 
   // Create peer with FEELER connection type (doesn't count against outbound limit)
   auto peer = Peer::create_outbound(io_context_, connection, config_.network_magic,
-                                     local_nonce_, current_height, address, port,
+                                     current_height, address, port,
                                      ConnectionType::FEELER);
 
   // Setup message handler before adding to manager
@@ -746,37 +746,47 @@ void NetworkManager::setup_peer_message_handler(Peer *peer) {
   // Misbehavior tracking is now handled by the unified PeerManager
 }
 
+// Bitcoin Core CheckIncomingNonce pattern (net.cpp:370-378)
+// Check if incoming nonce matches any outbound peer's local nonce
+// Returns true if OK (not self-connection), false if self-connection detected
+bool NetworkManager::check_incoming_nonce(uint64_t nonce) {
+  // Loop through all peers looking for outbound peers
+  auto peers = peer_manager_->get_all_peers();
+  for (const auto& peer : peers) {
+    // Only check outbound peers that haven't completed handshake yet
+    // Bitcoin Core: !pnode->fSuccessfullyConnected && !pnode->IsInboundConn()
+    if (!peer->successfully_connected() && !peer->is_inbound()) {
+      // Check if this outbound peer's nonce matches the incoming nonce
+      if (peer->get_local_nonce() == nonce) {
+        LOG_NET_INFO("Self-connection detected: incoming nonce {} matches outbound peer {}",
+                     nonce, peer->address());
+        return false;  // Self-connection detected!
+      }
+    }
+  }
+  return true;  // Not a self-connection
+}
+
 bool NetworkManager::handle_message(PeerPtr peer,
                                     std::unique_ptr<message::Message> msg) {
-  // SECURITY: Bitcoin Core pattern - detect bidirectional connections in VERSION handler
-  // Reference: net_processing.cpp ProcessMessage() for "version"
-  // When we receive VERSION, check if we have another connection to this peer
-  // If bidirectional (both have outbound), use nonce comparison to break the tie
+  // SECURITY: Bitcoin Core pattern - detect SELF-connections in VERSION handler
+  // Reference: net_processing.cpp:3453-3459 ProcessMessage() for "version"
+  // This ONLY detects when we connect to ourselves (e.g., 127.0.0.1)
+  // It does NOT handle bidirectional connections between different nodes
   if (msg->command() == protocol::commands::VERSION) {
     auto* version_msg = static_cast<message::VersionMessage*>(msg.get());
 
-    // Check if we have another connection to this peer's address
-    // Use address() not target_address() - works for both inbound/outbound
-    std::string peer_address = peer->address();
-    int existing_peer_id = peer_manager_->find_peer_by_address(peer_address, 0);
-
-    if (existing_peer_id >= 0 && existing_peer_id != peer->id()) {
-      // Found another connection to same address!
-      // Bitcoin Core: Use nonce comparison as tie-breaker
-      // If local_nonce > remote_nonce, disconnect THIS peer
-      // Otherwise keep this one (remote will disconnect theirs)
-      LOG_NET_INFO("Detected bidirectional connection to {}, using nonce tie-breaker",
-                   peer_address);
-
-      if (local_nonce_ > version_msg->nonce) {
-        // Disconnect THIS peer and remove from peer manager
+    // Bitcoin Core: Only check INBOUND connections for self-connection
+    // If this is an inbound peer, check if their nonce matches any of our
+    // outbound peers' nonces (which would mean we connected to ourselves)
+    if (peer->is_inbound()) {
+      if (!check_incoming_nonce(version_msg->nonce)) {
+        // Self-connection detected! Disconnect this peer.
+        LOG_NET_INFO("Connected to self at {}, disconnecting", peer->address());
         int peer_id = peer->id();
         peer->disconnect();
         peer_manager_->remove_peer(peer_id);
         return false;  // Don't route the message
-      } else {
-        // Disconnect the OTHER peer
-        peer_manager_->remove_peer(existing_peer_id);
       }
     }
   }

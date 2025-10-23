@@ -152,7 +152,7 @@ TEST_CASE("Adversarial - PartialHeaderAttack", "[adversarial][malformed]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -189,7 +189,7 @@ TEST_CASE("Adversarial - HeaderLengthMismatch", "[adversarial][malformed]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -242,7 +242,7 @@ TEST_CASE("Adversarial - EmptyCommandField", "[adversarial][malformed]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -268,7 +268,7 @@ TEST_CASE("Adversarial - NonPrintableCommandCharacters", "[adversarial][malforme
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -302,7 +302,7 @@ TEST_CASE("Adversarial - RapidVersionFlood", "[adversarial][flood]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -336,7 +336,7 @@ TEST_CASE("Adversarial - RapidVerackFlood", "[adversarial][flood]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -370,7 +370,7 @@ TEST_CASE("Adversarial - AlternatingVersionVerack", "[adversarial][protocol]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -405,7 +405,7 @@ TEST_CASE("Adversarial - SlowDataDrip", "[adversarial][resource]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -430,7 +430,7 @@ TEST_CASE("Adversarial - MultiplePartialMessages", "[adversarial][resource]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -457,7 +457,7 @@ TEST_CASE("Adversarial - BufferFragmentation", "[adversarial][resource]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -495,7 +495,7 @@ TEST_CASE("Adversarial - ExtremeTimestamps", "[adversarial][timing]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -552,7 +552,7 @@ TEST_CASE("Adversarial - OutOfOrderHandshake", "[adversarial][protocol]") {
     const uint32_t magic = protocol::magic::REGTEST;
 
     SECTION("VERACK then VERSION then VERACK (outbound)") {
-        auto peer = Peer::create_outbound(io_context, mock_conn, magic, 12345, 0);
+        auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
         peer->start();
         io_context.poll();
 
@@ -566,7 +566,7 @@ TEST_CASE("Adversarial - OutOfOrderHandshake", "[adversarial][protocol]") {
     }
 
     SECTION("Double VERSION with VERACK in between") {
-        auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+        auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
         peer->start();
         io_context.poll();
 
@@ -602,7 +602,7 @@ TEST_CASE("Adversarial - PingFloodBeforeHandshake", "[adversarial][flood]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -633,7 +633,7 @@ TEST_CASE("Adversarial - PongNonceMismatch", "[adversarial][protocol][quickwin]"
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -686,7 +686,7 @@ TEST_CASE("Adversarial - DeserializationFailureFlooding", "[adversarial][malform
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -746,7 +746,7 @@ TEST_CASE("Adversarial - ReceiveBufferCycling", "[adversarial][resource][quickwi
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -799,7 +799,7 @@ TEST_CASE("Adversarial - UnknownMessageFlooding", "[adversarial][flood][quickwin
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -850,7 +850,7 @@ TEST_CASE("Adversarial - StatisticsOverflow", "[adversarial][resource][quickwin]
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
 
     // Note: We can't directly set peer->stats_ as it's private
     // But we can document the expected behavior
@@ -900,7 +900,7 @@ TEST_CASE("Adversarial - MessageHandlerBlocking", "[adversarial][threading][p2]"
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
 
     bool handler_called = false;
     std::chrono::steady_clock::time_point handler_start;
@@ -948,7 +948,7 @@ TEST_CASE("Adversarial - ConcurrentDisconnectDuringProcessing", "[adversarial][r
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
 
     std::atomic<bool> handler_running{false};
     std::atomic<bool> disconnect_called{false};
@@ -1001,14 +1001,13 @@ TEST_CASE("Adversarial - SelfConnectionEdgeCases", "[adversarial][protocol][p2]"
 
     SECTION("Inbound self-connection with matching nonce") {
         auto mock_conn = std::make_shared<MockTransportConnection>();
-        const uint64_t our_nonce = 12345;
 
-        auto peer = Peer::create_inbound(io_context, mock_conn, magic, our_nonce, 0);
+        auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
         peer->start();
         io_context.poll();
 
         // Peer sends VERSION with our own nonce (self-connection)
-        auto version = create_version_message(magic, our_nonce);  // Same nonce!
+        auto version = create_version_message(magic, peer->get_local_nonce());  // Same nonce!
         mock_conn->simulate_receive(version);
         io_context.poll();
 
@@ -1021,21 +1020,20 @@ TEST_CASE("Adversarial - SelfConnectionEdgeCases", "[adversarial][protocol][p2]"
         // This test documents that Peer class only checks on inbound
 
         auto mock_conn = std::make_shared<MockTransportConnection>();
-        const uint64_t our_nonce = 12345;
 
-        auto peer = Peer::create_outbound(io_context, mock_conn, magic, our_nonce, 0);
+        auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
         peer->start();
         io_context.poll();
 
         // Peer sends VERSION with our own nonce
-        auto version = create_version_message(magic, our_nonce);  // Same nonce!
+        auto version = create_version_message(magic, peer->get_local_nonce());  // Same nonce!
         mock_conn->simulate_receive(version);
         io_context.poll();
 
         // Outbound peer does NOT check for self-connection
         // (NetworkManager is responsible for preventing outbound self-connections)
         CHECK(peer->version() == protocol::PROTOCOL_VERSION);
-        CHECK(peer->peer_nonce() == our_nonce);
+        CHECK(peer->peer_nonce() == peer->get_local_nonce());
         CHECK(peer->is_connected());
     }
 }
@@ -1047,7 +1045,7 @@ TEST_CASE("Adversarial - MaxMessageSizeEdgeCases", "[adversarial][edge][p2]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -1132,7 +1130,7 @@ TEST_CASE("Adversarial - MessageRateLimiting", "[adversarial][flood][p3]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -1224,7 +1222,7 @@ TEST_CASE("Adversarial - TransportCallbackOrdering", "[adversarial][race][p3]") 
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -1286,7 +1284,7 @@ TEST_CASE("Adversarial - CommandFieldPadding", "[adversarial][malformed][p3]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 

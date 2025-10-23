@@ -180,9 +180,8 @@ TEST_CASE("Peer - OutboundHandshake", "[peer][handshake]") {
     mock_conn->set_inbound(false);
 
     const uint32_t magic = protocol::magic::REGTEST;
-    const uint64_t local_nonce = 12345;
 
-    auto peer = Peer::create_outbound(io_context, mock_conn, magic, local_nonce, 0);
+    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
 
     SECTION("Initial state") {
         CHECK(peer->state() == PeerState::CONNECTED);
@@ -240,9 +239,8 @@ TEST_CASE("Peer - InboundHandshake", "[peer][handshake]") {
     mock_conn->set_inbound(true);
 
     const uint32_t magic = protocol::magic::REGTEST;
-    const uint64_t local_nonce = 12345;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, local_nonce, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
 
     SECTION("Waits for VERSION") {
         peer->start();
@@ -281,14 +279,13 @@ TEST_CASE("Peer - SelfConnectionPrevention", "[peer][handshake][security]") {
     mock_conn->set_inbound(true);
 
     const uint32_t magic = protocol::magic::REGTEST;
-    const uint64_t local_nonce = 12345;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, local_nonce, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
     // Simulate receiving VERSION with OUR OWN nonce (self-connection)
-    auto version_msg = create_version_message(magic, local_nonce);  // Same nonce!
+    auto version_msg = create_version_message(magic, peer->get_local_nonce());  // Same nonce!
     mock_conn->simulate_receive(version_msg);
     io_context.poll();
 
@@ -305,7 +302,7 @@ TEST_CASE("Peer - SendMessage", "[peer][messages]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
 
     const uint32_t magic = protocol::magic::REGTEST;
-    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
 
     SECTION("Send PING message") {
         auto ping = std::make_unique<message::PingMessage>(99999);
@@ -335,7 +332,7 @@ TEST_CASE("Peer - ReceiveMessage", "[peer][messages]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
 
     const uint32_t magic = protocol::magic::REGTEST;
-    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
 
     std::string received_command;
     peer->set_message_handler([&](PeerPtr p, std::unique_ptr<message::Message> msg) {
@@ -377,7 +374,7 @@ TEST_CASE("Peer - InvalidMessageHandling", "[peer][messages][security]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
 
     const uint32_t magic = protocol::magic::REGTEST;
-    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -440,7 +437,7 @@ TEST_CASE("Peer - HandshakeTimeout", "[.][timeout]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
 
     auto peer = Peer::create_outbound(io_context, mock_conn,
-                                      protocol::magic::REGTEST, 12345, 0);
+                                      protocol::magic::REGTEST, 0);
     peer->start();
 
     // Run io_context for longer than handshake timeout
@@ -463,7 +460,7 @@ TEST_CASE("Peer - InactivityTimeout", "[peer][timeout]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
 
     const uint32_t magic = protocol::magic::REGTEST;
-    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
 
     // Complete handshake
     peer->start();
@@ -493,7 +490,7 @@ TEST_CASE("Peer - ReceiveBufferFloodProtection", "[peer][security][dos]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
 
     auto peer = Peer::create_outbound(io_context, mock_conn,
-                                      protocol::magic::REGTEST, 12345, 0);
+                                      protocol::magic::REGTEST, 0);
     peer->start();
     io_context.poll();
 
@@ -511,7 +508,7 @@ TEST_CASE("Peer - UserAgentLengthValidation", "[peer][security]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
 
     const uint32_t magic = protocol::magic::REGTEST;
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -543,7 +540,7 @@ TEST_CASE("Peer - Statistics", "[peer][stats]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
 
     const uint32_t magic = protocol::magic::REGTEST;
-    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
 
     SECTION("Tracks messages sent") {
         peer->start();
@@ -596,7 +593,7 @@ TEST_CASE("Peer - PingPong", "[peer][ping]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
 
     const uint32_t magic = protocol::magic::REGTEST;
-    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
 
     // Complete handshake
     peer->start();
@@ -640,7 +637,7 @@ TEST_CASE("Peer - DisconnectCleanup", "[peer][disconnect]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
 
     auto peer = Peer::create_outbound(io_context, mock_conn,
-                                      protocol::magic::REGTEST, 12345, 0);
+                                      protocol::magic::REGTEST, 0);
     peer->start();
     io_context.poll();
 
@@ -664,7 +661,7 @@ TEST_CASE("Peer - PeerInfo", "[peer][info]") {
     const uint32_t magic = protocol::magic::REGTEST;
     const uint64_t peer_nonce = 54321;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -709,7 +706,7 @@ TEST_CASE("Peer - DuplicateVersionRejection", "[peer][security][critical]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -755,7 +752,7 @@ TEST_CASE("Peer - MessageBeforeVersionRejected", "[peer][security][critical]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -799,7 +796,7 @@ TEST_CASE("Peer - DuplicateVerackRejection", "[peer][security]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_outbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 
@@ -838,7 +835,7 @@ TEST_CASE("Peer - VersionMustBeFirstMessage", "[peer][security][critical]") {
     auto mock_conn = std::make_shared<MockTransportConnection>();
     const uint32_t magic = protocol::magic::REGTEST;
 
-    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 12345, 0);
+    auto peer = Peer::create_inbound(io_context, mock_conn, magic, 0);
     peer->start();
     io_context.poll();
 

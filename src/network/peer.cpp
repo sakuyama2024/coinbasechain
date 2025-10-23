@@ -61,14 +61,14 @@ static protocol::NetworkAddress create_network_address(const std::string &ip_str
 
 Peer::Peer(boost::asio::io_context &io_context,
            TransportConnectionPtr connection, uint32_t network_magic,
-           bool is_inbound, uint64_t local_nonce, int32_t start_height,
+           bool is_inbound, int32_t start_height,
            const std::string &target_address, uint16_t target_port,
            ConnectionType conn_type)
     : io_context_(io_context), connection_(connection),
       handshake_timer_(io_context), ping_timer_(io_context),
       inactivity_timer_(io_context), network_magic_(network_magic),
       is_inbound_(is_inbound), connection_type_(conn_type), id_(-1),
-      local_nonce_(local_nonce), local_start_height_(start_height),
+      local_nonce_(generate_nonce()), local_start_height_(start_height),
       target_address_(target_address), target_port_(target_port),
       state_(connection && connection->is_open()
                  ? PeerState::CONNECTED
@@ -81,20 +81,20 @@ Peer::~Peer() {
 
 PeerPtr Peer::create_outbound(boost::asio::io_context &io_context,
                               TransportConnectionPtr connection,
-                              uint32_t network_magic, uint64_t local_nonce,
+                              uint32_t network_magic,
                               int32_t start_height,
                               const std::string &target_address,
                               uint16_t target_port,
                               ConnectionType conn_type) {
   auto peer = PeerPtr(
-      new Peer(io_context, connection, network_magic, false, local_nonce,
+      new Peer(io_context, connection, network_magic, false,
                start_height, target_address, target_port, conn_type));
   return peer;
 }
 
 PeerPtr Peer::create_inbound(boost::asio::io_context &io_context,
                              TransportConnectionPtr connection,
-                             uint32_t network_magic, uint64_t local_nonce,
+                             uint32_t network_magic,
                              int32_t start_height) {
   // Bitcoin Core pattern: Store the peer's address (from accepted connection)
   // For inbound peers, this is the runtime address they connected from
@@ -102,7 +102,7 @@ PeerPtr Peer::create_inbound(boost::asio::io_context &io_context,
   uint16_t port = connection ? connection->remote_port() : 0;
 
   auto peer = PeerPtr(
-      new Peer(io_context, connection, network_magic, true, local_nonce,
+      new Peer(io_context, connection, network_magic, true,
                start_height, addr, port, ConnectionType::INBOUND));
   return peer;
 }
