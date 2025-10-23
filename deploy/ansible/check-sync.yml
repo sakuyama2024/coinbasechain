@@ -12,22 +12,15 @@
   tasks:
     - name: Get blockchain info
       shell: |
-        docker exec {{ container_name }} coinbasechain-cli -regtest getblockchaininfo
+        docker exec {{ container_name }} coinbasechain-cli getblockchaininfo
       register: blockchain_info
       ignore_errors: yes
       tags: [info]
 
     - name: Get peer count
       shell: |
-        docker exec {{ container_name }} coinbasechain-cli -regtest getconnectioncount
+        docker exec {{ container_name }} coinbasechain-cli getconnectioncount
       register: peer_count
-      ignore_errors: yes
-      tags: [info]
-
-    - name: Get network info
-      shell: |
-        docker exec {{ container_name }} coinbasechain-cli -regtest getnetworkinfo | grep -E '(connections|version)'
-      register: network_info
       ignore_errors: yes
       tags: [info]
 

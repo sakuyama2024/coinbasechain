@@ -507,7 +507,10 @@ void Peer::process_message(const protocol::MessageHeader &header,
   // Handle protocol messages internally
   if (command == protocol::commands::VERSION) {
     handle_version(static_cast<const message::VersionMessage &>(*msg));
-    // VERSION is handled internally only
+    // Also notify handler for duplicate detection (Bitcoin Core pattern)
+    if (message_handler_) {
+      message_handler_(shared_from_this(), std::move(msg));
+    }
   } else if (command == protocol::commands::VERACK) {
     handle_verack();
     // Also notify handler so NetworkManager knows peer is ready

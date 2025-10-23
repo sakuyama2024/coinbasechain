@@ -556,6 +556,11 @@ void NetworkManager::handle_inbound_connection(
     return;
   }
 
+  // NOTE: We used to reject duplicate inbound connections here, but Bitcoin Core
+  // does the duplicate detection in the VERSION message handler using nonce comparison.
+  // So we let the inbound connection through and reject it later if needed.
+  // See handle_message() for the actual duplicate detection logic.
+
   // Get current blockchain height for VERSION message
   int32_t current_height = chainstate_manager_.GetChainHeight();
 
@@ -743,6 +748,39 @@ void NetworkManager::setup_peer_message_handler(Peer *peer) {
 
 bool NetworkManager::handle_message(PeerPtr peer,
                                     std::unique_ptr<message::Message> msg) {
+  // SECURITY: Bitcoin Core pattern - detect bidirectional connections in VERSION handler
+  // Reference: net_processing.cpp ProcessMessage() for "version"
+  // When we receive VERSION, check if we have another connection to this peer
+  // If bidirectional (both have outbound), use nonce comparison to break the tie
+  if (msg->command() == protocol::commands::VERSION) {
+    auto* version_msg = static_cast<message::VersionMessage*>(msg.get());
+
+    // Check if we have another connection to this peer's address
+    // Use address() not target_address() - works for both inbound/outbound
+    std::string peer_address = peer->address();
+    int existing_peer_id = peer_manager_->find_peer_by_address(peer_address, 0);
+
+    if (existing_peer_id >= 0 && existing_peer_id != peer->id()) {
+      // Found another connection to same address!
+      // Bitcoin Core: Use nonce comparison as tie-breaker
+      // If local_nonce > remote_nonce, disconnect THIS peer
+      // Otherwise keep this one (remote will disconnect theirs)
+      LOG_NET_INFO("Detected bidirectional connection to {}, using nonce tie-breaker",
+                   peer_address);
+
+      if (local_nonce_ > version_msg->nonce) {
+        // Disconnect THIS peer and remove from peer manager
+        int peer_id = peer->id();
+        peer->disconnect();
+        peer_manager_->remove_peer(peer_id);
+        return false;  // Don't route the message
+      } else {
+        // Disconnect the OTHER peer
+        peer_manager_->remove_peer(existing_peer_id);
+      }
+    }
+  }
+
   if (message_router_) {
     return message_router_->RouteMessage(peer, std::move(msg));
   }

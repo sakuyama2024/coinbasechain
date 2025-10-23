@@ -112,25 +112,29 @@ int PeerManager::find_peer_by_address(const std::string &address,
                                       uint16_t port) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  // Bitcoin Core pattern: FindNode() searches m_nodes and checks pnode->addr
-  // For outbound: addr = target address (what we're connecting to)
-  // For inbound: addr = runtime address (where they connected from)
-  // Both stored in the same field and searched the same way
+  // Bitcoin Core pattern (net.cpp:332): FindNode(CNetAddr) - IP only comparison
+  // Checks static_cast<CNetAddr>(pnode->addr) == ip
   //
-  // Bitcoin removes peers from m_nodes immediately when disconnected (net.cpp:1896)
-  // We remove peers from peers_ immediately in remove_peer()
-  // So both approaches rely on immediate removal, not filtering by connection state
-  for (const auto &[id, peer] : peers_) {
-    if (!peer)
-      continue;
+  // Why IP-only (not IP+port):
+  // - Outbound connections store peer's listening port (e.g., 19590)
+  // - Inbound connections store peer's ephemeral source port (e.g., 39546)
+  // - Same peer has different ports, so IP+port comparison fails to detect duplicates
+  //
+  // This matches Bitcoin Core's FindNode(CNetAddr) at net.cpp:332-341
+  // Bitcoin also has AlreadyConnectedToAddress() at net.cpp:365 with IP:port check OR'd
 
-    // Check the stored address (target_address_/target_port_)
-    // This is populated for both outbound (from connect params) and inbound (from socket)
-    if (peer->target_address() == address && peer->target_port() == port) {
+  for (const auto &[id, peer] : peers_) {
+    if (!peer) {
+      continue;
+    }
+
+    // Check address only (ignore port - Bitcoin Core pattern)
+    // This correctly detects duplicates even when ports differ
+    // Use address() not target_address() - works for both inbound/outbound
+    if (peer->address() == address) {
       return id;
     }
   }
-
   return -1; // Not found
 }
 
