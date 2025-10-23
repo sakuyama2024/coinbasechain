@@ -131,13 +131,13 @@ CMainParams::CMainParams() {
 CTestNetParams::CTestNetParams() {
   chainType = ChainType::TESTNET;
 
-  // Very easy difficulty for fast testing (~5 second blocks at 50 H/s)
+  // Very easy difficulty for fast testing (2 minute blocks)
   // Target: ~250 hashes per block on average
   consensus.powLimit = uint256S(
       "007fffff00000000000000000000000000000000000000000000000000000000");
-  consensus.nPowTargetSpacing = 5; // 5 seconds for fast testing
+  consensus.nPowTargetSpacing = 2 * 60; // 2 minutes (same as mainnet)
   consensus.nRandomXEpochDuration = 7 * 24 * 60 * 60; // 1 week
-  consensus.nASERTHalfLife = 60; // 1 minute half-life for fast testing
+  consensus.nASERTHalfLife = 60 * 60; // 1 hour half-life for testing (30 blocks)
 
   // ASERT anchor: Use block 1 (same as mainnet)
   consensus.nASERTAnchorHeight = 1;
