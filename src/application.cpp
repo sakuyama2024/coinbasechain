@@ -98,6 +98,16 @@ bool Application::initialize() {
         request_shutdown();
       });
 
+  // Subscribe to network expiration notifications to trigger shutdown
+  network_expired_sub_ = Notifications().SubscribeNetworkExpired(
+      [this](int current_height, int expiration_height) {
+        LOG_ERROR(
+            "Application: Network expired at block {} (current: {}). "
+            "This version is outdated. Initiating graceful shutdown.",
+            expiration_height, current_height);
+        request_shutdown();
+      });
+
   // Subscribe to chain tip changes to invalidate miner block templates
   tip_sub_ = Notifications().SubscribeChainTip(
       [this](const chain::CBlockIndex *pindexNew, int height) {

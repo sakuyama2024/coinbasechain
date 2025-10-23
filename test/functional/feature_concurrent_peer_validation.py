@@ -94,8 +94,10 @@ def main():
         def mine_peer(node):
             # Node1 gets the longest chain
             num_blocks = BLOCKS_WINNING_PEER if node.index == 1 else BLOCKS_PER_PEER
-            blocks = node.generate(num_blocks)
-            log(f"  Node{node.index} mined {len(blocks)} blocks", BLUE)
+            result = node.generate(num_blocks)
+            # generate() now returns {"blocks": N, "height": N}
+            blocks_mined = result.get('blocks', 0) if isinstance(result, dict) else num_blocks
+            log(f"  Node{node.index} mined {blocks_mined} blocks", BLUE)
 
         threads = []
         for node in peer_nodes:

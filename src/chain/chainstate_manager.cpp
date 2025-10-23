@@ -941,9 +941,20 @@ bool ChainstateManager::CheckBlockHeaderWrapper(const CBlockHeader &header,
 bool ChainstateManager::ContextualCheckBlockHeaderWrapper(
     const CBlockHeader &header, const chain::CBlockIndex *pindexPrev,
     int64_t adjusted_time, ValidationState &state) const {
-  // Default implementation: call real contextual validation
-  return ContextualCheckBlockHeader(header, pindexPrev, params_, adjusted_time,
-                                    state);
+  // Call real contextual validation
+  bool result = ContextualCheckBlockHeader(header, pindexPrev, params_, adjusted_time,
+                                           state);
+
+  // Check for network expiration and emit notification
+  if (!result && state.GetRejectReason() == "network-expired") {
+    int32_t current_height = pindexPrev ? pindexPrev->nHeight + 1 : 0;
+    int32_t expiration_height = params_.GetConsensus().nNetworkExpirationInterval;
+
+    // Emit notification to trigger shutdown
+    Notifications().NotifyNetworkExpired(current_height, expiration_height);
+  }
+
+  return result;
 }
 
 bool ChainstateManager::InvalidateBlock(const uint256 &hash) {

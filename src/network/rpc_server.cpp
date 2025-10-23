@@ -960,7 +960,29 @@ RPCServer::HandleStartMining(const std::vector<std::string> &params) {
     return "{\"error\":\"Already mining\"}\n";
   }
 
-  // Note: Miner is now single-threaded for regtest (params ignored)
+  // Parse optional mining address parameter
+  // Note: Address is "sticky" - if not provided, previous address is retained
+  if (!params.empty()) {
+    const std::string& address_str = params[0];
+
+    // Validate address is 40 hex characters (160 bits / 4 bits per hex char)
+    if (address_str.length() != 40) {
+      return "{\"error\":\"Invalid mining address (must be 40 hex characters)\"}\n";
+    }
+
+    // Validate all characters are hex
+    for (char c : address_str) {
+      if (!std::isxdigit(c)) {
+        return "{\"error\":\"Invalid mining address (must contain only hex characters)\"}\n";
+      }
+    }
+
+    // Parse and set mining address (persists across subsequent calls)
+    uint160 mining_address;
+    mining_address.SetHex(address_str);
+    miner_->SetMiningAddress(mining_address);
+  }
+
   bool started = miner_->Start();
   if (!started) {
     return "{\"error\":\"Failed to start mining\"}\n";
@@ -969,7 +991,8 @@ RPCServer::HandleStartMining(const std::vector<std::string> &params) {
   std::ostringstream oss;
   oss << "{\n"
       << "  \"mining\": true,\n"
-      << "  \"message\": \"Mining started\"\n"
+      << "  \"message\": \"Mining started\",\n"
+      << "  \"address\": \"" << miner_->GetMiningAddress().GetHex() << "\"\n"
       << "}\n";
   return oss.str();
 }
@@ -1008,71 +1031,75 @@ std::string RPCServer::HandleGenerate(const std::vector<std::string> &params) {
     return "{\"error\":\"Missing number of blocks parameter\"}\n";
   }
 
-  // SECURITY FIX: Safe integer parsing and reduced limit
-  auto num_blocks_opt = SafeParseInt(params[0], 1, 100);
+  // SECURITY FIX: Safe integer parsing with reasonable limit for regtest
+  auto num_blocks_opt = SafeParseInt(params[0], 1, 1000);
   if (!num_blocks_opt) {
-    return "{\"error\":\"Invalid number of blocks (must be 1-100)\"}\n";
+    return "{\"error\":\"Invalid number of blocks (must be 1-1000)\"}\n";
   }
 
   int num_blocks = *num_blocks_opt;
 
-  // Get starting height
-  auto *start_tip = chainstate_manager_.GetTip();
+  // Parse optional mining address parameter (second parameter)
+  // Note: Address is "sticky" - if not provided, previous address is retained
+  if (params.size() >= 2) {
+    const std::string& address_str = params[1];
+
+    // Validate address is 40 hex characters (160 bits / 4 bits per hex char)
+    if (address_str.length() != 40) {
+      return "{\"error\":\"Invalid mining address (must be 40 hex characters)\"}\n";
+    }
+
+    // Validate all characters are hex
+    for (char c : address_str) {
+      if (!std::isxdigit(c)) {
+        return "{\"error\":\"Invalid mining address (must contain only hex characters)\"}\n";
+      }
+    }
+
+    // Parse and set mining address (persists across subsequent calls)
+    uint160 mining_address;
+    mining_address.SetHex(address_str);
+    miner_->SetMiningAddress(mining_address);
+  }
+
+  // Get starting height and calculate target
+  const chain::CBlockIndex *start_tip = chainstate_manager_.GetTip();
   int start_height = start_tip ? start_tip->nHeight : -1;
+  int target_height = start_height + num_blocks;
 
-  std::vector<std::string> block_hashes;
+  // Ensure miner is stopped before starting
+  miner_->Stop();
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-  // Mine blocks one at a time
-  for (int i = 0; i < num_blocks; i++) {
-    // Start mining (single-threaded for regtest)
-    if (!miner_->Start()) {
-      std::ostringstream oss;
-      oss << "{\"error\":\"Failed to start mining at block " << i << "\"}\n";
-      return oss.str();
-    }
-
-    // Wait for block to be found (up to 60 seconds)
-    int wait_count = 0;
-    auto *current_tip = chainstate_manager_.GetTip();
-    int current_height = current_tip ? current_tip->nHeight : -1;
-    int expected_height = start_height + i + 1;
-
-    while (current_height < expected_height && wait_count < 600) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      current_tip = chainstate_manager_.GetTip();
-      current_height = current_tip ? current_tip->nHeight : -1;
-      wait_count++;
-    }
-
-    // Stop mining for this block
-    miner_->Stop();
-
-    if (current_height < expected_height) {
-      std::ostringstream oss;
-      oss << "{\"error\":\"Timeout waiting for block " << (i + 1) << "\"}\n";
-      return oss.str();
-    }
-
-    // Get the hash of the newly mined block
-    if (current_tip) {
-      block_hashes.push_back(current_tip->GetBlockHash().GetHex());
-    }
-
-    // Small delay between blocks to avoid rapid-fire issues
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  // Start mining with target height (miner stops itself when reached)
+  if (!miner_->Start(target_height)) {
+    LOG_ERROR("RPC: Failed to start mining");
+    return "[]\n";
   }
 
-  // Return list of block hashes
+  // Wait for miner to stop (up to 10 minutes total)
+  int wait_count = 0;
+  while (miner_->IsMining() && wait_count < 6000) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    wait_count++;
+  }
+
+  // Ensure miner is fully stopped
+  miner_->Stop();
+
+  // Get final height
+  const chain::CBlockIndex *current_tip = chainstate_manager_.GetTip();
+  int actual_height = current_tip ? current_tip->nHeight : -1;
+  int blocks_mined = actual_height - start_height;
+
+  // Return simple success message with count
+  // NOTE: We don't return block hashes to avoid RPC buffer overflow
+  // (returning 100+ hashes can exceed the 4KB buffer and crash the node)
   std::ostringstream oss;
-  oss << "[\n";
-  for (size_t i = 0; i < block_hashes.size(); i++) {
-    oss << "  \"" << block_hashes[i] << "\"";
-    if (i < block_hashes.size() - 1) {
-      oss << ",";
-    }
-    oss << "\n";
-  }
-  oss << "]\n";
+  oss << "{\n"
+      << "  \"blocks\": " << blocks_mined << ",\n"
+      << "  \"height\": " << actual_height << "\n"
+      << "}\n";
   return oss.str();
 }
 

@@ -175,22 +175,30 @@ class TestNode:
         # Try to parse JSON response
         try:
             return json.loads(result.stdout)
-        except json.JSONDecodeError:
-            return result.stdout.strip()
+        except json.JSONDecodeError as e:
+            # Don't silently return string - raise error with context
+            raise Exception(
+                f"RPC {method} returned invalid JSON:\n"
+                f"Error: {e}\n"
+                f"Output: {result.stdout[:500]}"  # First 500 chars for debugging
+            )
 
     def generate(self, nblocks, address=None, timeout=120):
-        """Generate blocks with configurable timeout."""
+        """Generate blocks with configurable timeout.
+
+        Returns dict with 'blocks' and 'height' keys.
+        """
         if address is None:
             address = "0000000000000000000000000000000000000000"
         return self.rpc("generate", nblocks, address, timeout=timeout)
 
-    def get_info(self):
-        """Get node info."""
-        return self.rpc("getinfo")
+    def get_info(self, timeout=30):
+        """Get node info with configurable timeout."""
+        return self.rpc("getinfo", timeout=timeout)
 
-    def get_peer_info(self):
-        """Get peer connection info."""
-        return self.rpc("getpeerinfo")
+    def get_peer_info(self, timeout=30):
+        """Get peer connection info with configurable timeout."""
+        return self.rpc("getpeerinfo", timeout=timeout)
 
     def add_node(self, node_addr, command="add"):
         """Add a peer node."""

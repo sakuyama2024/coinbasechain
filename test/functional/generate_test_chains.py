@@ -64,12 +64,16 @@ def main():
 
             # Mine blocks
             log(f"  Mining {height} blocks...", YELLOW)
-            node.generate(height, timeout=120)
+            result = node.generate(height, timeout=120)
+            log(f"  Generated {len(result)} block hashes", YELLOW)
+            time.sleep(1)  # Let blocks settle
 
-            # Verify
+            # Verify (info['blocks'] is the best block height, not total count)
             info = node.get_info()
-            if info['blocks'] != height:
-                log(f"  ERROR: Expected height {height}, got {info['blocks']}", RED)
+            expected_height = height  # After mining N blocks, best block height should be N
+            log(f"  Current height: {info['blocks']}, expected: {expected_height}", YELLOW)
+            if info['blocks'] != expected_height:
+                log(f"  ERROR: Height mismatch!", RED)
                 node.stop()
                 return 1
 

@@ -19,8 +19,20 @@ from test_node import TestNode
 
 def main():
     """Generate and save test chain."""
-    num_blocks = int(sys.argv[1]) if len(sys.argv) > 1 else 2500
-    output_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(__file__).parent / "test_chains"
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Generate pre-mined test chain')
+    parser.add_argument('num_blocks', type=int, nargs='?', default=2500,
+                       help='Number of blocks to generate (default: 2500)')
+    parser.add_argument('output_dir', type=str, nargs='?',
+                       default=str(Path(__file__).parent / "test_chains"),
+                       help='Output directory for chain data')
+    parser.add_argument('-f', '--force', action='store_true',
+                       help='Overwrite existing chain without prompting')
+
+    args = parser.parse_args()
+    num_blocks = args.num_blocks
+    output_dir = Path(args.output_dir)
 
     print(f"Generating test chain with {num_blocks} blocks...")
     print(f"Output directory: {output_dir}")
@@ -31,12 +43,21 @@ def main():
     chain_dir = output_dir / f"chain_{num_blocks}_blocks"
 
     if chain_dir.exists():
-        print(f"Chain already exists at {chain_dir}")
-        response = input("Overwrite? (y/N): ")
-        if response.lower() != 'y':
-            print("Aborted.")
-            return 0
-        shutil.rmtree(chain_dir)
+        if args.force:
+            print(f"Removing existing chain at {chain_dir}...")
+            shutil.rmtree(chain_dir)
+        else:
+            print(f"Chain already exists at {chain_dir}")
+            if sys.stdin.isatty():
+                response = input("Overwrite? (y/N): ")
+                if response.lower() != 'y':
+                    print("Aborted.")
+                    return 0
+            else:
+                print("Error: Chain exists and --force not specified (non-interactive mode)")
+                print("Use --force to overwrite without prompting")
+                return 1
+            shutil.rmtree(chain_dir)
 
     # Setup temporary directory for node
     test_dir = Path(tempfile.mkdtemp(prefix="coinbasechain_gen_"))

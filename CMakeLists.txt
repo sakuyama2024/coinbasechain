@@ -307,6 +307,7 @@ add_executable(coinbasechain_tests
     test/unit/message_tests.cpp
     test/unit/peer_manager_tests.cpp
     test/unit/message_router_tests.cpp
+    test/unit/miner_tests.cpp
     # Integration tests
     test/integration/banman_adversarial_tests.cpp
     test/integration/header_sync_adversarial_tests.cpp

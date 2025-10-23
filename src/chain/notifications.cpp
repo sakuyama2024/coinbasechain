@@ -111,6 +111,19 @@ ChainNotifications::SubscribeSuspiciousReorg(SuspiciousReorgCallback callback) {
   return Subscription(this, id);
 }
 
+ChainNotifications::Subscription
+ChainNotifications::SubscribeNetworkExpired(NetworkExpiredCallback callback) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  size_t id = next_id_++;
+
+  CallbackEntry entry;
+  entry.id = id;
+  entry.network_expired = std::move(callback);
+  callbacks_.push_back(std::move(entry));
+
+  return Subscription(this, id);
+}
+
 void ChainNotifications::NotifyBlockConnected(
     const CBlockHeader &block, const chain::CBlockIndex *pindex) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -161,6 +174,17 @@ void ChainNotifications::NotifySuspiciousReorg(int reorg_depth,
   for (const auto &entry : callbacks_) {
     if (entry.suspicious_reorg) {
       entry.suspicious_reorg(reorg_depth, max_allowed);
+    }
+  }
+}
+
+void ChainNotifications::NotifyNetworkExpired(int current_height,
+                                               int expiration_height) {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  for (const auto &entry : callbacks_) {
+    if (entry.network_expired) {
+      entry.network_expired(current_height, expiration_height);
     }
   }
 }

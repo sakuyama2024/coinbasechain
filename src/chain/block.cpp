@@ -26,16 +26,10 @@ uint256 CBlockHeader::GetHash() const noexcept {
 
   // Double SHA256 - use separate hasher instances for safety
   // (not all CSHA256 implementations guarantee Reset() works after Finalize())
-  uint8_t h1[32], h2[32];
-  CSHA256().Write(s.data(), s.size()).Finalize(h1);
-  CSHA256().Write(h1, 32).Finalize(h2);
-
-  // CSHA256 outputs bytes in big-endian order, but uint256 stores bytes
-  // in little-endian format. Reverse big-endian digest into little-endian
-  // storage.
-  uint256 out;
-  std::reverse_copy(h2, h2 + 32, out.begin());
-  return out;
+  uint256 result;
+  CSHA256().Write(s.data(), s.size()).Finalize(result.begin());
+  CSHA256().Write(result.begin(), CSHA256::OUTPUT_SIZE).Finalize(result.begin());
+  return result;
 }
 
 CBlockHeader::HeaderBytes CBlockHeader::SerializeFixed() const noexcept {

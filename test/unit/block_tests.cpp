@@ -1,5 +1,6 @@
 #include "catch_amalgamated.hpp"
 #include "chain/block.hpp"
+#include "chain/sha256.hpp"
 #include <cstring>
 #include <array>
 #include <span>
@@ -483,9 +484,9 @@ TEST_CASE("CBlockHeader MainNet genesis block golden vector", "[block]") {
         uint256 hash = genesis.GetHash();
         std::string hashHex = hash.GetHex();
 
-        // Expected: a7cf84a2131ea5203b9feec6b4af843856c285f183b7ba529a89d7dc769bde36
-        // (This is the internal representation; display order would be byte-reversed)
-        REQUIRE(hashHex == "a7cf84a2131ea5203b9feec6b4af843856c285f183b7ba529a89d7dc769bde36");
+        // Expected: 36de9b76dcd7899a52bab783f185c2563884afb4c6ee9f3b20a51e13a284cfa7
+        // (This is the display format; GetHex() reverses bytes per Bitcoin convention)
+        REQUIRE(hashHex == "36de9b76dcd7899a52bab783f185c2563884afb4c6ee9f3b20a51e13a284cfa7");
     }
 
     SECTION("Genesis block round-trip preserves hash") {
@@ -558,5 +559,135 @@ TEST_CASE("CBlockHeader comprehensive hex golden vector", "[block]") {
 
         // Verify the hash is deterministic across runs
         REQUIRE(hashHex == hash2.GetHex());
+    }
+}
+
+TEST_CASE("CBlockHeader alpha-release compatibility", "[block][alpha]") {
+    SECTION("Hash computation matches alpha-release (no byte reversal)") {
+        // Alpha-release uses HashWriter pattern: double SHA256 with NO byte reversal
+        // Our refactored code should produce identical hashes
+
+        CBlockHeader header;
+        header.nVersion = 1;
+        header.hashPrevBlock.SetNull();
+        header.minerAddress.SetNull();
+        header.nTime = 1234567890;
+        header.nBits = 0x1d00ffff;
+        header.nNonce = 42;
+        header.hashRandomX.SetNull();
+
+        // Get hash from our implementation
+        uint256 our_hash = header.GetHash();
+
+        // Compute hash using alpha-release logic (copied from alpha-release src/hash.h)
+        // Alpha HashWriter::GetHash() does: double SHA256, NO byte reversal
+        auto serialized = header.SerializeFixed();
+        uint256 alpha_hash;
+        CSHA256().Write(serialized.data(), serialized.size()).Finalize(alpha_hash.begin());
+        CSHA256().Write(alpha_hash.begin(), CSHA256::OUTPUT_SIZE).Finalize(alpha_hash.begin());
+
+        // Our hash MUST match alpha-release hash exactly
+        REQUIRE(our_hash == alpha_hash);
+
+        INFO("Our hash:   " << our_hash.GetHex());
+        INFO("Alpha hash: " << alpha_hash.GetHex());
+    }
+
+    SECTION("Genesis block hash matches alpha-release mainnet genesis") {
+        // Mainnet genesis from chainparams.cpp
+        CBlockHeader genesis;
+        genesis.nVersion = 1;
+        genesis.hashPrevBlock.SetNull();
+        genesis.minerAddress.SetNull();
+        genesis.nTime = 1760292878;      // Oct 12, 2025
+        genesis.nBits = 0x1e270fd8;
+        genesis.nNonce = 633285;
+        genesis.hashRandomX.SetNull();
+
+        // Our implementation
+        uint256 our_hash = genesis.GetHash();
+
+        // Alpha-release logic (double SHA256, no reversal)
+        auto serialized = genesis.SerializeFixed();
+        uint256 alpha_hash;
+        CSHA256().Write(serialized.data(), serialized.size()).Finalize(alpha_hash.begin());
+        CSHA256().Write(alpha_hash.begin(), CSHA256::OUTPUT_SIZE).Finalize(alpha_hash.begin());
+
+        // Must match
+        REQUIRE(our_hash == alpha_hash);
+
+        // Also verify against the expected mainnet genesis hash (GetHex() displays in reversed byte order)
+        REQUIRE(our_hash.GetHex() == "36de9b76dcd7899a52bab783f185c2563884afb4c6ee9f3b20a51e13a284cfa7");
+    }
+
+    SECTION("Multiple test vectors match alpha-release") {
+        // Test several different headers to ensure consistency
+        struct TestVector {
+            int32_t version;
+            uint32_t time;
+            uint32_t bits;
+            uint32_t nonce;
+        };
+
+        TestVector vectors[] = {
+            {1, 0, 0x207fffff, 0},
+            {1, 1234567890, 0x1d00ffff, 42},
+            {1, 1760292878, 0x1e270fd8, 633285},
+            {2, 9999999, 0x1a0fffff, 123456},
+        };
+
+        for (const auto& vec : vectors) {
+            CBlockHeader header;
+            header.nVersion = vec.version;
+            header.hashPrevBlock.SetNull();
+            header.minerAddress.SetNull();
+            header.nTime = vec.time;
+            header.nBits = vec.bits;
+            header.nNonce = vec.nonce;
+            header.hashRandomX.SetNull();
+
+            // Our implementation
+            uint256 our_hash = header.GetHash();
+
+            // Alpha-release logic
+            auto serialized = header.SerializeFixed();
+            uint256 alpha_hash;
+            CSHA256().Write(serialized.data(), serialized.size()).Finalize(alpha_hash.begin());
+            CSHA256().Write(alpha_hash.begin(), CSHA256::OUTPUT_SIZE).Finalize(alpha_hash.begin());
+
+            // Must match for every test vector
+            REQUIRE(our_hash == alpha_hash);
+
+            INFO("Test vector: version=" << vec.version << " time=" << vec.time
+                 << " bits=0x" << std::hex << vec.bits << " nonce=" << std::dec << vec.nonce);
+            INFO("Hash: " << our_hash.GetHex());
+        }
+    }
+
+    SECTION("Regtest genesis matches alpha-release") {
+        // Regtest genesis from chainparams.cpp
+        CBlockHeader genesis;
+        genesis.nVersion = 1;
+        genesis.hashPrevBlock.SetNull();
+        genesis.minerAddress.SetNull();
+        genesis.nTime = 1296688602;
+        genesis.nBits = 0x207fffff;
+        genesis.nNonce = 2;
+        genesis.hashRandomX.SetNull();
+
+        // Our implementation
+        uint256 our_hash = genesis.GetHash();
+
+        // Alpha-release logic
+        auto serialized = genesis.SerializeFixed();
+        uint256 alpha_hash;
+        CSHA256().Write(serialized.data(), serialized.size()).Finalize(alpha_hash.begin());
+        CSHA256().Write(alpha_hash.begin(), CSHA256::OUTPUT_SIZE).Finalize(alpha_hash.begin());
+
+        // Must match
+        REQUIRE(our_hash == alpha_hash);
+
+        // Verify against expected regtest genesis hash
+        REQUIRE(our_hash.GetHex() == "0233b37bb6942bfb471cfd7fb95caab0e0f7b19cc8767da65fbef59eb49e45bd");
     }
 }

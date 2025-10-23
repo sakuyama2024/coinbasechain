@@ -99,7 +99,13 @@ def main():
         max_wait = 600  # 10 minutes max (syncing 12000 blocks takes time)
 
         while time.time() - start_time < max_wait:
-            info1 = node1.get_info()
+            # Use long timeout during sync (RandomX verification is slow)
+            try:
+                info1 = node1.get_info(timeout=120)
+            except Exception as e:
+                print(f"  Warning: get_info() failed: {e}")
+                time.sleep(1)
+                continue
             current_height = info1['blocks']
             current_time = time.time()
 
