@@ -161,19 +161,15 @@ uint32_t GetNextWorkRequired(const chain::CBlockIndex *pindexPrev,
   assert(pindexAnchor != nullptr);
   assert(pindexAnchor->nHeight == consensus.nASERTAnchorHeight);
 
-  // Also need the anchor's parent for nPrevBlockTime
-  const chain::CBlockIndex *pindexAnchorParent = pindexAnchor->pprev;
-  assert(pindexAnchorParent != nullptr);
-
   // Get reference target from anchor block
   arith_uint256 refTarget;
   refTarget.SetCompact(pindexAnchor->nBits);
   const arith_uint256 powLimit = UintToArith256(consensus.powLimit);
 
   // Calculate time and height differences from anchor
-  // nTimeDiff: time from anchor's parent to current block's parent
-  // nHeightDiff: height difference from anchor to current block's parent
-  const int64_t nTimeDiff = pindexPrev->nTime - pindexAnchorParent->nTime;
+  // nTimeDiff: time elapsed from anchor block to current block's parent
+  // nHeightDiff: number of blocks from anchor to current block's parent
+  const int64_t nTimeDiff = pindexPrev->nTime - pindexAnchor->nTime;
   const int nHeightDiff = pindexPrev->nHeight - consensus.nASERTAnchorHeight;
 
   LOG_CHAIN_TRACE("GetNextWorkRequired: ASERT calculation: anchor_height={} anchor_bits={:#x} "
