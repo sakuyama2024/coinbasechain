@@ -83,7 +83,8 @@ bool Application::initialize() {
   // Subscribe to block notifications to relay new blocks to peers
   block_sub_ = Notifications().SubscribeBlockConnected(
       [this](const CBlockHeader &block, const chain::CBlockIndex *pindex) {
-        if (pindex && network_manager_) {
+        // Only relay blocks if not in IBD (Bitcoin Core behavior)
+        if (pindex && network_manager_ && !chainstate_manager_->IsInitialBlockDownload()) {
           network_manager_->relay_block(pindex->GetBlockHash());
         }
       });

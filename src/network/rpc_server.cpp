@@ -458,8 +458,8 @@ RPCServer::HandleGetBlockchainInfo(const std::vector<std::string> &params) {
       << "  \"difficulty\": " << difficulty << ",\n"
       << "  \"time\": " << (tip ? tip->nTime : 0) << ",\n"
       << "  \"mediantime\": " << (tip ? tip->GetMedianTimePast() : 0) << ",\n"
-      << "  \"chainwork\": \"" << (tip ? tip->nChainWork.GetHex() : "0")
-      << "\"\n"
+      << "  \"chainwork\": \"" << (tip ? tip->nChainWork.GetHex() : "0") << "\",\n"
+      << "  \"initialblockdownload\": " << (chainstate_manager_.IsInitialBlockDownload() ? "true" : "false") << "\n"
       << "}\n";
   return oss.str();
 }
