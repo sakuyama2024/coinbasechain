@@ -424,14 +424,14 @@ TEST_CASE("CBlockHeader array-based Deserialize", "[block]") {
 TEST_CASE("CBlockHeader MainNet genesis block golden vector", "[block]") {
     SECTION("MainNet genesis block from chainparams") {
         // This is the actual genesis block from chainparams.cpp
-        // Mined on: 2025-10-24
-        // Expected hash: b675bea090e27659c91885afe341facf399cf84997918bac927948ee75409ebf
+        // Mined on: 2025-10-27
+        // Expected hash: 938f0a2ca374ea2fade1911b254269a82576d0c95a97807a2120e1e508f0d688
 
         CBlockHeader genesis;
         genesis.nVersion = 1;
         genesis.hashPrevBlock.SetNull();
         genesis.minerAddress.SetNull();
-        genesis.nTime = 1761330012;      // Oct 24, 2025
+        genesis.nTime = 1761564252;      // Oct 27, 2025
         genesis.nBits = 0x1f06a000;      // Target: ~2.5 minutes at 50 H/s
         genesis.nNonce = 8497;           // Found by genesis miner
         genesis.hashRandomX.SetNull();
@@ -457,8 +457,8 @@ TEST_CASE("CBlockHeader MainNet genesis block golden vector", "[block]") {
             REQUIRE(serialized[i] == 0x00);
         }
 
-        // nTime = 1761330012 (0x68FF56DC) at offset 56 (little-endian: DC 56 FF 68)
-        REQUIRE(serialized[56] == 0xDC);
+        // nTime = 1761564252 (0x68FF565C) at offset 56 (little-endian: 5C 56 FF 68)
+        REQUIRE(serialized[56] == 0x5C);
         REQUIRE(serialized[57] == 0x56);
         REQUIRE(serialized[58] == 0xFF);
         REQUIRE(serialized[59] == 0x68);
@@ -484,9 +484,9 @@ TEST_CASE("CBlockHeader MainNet genesis block golden vector", "[block]") {
         uint256 hash = genesis.GetHash();
         std::string hashHex = hash.GetHex();
 
-        // Expected: b675bea090e27659c91885afe341facf399cf84997918bac927948ee75409ebf
+        // Expected: 938f0a2ca374ea2fade1911b254269a82576d0c95a97807a2120e1e508f0d688
         // (This is the display format; GetHex() reverses bytes per Bitcoin convention)
-        REQUIRE(hashHex == "b675bea090e27659c91885afe341facf399cf84997918bac927948ee75409ebf");
+        REQUIRE(hashHex == "938f0a2ca374ea2fade1911b254269a82576d0c95a97807a2120e1e508f0d688");
     }
 
     SECTION("Genesis block round-trip preserves hash") {
@@ -494,7 +494,7 @@ TEST_CASE("CBlockHeader MainNet genesis block golden vector", "[block]") {
         genesis.nVersion = 1;
         genesis.hashPrevBlock.SetNull();
         genesis.minerAddress.SetNull();
-        genesis.nTime = 1761330012;
+        genesis.nTime = 1761564252;
         genesis.nBits = 0x1f06a000;
         genesis.nNonce = 8497;
         genesis.hashRandomX.SetNull();
@@ -599,7 +599,7 @@ TEST_CASE("CBlockHeader alpha-release compatibility", "[block][alpha]") {
         genesis.nVersion = 1;
         genesis.hashPrevBlock.SetNull();
         genesis.minerAddress.SetNull();
-        genesis.nTime = 1761330012;      // Oct 24, 2025
+        genesis.nTime = 1761564252;      // Oct 27, 2025
         genesis.nBits = 0x1f06a000;
         genesis.nNonce = 8497;
         genesis.hashRandomX.SetNull();
@@ -617,7 +617,7 @@ TEST_CASE("CBlockHeader alpha-release compatibility", "[block][alpha]") {
         REQUIRE(our_hash == alpha_hash);
 
         // Also verify against the expected mainnet genesis hash (GetHex() displays in reversed byte order)
-        REQUIRE(our_hash.GetHex() == "b675bea090e27659c91885afe341facf399cf84997918bac927948ee75409ebf");
+        REQUIRE(our_hash.GetHex() == "938f0a2ca374ea2fade1911b254269a82576d0c95a97807a2120e1e508f0d688");
     }
 
     SECTION("Multiple test vectors match alpha-release") {
@@ -632,7 +632,7 @@ TEST_CASE("CBlockHeader alpha-release compatibility", "[block][alpha]") {
         TestVector vectors[] = {
             {1, 0, 0x207fffff, 0},
             {1, 1234567890, 0x1d00ffff, 42},
-            {1, 1761330012, 0x1f06a000, 8497},
+            {1, 1761564252, 0x1f06a000, 8497},
             {2, 9999999, 0x1a0fffff, 123456},
         };
 
