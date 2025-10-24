@@ -114,6 +114,7 @@ bool NetworkManager::start() {
     connect_timer_ = std::make_unique<boost::asio::steady_timer>(io_context_);
     maintenance_timer_ = std::make_unique<boost::asio::steady_timer>(io_context_);
     feeler_timer_ = std::make_unique<boost::asio::steady_timer>(io_context_);
+    sendmessages_timer_ = std::make_unique<boost::asio::steady_timer>(io_context_);
   }
 
   // Start IO threads
@@ -167,6 +168,7 @@ bool NetworkManager::start() {
     schedule_next_connection_attempt();
     schedule_next_maintenance();
     schedule_next_feeler();
+    schedule_next_sendmessages();
   }
 
   return true;
@@ -206,6 +208,9 @@ void NetworkManager::stop() {
   if (feeler_timer_) {
     feeler_timer_->cancel();
   }
+  if (sendmessages_timer_) {
+    sendmessages_timer_->cancel();
+  }
 
   // Stop transport (stops listening and joins IO threads)
   // Must be done AFTER disconnecting peers to avoid hanging on pending async operations
@@ -229,7 +234,10 @@ void NetworkManager::stop() {
 }
 
 bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
+  LOG_NET_DEBUG("connect_to() called");
+
   if (!running_.load(std::memory_order_acquire)) {
+    LOG_NET_DEBUG("connect_to() failed: not running");
     return false;
   }
 
@@ -263,7 +271,11 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
   }
 
   // Check if we can add more outbound connections
-  if (!peer_manager_->needs_more_outbound()) {
+  bool needs_more = peer_manager_->needs_more_outbound();
+  size_t outbound = peer_manager_->outbound_count();
+  LOG_NET_DEBUG("connect_to(): needs_more_outbound={}, outbound_count={}", needs_more, outbound);
+  if (!needs_more) {
+    LOG_NET_DEBUG("connect_to() failed: don't need more outbound connections");
     return false;
   }
 
@@ -599,7 +611,7 @@ void NetworkManager::run_maintenance() {
     ban_man_->SweepBanned();
   }
 
-  // Periodically announce our tip to peers
+  // Periodically announce our tip to peers (Bitcoin Core pattern: queue only, SendMessages loop flushes)
   if (block_relay_manager_) {
     block_relay_manager_->AnnounceTipToAllPeers();
   }
@@ -621,6 +633,32 @@ void NetworkManager::schedule_next_maintenance() {
     if (!ec && running_.load(std::memory_order_acquire)) {
       run_maintenance();
       schedule_next_maintenance();
+    }
+  });
+}
+
+void NetworkManager::run_sendmessages() {
+  if (!running_.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  // Flush queued block announcements (Bitcoin Core SendMessages pattern)
+  if (block_relay_manager_) {
+    LOG_NET_DEBUG("SendMessages: flushing block announcements");
+    block_relay_manager_->FlushBlockAnnouncements();
+  }
+}
+
+void NetworkManager::schedule_next_sendmessages() {
+  if (!running_.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  sendmessages_timer_->expires_after(SENDMESSAGES_INTERVAL);
+  sendmessages_timer_->async_wait([this](const boost::system::error_code &ec) {
+    if (!ec && running_.load(std::memory_order_acquire)) {
+      run_sendmessages();
+      schedule_next_sendmessages();
     }
   });
 }

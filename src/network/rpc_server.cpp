@@ -646,7 +646,10 @@ RPCServer::HandleGetPeerInfo(const std::vector<std::string> &params) {
 }
 
 std::string RPCServer::HandleAddNode(const std::vector<std::string> &params) {
+  LOG_INFO("RPC addnode called");
+
   if (params.empty()) {
+    LOG_INFO("RPC addnode: missing address");
     return "{\"error\":\"Missing node address parameter\"}\n";
   }
 
@@ -656,9 +659,12 @@ std::string RPCServer::HandleAddNode(const std::vector<std::string> &params) {
     command = params[1];
   }
 
+  LOG_INFO("RPC addnode: address={}, command={}", node_addr, command);
+
   // Parse address:port
   size_t colon_pos = node_addr.find_last_of(':');
   if (colon_pos == std::string::npos) {
+    LOG_INFO("RPC addnode: invalid address format");
     return "{\"error\":\"Invalid address format (use host:port)\"}\n";
   }
 
@@ -668,6 +674,7 @@ std::string RPCServer::HandleAddNode(const std::vector<std::string> &params) {
   // SECURITY FIX: Safe port parsing with validation
   auto port_opt = SafeParsePort(port_str);
   if (!port_opt) {
+    LOG_INFO("RPC addnode: invalid port");
     return "{\"error\":\"Invalid port (must be 1-65535)\"}\n";
   }
 
@@ -701,8 +708,11 @@ std::string RPCServer::HandleAddNode(const std::vector<std::string> &params) {
     }
 
     // Connect to the node
+    LOG_INFO("RPC addnode: calling network_manager_.connect_to()");
     bool success = network_manager_.connect_to(addr);
+    LOG_INFO("RPC addnode: connect_to() returned {}", success);
     if (!success) {
+      LOG_INFO("RPC addnode: connect_to() failed");
       return "{\"error\":\"Failed to connect to node\"}\n";
     }
 

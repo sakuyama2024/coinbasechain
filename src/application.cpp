@@ -108,11 +108,16 @@ bool Application::initialize() {
         request_shutdown();
       });
 
-  // Subscribe to chain tip changes to invalidate miner block templates
+  // Subscribe to chain tip changes to invalidate miner block templates and announce to peers
   tip_sub_ = Notifications().SubscribeChainTip(
       [this](const chain::CBlockIndex *pindexNew, int height) {
         if (miner_) {
           miner_->InvalidateTemplate();
+        }
+        // Queue tip announcements to all connected peers (Bitcoin Core approach)
+        // Announcements are queued here and flushed by periodic SendMessages-like loop
+        if (network_manager_) {
+          network_manager_->announce_tip_to_peers();
         }
       });
 

@@ -153,7 +153,9 @@ private:
   std::unique_ptr<boost::asio::steady_timer> connect_timer_;
   std::unique_ptr<boost::asio::steady_timer> maintenance_timer_;
   std::unique_ptr<boost::asio::steady_timer> feeler_timer_;
+  std::unique_ptr<boost::asio::steady_timer> sendmessages_timer_;  // Bitcoin-like SendMessages loop
   static constexpr std::chrono::minutes FEELER_INTERVAL{2};
+  static constexpr std::chrono::seconds SENDMESSAGES_INTERVAL{1};  // Flush announcements every 1s (Bitcoin pattern)
 
   // Tip announcement tracking (for periodic re-announcements)
   int64_t last_tip_announcement_time_{
@@ -174,6 +176,10 @@ private:
   // Maintenance
   void run_maintenance();
   void schedule_next_maintenance();
+
+  // Bitcoin-like SendMessages loop (flushes block announcements)
+  void run_sendmessages();
+  void schedule_next_sendmessages();
 
   // Initial sync
   void check_initial_sync();
