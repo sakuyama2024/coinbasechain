@@ -46,3 +46,19 @@ deploy/ansible/*.vault
 .env
 *.env.local
 !.env.example
+
+# Runtime generated files (node data directories)
+debug.log
+*.log
+banlist.json
+peers.json
+anchors.json
+anchors.dat
+node.sock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
