@@ -642,6 +642,11 @@ void NetworkManager::run_sendmessages() {
     return;
   }
 
+  // Check for initial sync opportunities (Bitcoin Core SendMessages pattern)
+  if (header_sync_manager_) {
+    header_sync_manager_->CheckInitialSync();
+  }
+
   // Flush queued block announcements (Bitcoin Core SendMessages pattern)
   if (block_relay_manager_) {
     LOG_NET_DEBUG("SendMessages: flushing block announcements");

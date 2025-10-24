@@ -166,6 +166,10 @@ struct NetworkAddress {
   static NetworkAddress from_ipv4(uint64_t services, uint32_t ipv4,
                                   uint16_t port);
 
+  // Helper to create from IP string (supports both IPv4 and IPv6)
+  static NetworkAddress from_string(const std::string &ip_str, uint16_t port,
+                                    uint64_t services = NODE_NETWORK);
+
   // Helper to get IPv4 (returns 0 if not IPv4-mapped)
   uint32_t get_ipv4() const;
 

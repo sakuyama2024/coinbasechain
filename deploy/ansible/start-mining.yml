@@ -1,6 +1,9 @@
 ---
 # Ansible Playbook: Start mining on CoinbaseChain nodes
 # Usage: ansible-playbook -i inventory.yml start-mining.yml
+#
+# Mining addresses are configured per-node in inventory.yml
+# Each node will mine to its own unique address for reward distribution
 
 - name: Start mining on CoinbaseChain nodes
   hosts: coinbasechain_nodes
@@ -10,15 +13,23 @@
     container_name: "coinbasechain-{{ coinbasechain_network }}"
 
   tasks:
-    - name: Start mining on {{ inventory_hostname }}
+    - name: Start mining on {{ inventory_hostname }} with address {{ mining_address }}
       shell: |
-        docker exec {{ container_name }} coinbasechain-cli startmining
+        docker exec {{ container_name }} coinbasechain-cli startmining {{ mining_address }}
       register: mining_result
       ignore_errors: yes
+      when: mining_address is defined
+
+    - name: Start mining on {{ inventory_hostname }} (no address specified)
+      shell: |
+        docker exec {{ container_name }} coinbasechain-cli startmining
+      register: mining_result_noaddr
+      ignore_errors: yes
+      when: mining_address is not defined
 
     - name: Display mining result
       debug:
-        msg: "{{ inventory_hostname }}: {{ mining_result.stdout }}"
+        msg: "{{ inventory_hostname }}: {{ mining_result.stdout | default(mining_result_noaddr.stdout) }}"
 
     - name: Get mining info
       shell: |

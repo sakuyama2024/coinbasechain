@@ -22,40 +22,6 @@ static uint64_t generate_nonce() {
 // Helper to get current timestamp (uses mockable time for testing)
 static int64_t get_timestamp() { return util::GetTime(); }
 
-// Helper to create NetworkAddress from IP string and port
-static protocol::NetworkAddress create_network_address(const std::string &ip_str,
-                                                      uint16_t port,
-                                                      uint64_t services = protocol::NODE_NETWORK) {
-  protocol::NetworkAddress addr;
-  addr.services = services;
-  addr.port = port;
-
-  // Parse IP address
-  boost::system::error_code ec;
-  auto ip_addr = boost::asio::ip::make_address(ip_str, ec);
-
-  if (ec) {
-    // If parsing fails, return empty address
-    addr.ip.fill(0);
-    LOG_NET_WARN("Failed to parse IP address '{}': {}", ip_str, ec.message());
-    return addr;
-  }
-
-  // Convert to IPv6 format (IPv4 addresses are mapped to IPv6)
-  if (ip_addr.is_v4()) {
-    // Convert IPv4 to IPv4-mapped IPv6 (::ffff:x.x.x.x)
-    auto v6_mapped = boost::asio::ip::make_address_v6(
-        boost::asio::ip::v4_mapped, ip_addr.to_v4());
-    auto bytes = v6_mapped.to_bytes();
-    std::copy(bytes.begin(), bytes.end(), addr.ip.begin());
-  } else {
-    // Pure IPv6
-    auto bytes = ip_addr.to_v6().to_bytes();
-    std::copy(bytes.begin(), bytes.end(), addr.ip.begin());
-  }
-
-  return addr;
-}
 
 // Peer implementation
 
@@ -288,7 +254,7 @@ void Peer::send_version() {
   if (connection_) {
     std::string peer_addr = connection_->remote_address();
     uint16_t peer_port = connection_->remote_port();
-    version_msg->addr_recv = create_network_address(peer_addr, peer_port);
+    version_msg->addr_recv = protocol::NetworkAddress::from_string(peer_addr, peer_port);
     LOG_NET_DEBUG("VERSION addr_recv set to {}:{}", peer_addr, peer_port);
   } else {
     // No connection yet (shouldn't happen), use empty address

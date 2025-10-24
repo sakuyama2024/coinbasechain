@@ -130,25 +130,34 @@ void AddressManager::good(const protocol::NetworkAddress &addr) {
   std::string key = info.get_key();
   uint32_t current_time = now();
 
+  LOG_NET_TRACE("AddressManager::good() called for address: {}", key);
+
   // Check if in new table
   auto new_it = new_.find(key);
   if (new_it != new_.end()) {
     // Move from new to tried
+    LOG_NET_TRACE("Moving address {} from 'new' to 'tried' table", key);
     new_it->second.tried = true;
     new_it->second.last_success = current_time;
     new_it->second.attempts = 0; // Reset failure count
 
     tried_[key] = new_it->second;
     new_.erase(new_it);
+    LOG_NET_TRACE("Address {} successfully moved to 'tried'. New size: {}, Tried size: {}",
+                  key, new_.size(), tried_.size());
     return;
   }
 
   // Already in tried table
   auto tried_it = tried_.find(key);
   if (tried_it != tried_.end()) {
+    LOG_NET_TRACE("Updating existing address {} in 'tried' table", key);
     tried_it->second.last_success = current_time;
     tried_it->second.attempts = 0; // Reset failure count
+    return;
   }
+
+  LOG_NET_WARN("AddressManager::good() called for unknown address: {}", key);
 }
 
 void AddressManager::failed(const protocol::NetworkAddress &addr) {

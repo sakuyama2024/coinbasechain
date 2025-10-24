@@ -63,24 +63,29 @@ bool MessageRouter::handle_verack(PeerPtr peer) {
     return true;
   }
 
+  // Mark outbound connections as successful in address manager
+  // Bitcoin Core: Does this in PeerManagerImpl::FinalizeNode() for all outbound types
+  // This saves the address to the "tried" table for reconnection on restart
+  // Note: FEELER connections are marked good in NetworkManager before peer->start()
+  if (!peer->is_inbound() && !peer->is_feeler() && addr_manager_) {
+    protocol::NetworkAddress addr = protocol::NetworkAddress::from_string(
+        peer->address(), peer->port());
+    // Add to address manager first if not already there (e.g., from anchors or -addnode)
+    // This ensures good() can move it to the "tried" table
+    addr_manager_->add(addr);
+    addr_manager_->good(addr);
+    LOG_NET_DEBUG("Marked outbound peer {}:{} as good in address manager",
+                  peer->address(), peer->port());
+  }
+
   // Announce our tip to this peer immediately (Bitcoin Core does this with no time throttling)
   // This allows peers to discover our chain and request headers if we're ahead
   if (block_relay_manager_) {
     block_relay_manager_->AnnounceTipToPeer(peer.get());
   }
 
-  // Initiate header sync if needed (only if we don't have a sync peer yet)
-  if (header_sync_manager_) {
-    uint64_t current_sync_peer = header_sync_manager_->GetSyncPeerId();
-    if (current_sync_peer == 0) {
-      // No sync peer yet, try to set this peer as sync peer
-      // Note: Logging is done in CheckInitialSync() to match Bitcoin Core patterns
-      header_sync_manager_->SetSyncPeer(peer->id());
-
-      // Send GETHEADERS to initiate sync (like Bitcoin's "initial getheaders")
-      header_sync_manager_->RequestHeadersFromPeer(peer);
-    }
-  }
+  // Note: Initial header sync is now initiated in NetworkManager::run_sendmessages()
+  // via periodic CheckInitialSync() calls (Bitcoin Core pattern)
 
   return true;
 }

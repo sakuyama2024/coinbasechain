@@ -113,6 +113,10 @@ public:
   const std::string &user_agent() const { return peer_user_agent_; }
   uint64_t peer_nonce() const { return peer_nonce_; }
 
+  // Header sync state (Bitcoin Core: CNodeState::fSyncStarted)
+  bool sync_started() const { return sync_started_; }
+  void set_sync_started(bool started) { sync_started_ = started; }
+
 private:
   // Private constructor - use create_outbound/create_inbound
   Peer(boost::asio::io_context &io_context, TransportConnectionPtr connection,
@@ -174,6 +178,7 @@ private:
   PeerStats stats_;
   MessageHandler message_handler_;
   bool successfully_connected_{false}; // Set to true after VERACK received
+  bool sync_started_{false};  // Bitcoin Core: CNodeState::fSyncStarted - whether we've started headers sync with this peer
 
   // Peer info from VERSION
   int32_t peer_version_ = 0;

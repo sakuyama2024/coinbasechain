@@ -1,6 +1,8 @@
 #include "network/protocol.hpp"
 #include <algorithm>
 #include <cstring>
+#include <boost/asio/ip/address.hpp>
+#include <boost/asio/ip/address_v6.hpp>
 
 namespace coinbasechain {
 namespace protocol {
@@ -53,6 +55,39 @@ NetworkAddress NetworkAddress::from_ipv4(uint64_t services, uint32_t ipv4,
   addr.ip[13] = (ipv4 >> 16) & 0xff;
   addr.ip[14] = (ipv4 >> 8) & 0xff;
   addr.ip[15] = ipv4 & 0xff;
+
+  return addr;
+}
+
+NetworkAddress NetworkAddress::from_string(const std::string &ip_str,
+                                           uint16_t port,
+                                           uint64_t services) {
+  NetworkAddress addr;
+  addr.services = services;
+  addr.port = port;
+
+  // Parse IP address
+  boost::system::error_code ec;
+  auto ip_addr = boost::asio::ip::make_address(ip_str, ec);
+
+  if (ec) {
+    // If parsing fails, return empty address
+    addr.ip.fill(0);
+    return addr;
+  }
+
+  // Convert to IPv6 format (IPv4 addresses are mapped to IPv6)
+  if (ip_addr.is_v4()) {
+    // Convert IPv4 to IPv4-mapped IPv6 (::ffff:x.x.x.x)
+    auto v6_mapped = boost::asio::ip::make_address_v6(
+        boost::asio::ip::v4_mapped, ip_addr.to_v4());
+    auto bytes = v6_mapped.to_bytes();
+    std::copy(bytes.begin(), bytes.end(), addr.ip.begin());
+  } else {
+    // Pure IPv6
+    auto bytes = ip_addr.to_v6().to_bytes();
+    std::copy(bytes.begin(), bytes.end(), addr.ip.begin());
+  }
 
   return addr;
 }

@@ -47,26 +47,32 @@ all:
           ansible_host: 178.18.251.16
           node_id: 0
           p2p_port: 19590
+          mining_address: "a000000000000000000000000000000000000001"
         ct21:
           ansible_host: 185.225.233.49
           node_id: 1
           p2p_port: 19590
+          mining_address: "a000000000000000000000000000000000000002"
         ct22:
           ansible_host: 207.244.248.15
           node_id: 2
           p2p_port: 19590
+          mining_address: "a000000000000000000000000000000000000003"
         ct23:
           ansible_host: 194.140.197.98
           node_id: 3
           p2p_port: 19590
+          mining_address: "a000000000000000000000000000000000000004"
         ct24:
           ansible_host: 173.212.251.205
           node_id: 4
           p2p_port: 19590
+          mining_address: "a000000000000000000000000000000000000005"
         ct25:
           ansible_host: 144.126.138.46
           node_id: 5
           p2p_port: 19590
+          mining_address: "a000000000000000000000000000000000000006"
       vars:
         ansible_user: root
         ansible_ssh_private_key_file: ~/.ssh/mykey

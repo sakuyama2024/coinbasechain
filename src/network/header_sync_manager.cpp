@@ -54,12 +54,18 @@ void HeaderSyncManager::CheckInitialSync() {
       continue; // Skip peers that haven't completed handshake
     }
 
+    // Bitcoin Core: Check !state.fSyncStarted to avoid re-requesting from same peer
+    if (peer->sync_started()) {
+      continue; // Already started sync with this peer
+    }
+
     // We found a ready outbound peer! Start initial sync with this peer
     int current_height = chainstate_manager_.GetChainHeight();
     LOG_NET_INFO("initial getheaders ({}) to peer={} (outbound)",
                  current_height, peer->id());
 
     SetSyncPeer(peer->id());
+    peer->set_sync_started(true);  // Bitcoin Core: state.fSyncStarted = true
 
     // Send GETHEADERS to initiate sync (like Bitcoin's "initial getheaders")
     RequestHeadersFromPeer(peer);
@@ -76,12 +82,18 @@ void HeaderSyncManager::CheckInitialSync() {
       continue; // Skip peers that haven't completed handshake
     }
 
+    // Bitcoin Core: Check !state.fSyncStarted to avoid re-requesting from same peer
+    if (peer->sync_started()) {
+      continue; // Already started sync with this peer
+    }
+
     // We found a ready inbound peer! Use it as fallback for initial sync
     int current_height = chainstate_manager_.GetChainHeight();
     LOG_NET_INFO("initial getheaders ({}) to peer={} (no outbound available)",
                  current_height, peer->id());
 
     SetSyncPeer(peer->id());
+    peer->set_sync_started(true);  // Bitcoin Core: state.fSyncStarted = true
 
     // Send GETHEADERS to initiate sync
     RequestHeadersFromPeer(peer);
@@ -408,16 +420,13 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   }
 
   // Check if we should request more headers
-  bool should_request = ShouldRequestMore();
-  bool synced = IsSynced();
-
-  if (should_request) {
-    // Bitcoin Core: "more getheaders (%d) to end to peer=%d"
-    int current_height = chainstate_manager_.GetChainHeight();
-    LOG_NET_INFO("more getheaders ({}) to peer={}", current_height, peer_id);
+  // Bitcoin Core: Never clears fSyncStarted after receiving headers successfully
+  // Only timeout clears it. This prevents trying all peers sequentially.
+  if (ShouldRequestMore()) {
     RequestHeadersFromPeer(peer);
-  } else if (synced) {
-    // Reset sync peer - we're done syncing (atomic store)
+  } else {
+    // No more headers to request from this peer - clear sync peer
+    // so we can try another peer if needed
     ClearSyncPeer();
   }
 
