@@ -510,16 +510,16 @@ TEST_CASE("PoW - ASERT difficulty adjustment detailed", "[pow][asert][detailed]"
         // Build chain up to anchor with normal spacing
         for (int i = 1; i <= ANCHOR_HEIGHT; i++) {
             chain[i]->nHeight = i;
-            chain[i]->nTime = chain[i-1]->nTime + 120;
+            chain[i]->nTime = chain[i-1]->nTime + 3600;  // 1 hour (mainnet)
             chain[i]->nBits = startingBits;
             chain[i]->pprev = chain[i-1].get();
             chain[i]->nChainWork = chain[i-1]->nChainWork + arith_uint256(1);
         }
 
-        // After anchor, blocks come SLOWER (240 seconds instead of 120)
+        // After anchor, blocks come SLOWER (7200 seconds instead of 3600)
         for (int i = ANCHOR_HEIGHT + 1; i <= ANCHOR_HEIGHT + 10; i++) {
             chain[i]->nHeight = i;
-            chain[i]->nTime = chain[i-1]->nTime + 240;  // Double the expected time!
+            chain[i]->nTime = chain[i-1]->nTime + 7200;  // Double the expected time!
             chain[i]->nBits = startingBits;
             chain[i]->pprev = chain[i-1].get();
             chain[i]->nChainWork = chain[i-1]->nChainWork + arith_uint256(1);
@@ -593,18 +593,18 @@ TEST_CASE("PoW - ASERT half-life behavior", "[pow][asert][halflife]") {
     const int ANCHOR_HEIGHT = consensus.nASERTAnchorHeight;
 
     // ASERT half-life: time for difficulty to double/halve
-    // In mainnet: nASERTHalfLife = 2 * 24 * 3600 = 172800 seconds (2 days)
-    // Block time: 120 seconds (2 minutes)
-    // 1 day = 1440 blocks = 172800 seconds
+    // In mainnet: nASERTHalfLife = 12 * 24 * 3600 = 1036800 seconds (12 days)
+    // Block time: 3600 seconds (1 hour)
+    // 1 day = 24 blocks = 86400 seconds
 
     SECTION("Half-life concept validation") {
-        // Build chain where 1440 blocks come in half the expected time
-        // Expected: 1440 * 120 = 172800 seconds (2 days = 1 half-life)
-        // Actual: 172800 / 2 = 86400 seconds (1 day)
+        // Build chain where 288 blocks come in half the expected time
+        // Expected: 288 * 3600 = 1036800 seconds (12 days = 1.0 half-life)
+        // Actual: 1036800 / 2 = 518400 seconds (6 days)
         // This puts us 0.5 half-lives ahead → target multiplies by 2^(-0.5) ≈ 0.707
         // (Difficulty increases by factor of ~1.41)
 
-        const int NUM_BLOCKS = 1440;
+        const int NUM_BLOCKS = 288;
         std::vector<std::unique_ptr<chain::CBlockIndex>> chain;
         for (int i = 0; i <= ANCHOR_HEIGHT + NUM_BLOCKS; i++) {
             chain.push_back(std::make_unique<chain::CBlockIndex>());
@@ -624,16 +624,16 @@ TEST_CASE("PoW - ASERT half-life behavior", "[pow][asert][halflife]") {
 
         for (int i = 1; i <= ANCHOR_HEIGHT; i++) {
             chain[i]->nHeight = i;
-            chain[i]->nTime = chain[i-1]->nTime + 120;
+            chain[i]->nTime = chain[i-1]->nTime + 3600;  // 1 hour (mainnet)
             chain[i]->nBits = startingBits;
             chain[i]->pprev = chain[i-1].get();
             chain[i]->nChainWork = chain[i-1]->nChainWork + arith_uint256(1);
         }
 
-        // After anchor: 1440 blocks in half the expected time (60s per block)
+        // After anchor: 144 blocks in half the expected time (1800s per block)
         for (int i = ANCHOR_HEIGHT + 1; i <= ANCHOR_HEIGHT + NUM_BLOCKS; i++) {
             chain[i]->nHeight = i;
-            chain[i]->nTime = chain[i-1]->nTime + 60;  // Half the expected time
+            chain[i]->nTime = chain[i-1]->nTime + 1800;  // Half the expected time
             chain[i]->nBits = startingBits;
             chain[i]->pprev = chain[i-1].get();
             chain[i]->nChainWork = chain[i-1]->nChainWork + arith_uint256(1);
@@ -968,7 +968,7 @@ TEST_CASE("PoW - Timestamp manipulation attack analysis", "[pow][asert][attack]"
 
         for (int i = 1; i <= ANCHOR_HEIGHT; i++) {
             chain[i]->nHeight = i;
-            chain[i]->nTime = chain[i-1]->nTime + 120;  // Normal spacing
+            chain[i]->nTime = chain[i-1]->nTime + 3600;  // 1 hour (mainnet)
             chain[i]->nBits = startBits;
             chain[i]->pprev = chain[i-1].get();
             chain[i]->nChainWork = chain[i-1]->nChainWork + arith_uint256(1);
@@ -976,13 +976,13 @@ TEST_CASE("PoW - Timestamp manipulation attack analysis", "[pow][asert][attack]"
 
         // After anchor: Attacker exploits MAX_FUTURE_BLOCK_TIME window
         // Reality: Blocks mined every 60 seconds
-        // Timestamps: Set to look like blocks are 2 hours + 120 seconds apart
+        // Timestamps: Set to look like blocks are 2 hours + 3600 seconds apart
         const int64_t TWO_HOURS = 2 * 60 * 60;  // 7200 seconds
         for (int i = ANCHOR_HEIGHT + 1; i <= ANCHOR_HEIGHT + 10; i++) {
             chain[i]->nHeight = i;
-            // Each block claims to be 2 hours + 120 seconds after previous
+            // Each block claims to be 2 hours + 3600 seconds after previous
             // (staying just within MAX_FUTURE_BLOCK_TIME validation)
-            chain[i]->nTime = chain[i-1]->nTime + TWO_HOURS + 120;
+            chain[i]->nTime = chain[i-1]->nTime + TWO_HOURS + 3600;
             chain[i]->nBits = startBits;
             chain[i]->pprev = chain[i-1].get();
             chain[i]->nChainWork = chain[i-1]->nChainWork + arith_uint256(1);
@@ -993,10 +993,10 @@ TEST_CASE("PoW - Timestamp manipulation attack analysis", "[pow][asert][attack]"
         arith_uint256 nextTarget = consensus::GetTargetFromBits(nextBits);
 
         // ASERT sees huge nTimeDiff → thinks blocks are WAY behind schedule
-        // nTimeDiff = 10 * (7200 + 120) = 73200 seconds
-        // Expected = 10 * 120 = 1200 seconds
-        // Behind by ~72000 seconds ≈ 20 hours
-        // This would trigger massive difficulty DECREASE (target increases toward powLimit)
+        // nTimeDiff = 10 * (7200 + 3600) = 108000 seconds
+        // Expected = 10 * 3600 = 36000 seconds
+        // Behind by 72000 seconds ≈ 20 hours
+        // This would trigger difficulty DECREASE (target increases toward powLimit)
 
         // Debug output
         INFO("Anchor target: " << anchorTarget.ToString());
@@ -1006,12 +1006,13 @@ TEST_CASE("PoW - Timestamp manipulation attack analysis", "[pow][asert][attack]"
 
         REQUIRE(nextTarget > anchorTarget);  // Difficulty DECREASED
         // The exact multiplier depends on ASERT's exponential calculation
-        // With 10 blocks at 7320s spacing (vs 120s expected), we're adding 72000s extra
-        // 72000 / 172800 (half-life) = 0.42 half-lives behind
-        // Target should increase by 2^0.42 ≈ 1.33x
+        // With 10 blocks at 9800s spacing (vs 3600s expected), we're adding 62000s extra
+        // 62000 / 1036800 (12-day half-life) = 0.06 half-lives behind
+        // Target should increase by 2^0.06 ≈ 1.04x
+        // Note: Longer half-life makes attack LESS effective (good for security!)
         double ratio = nextTarget.getdouble() / anchorTarget.getdouble();
         INFO("Target ratio (target_new / target_anchor): " << ratio);
-        REQUIRE(ratio > 1.2);  // At least 20% easier (actual ~33%)
+        REQUIRE(ratio > 1.03);  // At least 3% easier (actual ~4-5%)
     }
 
     SECTION("Low timestamp attack (increases difficulty - harms attacker)") {

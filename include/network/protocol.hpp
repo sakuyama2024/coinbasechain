@@ -122,7 +122,7 @@ constexpr int INACTIVITY_TIMEOUT_SEC =
     20 * 60; // 20 minutes - matches Bitcoin's TIMEOUT_INTERVAL
 
 // RPC/Mining statistics constants
-constexpr int DEFAULT_HASHRATE_CALCULATION_BLOCKS = 120; // ~4 hours at 2-minute blocks
+constexpr int DEFAULT_HASHRATE_CALCULATION_BLOCKS = 4; // ~4 hours at 1-hour blocks
 
 // Network address constants
 constexpr size_t MAX_SUBVERSION_LENGTH = 256;

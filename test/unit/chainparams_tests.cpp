@@ -15,7 +15,7 @@ TEST_CASE("ChainParams creation", "[chainparams]") {
         REQUIRE(params->GetDefaultPort() == 9590);
 
         const auto& consensus = params->GetConsensus();
-        REQUIRE(consensus.nPowTargetSpacing == 120);  // 2 minutes
+        REQUIRE(consensus.nPowTargetSpacing == 3600);  // 1 hour (mainnet)
         REQUIRE(consensus.nRandomXEpochDuration == 7 * 24 * 60 * 60);  // 1 week
     }
 

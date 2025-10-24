@@ -293,8 +293,18 @@ TEST_CASE("Validation constants", "[validation]") {
         REQUIRE(protocol::MAX_HEADERS_SIZE == 2000);
     }
 
-    SECTION("ANTI_DOS_WORK_BUFFER_BLOCKS is 144") {
-        REQUIRE(ANTI_DOS_WORK_BUFFER_BLOCKS == 144);
+    SECTION("nAntiDosWorkBufferBlocks is chain-specific") {
+        // Mainnet: 6 blocks (~6 hours at 1-hour blocks) - tight security
+        auto mainnet = chain::ChainParams::CreateMainNet();
+        REQUIRE(mainnet->GetConsensus().nAntiDosWorkBufferBlocks == 6);
+
+        // Testnet: 144 blocks (~4.8 hours at 2-minute blocks) - testing flexibility
+        auto testnet = chain::ChainParams::CreateTestNet();
+        REQUIRE(testnet->GetConsensus().nAntiDosWorkBufferBlocks == 144);
+
+        // Regtest: 144 blocks - testing flexibility
+        auto regtest = chain::ChainParams::CreateRegTest();
+        REQUIRE(regtest->GetConsensus().nAntiDosWorkBufferBlocks == 144);
     }
 }
 

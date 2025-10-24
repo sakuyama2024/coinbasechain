@@ -131,8 +131,8 @@ arith_uint256 GetAntiDoSWorkThreshold(const chain::CBlockIndex *tip,
     // Calculate work of one block at current difficulty
     arith_uint256 block_proof = chain::GetBlockProof(*tip);
 
-    // Calculate work buffer (144 blocks worth)
-    arith_uint256 buffer = block_proof * ANTI_DOS_WORK_BUFFER_BLOCKS;
+    // Calculate work buffer (chain-specific number of blocks)
+    arith_uint256 buffer = block_proof * params.GetConsensus().nAntiDosWorkBufferBlocks;
 
     // Subtract buffer from tip work (but don't go negative)
     near_tip_work = tip->nChainWork - std::min(buffer, tip->nChainWork);

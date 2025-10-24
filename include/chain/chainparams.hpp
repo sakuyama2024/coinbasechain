@@ -34,39 +34,33 @@ enum class ChainType {
 struct ConsensusParams {
   // Proof of Work
   uint256 powLimit;               // Maximum difficulty (easiest target)
-  int64_t nPowTargetSpacing{120}; // 2 minutes between blocks
-
-  int64_t nRandomXEpochDuration{7 * 24 * 60 * 60}; // 1 week
+  int64_t nPowTargetSpacing;      // Target time between blocks (in seconds)
+  int64_t nRandomXEpochDuration;  // RandomX epoch duration (in seconds)
 
   // ASERT difficulty adjustment
-  int64_t nASERTHalfLife{2 * 24 * 60 * 60}; // 2 days (in seconds)
-
-  // ASERT anchor block parameters
-  struct ASERTAnchor {
-    int32_t nHeight;        // Anchor block height
-    uint32_t nBits;         // Anchor block difficulty
-    int64_t nPrevBlockTime; // Parent block timestamp
-  };
-
-  // ASERT anchor block height
-  // Set to 1 to use block 1 as anchor (block 0=genesis and block 1 both use
-  // powLimit) This allows block 1 to be mined at any time without difficulty
-  // adjustment issues
-  int32_t nASERTAnchorHeight{1};
+  int64_t nASERTHalfLife;         // ASERT half-life for difficulty adjustment (in seconds)
+  int32_t nASERTAnchorHeight;     // ASERT anchor block height
 
   // Hash of genesis block
   uint256 hashGenesisBlock;
 
-  // Minimum cumulative chain work for IBD completion Set to 0 to disable check
-  // (regtest), or to actual chain work
-  // (mainnet/testnet)
+  // Minimum cumulative chain work for IBD completion
+  // Set to 0 to disable check (regtest), or to actual chain work (mainnet/testnet)
   uint256 nMinimumChainWork;
 
-  // Network expiration (timebomb) - forces updates every ~3 months
+  // Network expiration (timebomb) - forces updates
   // Set to 0 to disable expiration (e.g., for mainnet)
-  // With 1 hour blocks: 3 months = 2,160 blocks
-  int32_t nNetworkExpirationInterval{0};  // Block height where network expires
-  int32_t nNetworkExpirationGracePeriod{24}; // 24 blocks = 1 day grace period for warnings
+  int32_t nNetworkExpirationInterval;   // Block height where network expires
+  int32_t nNetworkExpirationGracePeriod; // Grace period for warnings (in blocks)
+
+  // Orphan header management
+  int64_t nOrphanHeaderExpireTime;      // Time in seconds before orphan headers expire
+
+  // Reorg protection
+  int32_t nSuspiciousReorgDepth;        // Reorg depth that triggers warnings/halts
+
+  // DoS protection
+  int32_t nAntiDosWorkBufferBlocks;     // Work buffer for accepting chains behind tip
 };
 
 /**

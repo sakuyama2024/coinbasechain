@@ -1,6 +1,6 @@
 Unicity Proof of Work 
 =====================================
-Unicity PoW is a streamlined proof of work blockchain implementation designed to integrate with Unicity BFT. It serves as a headers-only blockchain with RandomX proof-of-work and ASERT difficulty adjustment.There are no transactions at the this layer. Each block is only a header and contains the miners address. 
+Unicity PoW is a streamlined proof of work blockchain implementation designed to integrate with Unicity BFT. It serves as a headers-only blockchain with RandomX proof-of-work and ASERT difficulty adjustment.There are no transactions at the this layer. Each block is only a header which contains the miners address. 
 
 unicity-pow is released under the terms of the MIT license.
 
@@ -12,7 +12,7 @@ unicity-pow is released under the terms of the MIT license.
 - [Binary Releases](https://github.com/sakuyama2024/unicity-pow/releases)
 - [Build Instructions](#building-from-source)
 - [Mining with RandomX](#mining-specifications)
-- [Protocol Comparison Tool](tools/compare_protocols.py)
+
 
 ## Community Support
 
@@ -128,7 +128,7 @@ Chain grows at less than 1MB per year
 
 The Bitcoin Cash implementation of an exponential moving average approach:
 - Adjusts every block (not every 2016 blocks)
-- Always targets 120-second block time
+- Always targets 3600-second (1-hour) block time on mainnet
 - Smooth difficulty transitions
 
 **Simplified P2P Protocol**

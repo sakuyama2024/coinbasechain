@@ -120,12 +120,9 @@ int64_t GetAdjustedTime();
 // Validation constants TODO
 static constexpr int64_t MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60; // 2 hours
 
-// DoS protection constants
-static constexpr int ANTI_DOS_WORK_BUFFER_BLOCKS =
-    144; // 144 blocks = ~4.8 hours at 2 min/block
-
 // Returns minimum chainwork for DoS protection (0 during IBD)
-// Dynamic threshold: max(nMinimumChainWork, tip->nChainWork - 144 blocks)
+// Dynamic threshold: max(nMinimumChainWork, tip->nChainWork - work_buffer_blocks)
+// work_buffer_blocks is chain-specific: 6 blocks (mainnet) or 144 blocks (testnet/regtest)
 arith_uint256 GetAntiDoSWorkThreshold(const chain::CBlockIndex *tip,
                                       const chain::ChainParams &params,
                                       bool is_ibd);

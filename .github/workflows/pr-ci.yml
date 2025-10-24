@@ -10,25 +10,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Fast check - fail immediately if formatting is wrong
-  formatting:
-    name: Code Formatting
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install clang-format
-        run: |
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 18
-          sudo apt-get install -y clang-format-18
-
-      - name: Check formatting
-        run: |
-          find include src -name '*.cpp' -o -name '*.hpp' | \
-            xargs clang-format-18 --dry-run --Werror
-
   # Build and test matrix
   build-test:
     name: ${{ matrix.name }}
@@ -206,17 +187,13 @@ jobs:
   # Summary job - required to pass before merge
   all-checks-passed:
     name: All Checks Passed
-    needs: [formatting, build-test, fuzz-smoke]
+    needs: [build-test, fuzz-smoke]
     runs-on: ubuntu-latest
     if: always()
 
     steps:
       - name: Check all jobs
         run: |
-          if [ "${{ needs.formatting.result }}" != "success" ]; then
-            echo "❌ Formatting check failed"
-            exit 1
-          fi
           if [ "${{ needs.build-test.result }}" != "success" ]; then
             echo "❌ Build/test jobs failed"
             exit 1

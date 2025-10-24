@@ -17,9 +17,6 @@
 namespace coinbasechain {
 namespace validation {
 
-// Default suspicious reorg depth (matches Bitcoin Core's COINBASE_MATURITY)
-static constexpr int SUSPICIOUS_REORG_DEPTH = 100; // Halt if reorg exceeds this
-
 ChainstateManager::ChainstateManager(const chain::ChainParams &params,
                                      int suspicious_reorg_depth)
     : block_manager_(), params_(params),
@@ -841,10 +838,10 @@ size_t ChainstateManager::EvictOrphanHeaders() {
   int64_t now = std::time(nullptr);
   size_t evicted = 0;
 
-  // Strategy 1: Evict expired orphans (older than 10 minutes)
+  // Strategy 1: Evict expired orphans (older than chain-specific timeout)
   auto it = m_orphan_headers.begin();
   while (it != m_orphan_headers.end()) {
-    if (now - it->second.nTimeReceived > protocol::ORPHAN_HEADER_EXPIRE_TIME) {
+    if (now - it->second.nTimeReceived > params_.GetConsensus().nOrphanHeaderExpireTime) {
       LOG_DEBUG("Evicting expired orphan header: hash={}, age={}s",
                 it->first.ToString().substr(0, 16),
                 now - it->second.nTimeReceived);

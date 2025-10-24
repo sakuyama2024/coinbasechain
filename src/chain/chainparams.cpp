@@ -72,9 +72,9 @@ CMainParams::CMainParams() {
   // Consensus rules
   consensus.powLimit = uint256S(
       "000fffff00000000000000000000000000000000000000000000000000000000");
-  consensus.nPowTargetSpacing = 2 * 60;               // 2 minutes
-  consensus.nRandomXEpochDuration = 7 * 24 * 60 * 60; // 1 week
-  consensus.nASERTHalfLife = 2 * 24 * 60 * 60;        // 2 days
+  consensus.nPowTargetSpacing = 60 * 60;              // 1 hour
+  consensus.nRandomXEpochDuration = 7 * 24 * 60 * 60; // 1 week (168 blocks)
+  consensus.nASERTHalfLife = 12 * 24 * 60 * 60;       // 12 days (288 blocks, matches Bitcoin Cash)
 
   // ASERT anchor: Use block 1 as the anchor
   // This means block 0 (genesis) and block 1 both use powLimit (easy to mine)
@@ -113,6 +113,15 @@ CMainParams::CMainParams() {
   consensus.nNetworkExpirationInterval = 0;
   consensus.nNetworkExpirationGracePeriod = 0;
 
+  // Orphan header management
+  consensus.nOrphanHeaderExpireTime = 6 * 60 * 60;  // 6 hours (6 block intervals)
+
+  // Reorg protection
+  consensus.nSuspiciousReorgDepth = 2;  // 2 blocks (~2 hours) - highly restrictive for production
+
+  // DoS protection
+  consensus.nAntiDosWorkBufferBlocks = 6;  // 6 blocks (~6 hours) - tight security window
+
   // Hardcoded seed node addresses (ct20-ct26)
   // These are reliable seed nodes for initial peer discovery
   vFixedSeeds.push_back("178.18.251.16:9590");
@@ -148,9 +157,19 @@ CTestNetParams::CTestNetParams() {
       "0x0000000000000000000000000000000000000000000000000000000000000000");
 
   // Network expiration enabled for testnet - forces updates every 3 months
-  // 1 hour blocks × 24 hours × 90 days = 2,160 blocks
+  // 2 minute blocks × 30 per hour × 24 hours × 90 days = 64,800 blocks
+  // Using 2,160 blocks for faster testing (~3 days at 2-minute blocks)
   consensus.nNetworkExpirationInterval = 2160;
-  consensus.nNetworkExpirationGracePeriod = 24;  // 1 day warning period
+  consensus.nNetworkExpirationGracePeriod = 24;  // 24 blocks (~48 minutes warning period)
+
+  // Orphan header management
+  consensus.nOrphanHeaderExpireTime = 12 * 60;  // 12 minutes (6 block intervals)
+
+  // Reorg protection
+  consensus.nSuspiciousReorgDepth = 100;  // 100 blocks (~200 minutes) - testing flexibility
+
+  // DoS protection
+  consensus.nAntiDosWorkBufferBlocks = 144;  // 144 blocks (~4.8 hours) - testing flexibility
 
   // Network configuration
   nDefaultPort = protocol::ports::TESTNET;
@@ -201,6 +220,15 @@ CRegTestParams::CRegTestParams() {
   // Network expiration disabled for regtest (testing environment)
   consensus.nNetworkExpirationInterval = 0;  // Disabled
   consensus.nNetworkExpirationGracePeriod = 0;  // Disabled
+
+  // Orphan header management
+  consensus.nOrphanHeaderExpireTime = 12 * 60;  // 12 minutes (6 block intervals)
+
+  // Reorg protection
+  consensus.nSuspiciousReorgDepth = 100;  // 100 blocks - testing flexibility
+
+  // DoS protection
+  consensus.nAntiDosWorkBufferBlocks = 144;  // 144 blocks - testing flexibility
 
   // Network configuration
   nDefaultPort = protocol::ports::REGTEST;
