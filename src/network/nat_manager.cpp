@@ -18,6 +18,19 @@ namespace {
 constexpr int UPNP_DISCOVER_TIMEOUT_MS = 2000;
 constexpr int PORT_MAPPING_DURATION_SECONDS = 3600;  // 1 hour
 constexpr int REFRESH_INTERVAL_SECONDS = 1800;       // 30 minutes
+
+// miniupnpc API version compatibility
+// Version 2.1+ uses 7-argument UPNP_GetValidIGD (with wanaddr)
+// Earlier versions use 5-argument UPNP_GetValidIGD (without wanaddr)
+#ifndef DISABLE_NAT_SUPPORT
+#if MINIUPNPC_API_VERSION >= 17
+#define UPNP_GETVALIDIGD_ARGS(devlist, urls, data, lanaddr) \
+    devlist, urls, data, lanaddr, sizeof(lanaddr), nullptr, 0
+#else
+#define UPNP_GETVALIDIGD_ARGS(devlist, urls, data, lanaddr) \
+    devlist, urls, data, lanaddr, sizeof(lanaddr)
+#endif
+#endif
 }
 
 NATManager::NATManager() = default;
@@ -110,9 +123,8 @@ void NATManager::DiscoverUPnPDevice() {
     UPNPUrls urls;
     IGDdatas data;
     char lanaddr[64];
-    char wanaddr[64];
 
-    int result = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr), wanaddr, sizeof(wanaddr));
+    int result = UPNP_GetValidIGD(UPNP_GETVALIDIGD_ARGS(devlist, &urls, &data, lanaddr));
 
     freeUPNPDevlist(devlist);
 
@@ -161,9 +173,8 @@ bool NATManager::MapPort(uint16_t internal_port) {
     UPNPUrls urls;
     IGDdatas data;
     char lanaddr[64];
-    char wanaddr[64];
 
-    int result = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr), wanaddr, sizeof(wanaddr));
+    int result = UPNP_GetValidIGD(UPNP_GETVALIDIGD_ARGS(devlist, &urls, &data, lanaddr));
     freeUPNPDevlist(devlist);
 
     if (result != 1) {
@@ -225,9 +236,8 @@ void NATManager::UnmapPort() {
     UPNPUrls urls;
     IGDdatas data;
     char lanaddr[64];
-    char wanaddr[64];
 
-    int result = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr), wanaddr, sizeof(wanaddr));
+    int result = UPNP_GetValidIGD(UPNP_GETVALIDIGD_ARGS(devlist, &urls, &data, lanaddr));
     freeUPNPDevlist(devlist);
 
     if (result != 1) {
