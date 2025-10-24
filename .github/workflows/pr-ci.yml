@@ -62,7 +62,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libboost-system-dev libboost-filesystem-dev
+          sudo apt-get install -y libboost-system-dev libboost-filesystem-dev libminiupnpc-dev
 
           if [ "${{ matrix.compiler }}" = "clang" ]; then
             wget https://apt.llvm.org/llvm.sh
@@ -152,7 +152,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libboost-system-dev libboost-filesystem-dev
+          sudo apt-get install -y libboost-system-dev libboost-filesystem-dev libminiupnpc-dev
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 18
