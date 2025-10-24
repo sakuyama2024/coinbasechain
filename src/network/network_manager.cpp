@@ -664,13 +664,21 @@ void NetworkManager::schedule_next_sendmessages() {
 }
 
 void NetworkManager::schedule_next_feeler() {
+  LOG_NET_TRACE("schedule_next_feeler: ENTER (running={}, has_timer={})",
+                running_.load(std::memory_order_acquire), (feeler_timer_ != nullptr));
+
   if (!running_.load(std::memory_order_acquire) || !feeler_timer_) {
+    LOG_NET_TRACE("schedule_next_feeler: ABORT (not running or no timer)");
     return;
   }
 
   // Bitcoin Core pattern: Make one feeler connection every FEELER_INTERVAL (2 minutes)
   feeler_timer_->expires_after(FEELER_INTERVAL);
+  LOG_NET_TRACE("schedule_next_feeler: Timer set for FEELER_INTERVAL (120s)");
+
   feeler_timer_->async_wait([this](const boost::system::error_code &ec) {
+    LOG_NET_TRACE("schedule_next_feeler: Timer fired (ec={}, running={})",
+                  ec.message(), running_.load(std::memory_order_acquire));
     if (!ec && running_.load(std::memory_order_acquire)) {
       attempt_feeler_connection();
       schedule_next_feeler();
@@ -679,14 +687,20 @@ void NetworkManager::schedule_next_feeler() {
 }
 
 void NetworkManager::attempt_feeler_connection() {
+  LOG_NET_TRACE("attempt_feeler_connection: ENTER (running={})",
+                running_.load(std::memory_order_acquire));
+
   if (!running_.load(std::memory_order_acquire)) {
+    LOG_NET_TRACE("attempt_feeler_connection: ABORT (not running)");
     return;
   }
 
   // Get address from "new" table (addresses we've heard about but never connected to)
+  LOG_NET_TRACE("attempt_feeler_connection: Selecting address from NEW table");
   auto addr = addr_manager_->select_new_for_feeler();
   if (!addr) {
     LOG_NET_DEBUG("No addresses available for feeler connection");
+    LOG_NET_TRACE("attempt_feeler_connection: No address found in NEW table");
     return;
   }
 
@@ -694,6 +708,7 @@ void NetworkManager::attempt_feeler_connection() {
   auto addr_str_opt = network_address_to_string(*addr);
   if (!addr_str_opt) {
     LOG_NET_DEBUG("Failed to convert feeler address to string");
+    LOG_NET_TRACE("attempt_feeler_connection: Address conversion failed");
     return;
   }
 
@@ -701,28 +716,40 @@ void NetworkManager::attempt_feeler_connection() {
   uint16_t port = addr->port;
 
   LOG_NET_INFO("Attempting feeler connection to {}:{}", address, port);
+  LOG_NET_TRACE("attempt_feeler_connection: Selected address={}:{}", address, port);
 
   // Create peer_id container for async callback
   auto peer_id_ptr = std::make_shared<std::optional<int>>(std::nullopt);
 
   // Create async transport connection with callback (same pattern as connect_to())
+  LOG_NET_TRACE("attempt_feeler_connection: Creating transport connection to {}:{}", address, port);
+
   auto connection = transport_->connect(
       address, port, [this, peer_id_ptr, address, port, addr](bool success) {
         LOG_NET_INFO("FEELER CALLBACK FIRED: success={}, peer_id_ptr has_value={}",
                       success, peer_id_ptr->has_value());
+        LOG_NET_TRACE("attempt_feeler_connection: TCP callback fired (success={}, peer_id_set={})",
+                      success, peer_id_ptr->has_value());
+
         // Callback fires when TCP connection completes
         boost::asio::post(io_context_, [this, peer_id_ptr, address, port, addr, success]() {
           LOG_NET_INFO("FEELER CALLBACK POST EXECUTED: peer_id_ptr has_value={}",
                         peer_id_ptr->has_value());
+          LOG_NET_TRACE("attempt_feeler_connection: Posted callback executing (peer_id_set={})",
+                        peer_id_ptr->has_value());
+
           if (!peer_id_ptr->has_value()) {
             LOG_NET_INFO("FEELER CALLBACK ABORTED: peer_id_ptr is nullopt");
+            LOG_NET_TRACE("attempt_feeler_connection: Callback aborted (peer_id not set)");
             return;
           }
 
           int peer_id = peer_id_ptr->value();
+          LOG_NET_TRACE("attempt_feeler_connection: Looking up peer_id={}", peer_id);
           auto peer_ptr = peer_manager_->get_peer(peer_id);
           if (!peer_ptr) {
             LOG_NET_DEBUG("FEELER CALLBACK: peer {} not found in manager", peer_id);
+            LOG_NET_TRACE("attempt_feeler_connection: Peer {} not found in manager", peer_id);
             return;
           }
 
@@ -730,11 +757,15 @@ void NetworkManager::attempt_feeler_connection() {
             // Connection succeeded - mark address as good and start peer protocol
             // The peer will auto-disconnect after VERACK (see handle_verack())
             LOG_NET_DEBUG("Feeler connected to {}:{}, starting peer {}", address, port, peer_id);
+            LOG_NET_TRACE("attempt_feeler_connection: Connection SUCCESS - marking address good, starting peer {}",
+                          peer_id);
             addr_manager_->good(*addr);
             peer_ptr->start();
           } else {
             // Connection failed - remove the peer
             LOG_NET_DEBUG("Feeler failed to connect to {}:{}, removing peer {}", address, port, peer_id);
+            LOG_NET_TRACE("attempt_feeler_connection: Connection FAILED - marking address bad, removing peer {}",
+                          peer_id);
             addr_manager_->failed(*addr);
             peer_manager_->remove_peer(peer_id);
           }
@@ -743,32 +774,42 @@ void NetworkManager::attempt_feeler_connection() {
 
   if (!connection) {
     LOG_NET_ERROR("Failed to create feeler connection to {}:{}", address, port);
+    LOG_NET_TRACE("attempt_feeler_connection: Transport connection creation FAILED");
     addr_manager_->failed(*addr);
     return;
   }
 
+  LOG_NET_TRACE("attempt_feeler_connection: Transport connection created successfully");
+
   // Get current blockchain height for VERSION message
   int32_t current_height = chainstate_manager_.GetChainHeight();
+  LOG_NET_TRACE("attempt_feeler_connection: Current chain height={}", current_height);
 
   // Create peer with FEELER connection type (doesn't count against outbound limit)
+  LOG_NET_TRACE("attempt_feeler_connection: Creating FEELER peer object");
   auto peer = Peer::create_outbound(io_context_, connection, config_.network_magic,
                                      current_height, address, port,
                                      ConnectionType::FEELER);
 
   // Setup message handler before adding to manager
+  LOG_NET_TRACE("attempt_feeler_connection: Setting up message handler");
   setup_peer_message_handler(peer.get());
 
   // Add to peer manager and store ID for callback
+  LOG_NET_TRACE("attempt_feeler_connection: Adding peer to manager");
   int peer_id = peer_manager_->add_peer(peer);
   if (peer_id < 0) {
     LOG_NET_DEBUG("Failed to add feeler peer to manager");
+    LOG_NET_TRACE("attempt_feeler_connection: Failed to add peer to manager (peer_id={})", peer_id);
     return;
   }
 
   // Store peer_id for callback access
   *peer_id_ptr = peer_id;
+  LOG_NET_TRACE("attempt_feeler_connection: Stored peer_id={} for callback", peer_id);
 
   LOG_NET_DEBUG("Feeler connection initiated to {}:{} (peer_id={})", address, port, peer_id);
+  LOG_NET_TRACE("attempt_feeler_connection: EXIT (peer_id={}, waiting for TCP callback)", peer_id);
 }
 
 void NetworkManager::check_initial_sync() {

@@ -55,8 +55,9 @@ void HeaderSyncManager::CheckInitialSync() {
     }
 
     // We found a ready outbound peer! Start initial sync with this peer
-    LOG_NET_INFO("Starting initial headers sync with outbound peer {}",
-                 peer->id());
+    int current_height = chainstate_manager_.GetChainHeight();
+    LOG_NET_INFO("initial getheaders ({}) to peer={} (outbound)",
+                 current_height, peer->id());
 
     SetSyncPeer(peer->id());
 
@@ -76,9 +77,9 @@ void HeaderSyncManager::CheckInitialSync() {
     }
 
     // We found a ready inbound peer! Use it as fallback for initial sync
-    LOG_NET_INFO("Starting initial headers sync with inbound peer {} (no "
-                 "outbound peers available)",
-                 peer->id());
+    int current_height = chainstate_manager_.GetChainHeight();
+    LOG_NET_INFO("initial getheaders ({}) to peer={} (no outbound available)",
+                 current_height, peer->id());
 
     SetSyncPeer(peer->id());
 
@@ -411,6 +412,9 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   bool synced = IsSynced();
 
   if (should_request) {
+    // Bitcoin Core: "more getheaders (%d) to end to peer=%d"
+    int current_height = chainstate_manager_.GetChainHeight();
+    LOG_NET_INFO("more getheaders ({}) to peer={}", current_height, peer_id);
     RequestHeadersFromPeer(peer);
   } else if (synced) {
     // Reset sync peer - we're done syncing (atomic store)

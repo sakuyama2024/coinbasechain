@@ -138,6 +138,11 @@ ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,
     return nullptr;
   }
 
+  // Bitcoin Core: Set nTimeReceived when we first learn about this block
+  // This timestamp is used to determine if blocks should be relayed
+  // Only recent blocks (< 10 seconds) are relayed to peers
+  pindex->nTimeReceived = util::GetTime();
+
   // Step 8: Contextual check
   int64_t adjusted_time = GetAdjustedTime();
   if (!ContextualCheckBlockHeaderWrapper(header, pindexPrev, adjusted_time,

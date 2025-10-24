@@ -121,6 +121,9 @@ constexpr int PING_TIMEOUT_SEC =
 constexpr int INACTIVITY_TIMEOUT_SEC =
     20 * 60; // 20 minutes - matches Bitcoin's TIMEOUT_INTERVAL
 
+// Block relay timing (Bitcoin Core behavior)
+constexpr int64_t MAX_BLOCK_RELAY_AGE = 10; // Only relay blocks received in last 10 seconds
+
 // RPC/Mining statistics constants
 constexpr int DEFAULT_HASHRATE_CALCULATION_BLOCKS = 4; // ~4 hours at 1-hour blocks
 

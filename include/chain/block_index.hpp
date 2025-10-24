@@ -84,6 +84,12 @@ public:
   uint32_t nNonce{0};
   uint256 hashRandomX{}; // Default-initialized (SetNull())
 
+  // Block relay tracking (Bitcoin Core behavior)
+  // Time when we first learned about this block (for relay decisions)
+  // Blocks received recently (< MAX_BLOCK_RELAY_AGE) are relayed to peers
+  // Old blocks (from disk/reorgs) are not relayed (peers already know them)
+  int64_t nTimeReceived{0};
+
   // Constructor
   CBlockIndex() = default;
 

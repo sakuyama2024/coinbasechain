@@ -74,8 +74,8 @@ bool MessageRouter::handle_verack(PeerPtr peer) {
     uint64_t current_sync_peer = header_sync_manager_->GetSyncPeerId();
     if (current_sync_peer == 0) {
       // No sync peer yet, try to set this peer as sync peer
+      // Note: Logging is done in CheckInitialSync() to match Bitcoin Core patterns
       header_sync_manager_->SetSyncPeer(peer->id());
-      LOG_NET_INFO("Starting initial headers sync with peer {}", peer->id());
 
       // Send GETHEADERS to initiate sync (like Bitcoin's "initial getheaders")
       header_sync_manager_->RequestHeadersFromPeer(peer);

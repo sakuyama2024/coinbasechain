@@ -2,6 +2,7 @@
 #include "chain/randomx_pow.hpp"
 #include "chain/fs_lock.hpp"
 #include "chain/logging.hpp"
+#include "chain/time.hpp"
 #include "version.hpp"
 #include <chrono>
 #include <iostream> // Keep for signal handler (async-signal-safe)
@@ -85,7 +86,15 @@ bool Application::initialize() {
       [this](const CBlockHeader &block, const chain::CBlockIndex *pindex) {
         // Only relay blocks if not in IBD (Bitcoin Core behavior)
         if (pindex && network_manager_ && !chainstate_manager_->IsInitialBlockDownload()) {
-          network_manager_->relay_block(pindex->GetBlockHash());
+          // Bitcoin Core: Only relay blocks received recently (< 10 seconds)
+          // This prevents relaying old blocks during reorgs - peers already know them
+          // Blocks from disk or reorgs have nTimeReceived=0 or old timestamp
+          int64_t now = util::GetTime();
+          int64_t block_age = now - pindex->nTimeReceived;
+
+          if (block_age < protocol::MAX_BLOCK_RELAY_AGE) {
+            network_manager_->relay_block(pindex->GetBlockHash());
+          }
         }
       });
 
