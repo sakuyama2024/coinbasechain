@@ -94,20 +94,20 @@ CMainParams::CMainParams() {
   nDefaultPort = protocol::ports::MAINNET;
 
   // Genesis block:
-  // Mined on: 2025-10-12
-  // Block hash:
-  // 36de9b76dcd7899a52bab783f185c2563884afb4c6ee9f3b20a51e13a284cfa7
+  // Mined on: 2025-10-24 19:20:12 UTC
+  // Difficulty: 0x1f06a000 (target: ~2.5 minutes at 50 H/s)
+  // Block hash: b675bea090e27659c91885afe341facf399cf84997918bac927948ee75409ebf
   genesis =
-      CreateGenesisBlock(1760292878, // nTime - Oct 12, 2025
-                         633285,     // nNonce - found by genesis miner
-                         0x1e270fd8, // nBits - initial difficulty
+      CreateGenesisBlock(1761330012, // nTime - Oct 24, 2025
+                         8497,       // nNonce - found by genesis miner
+                         0x1f06a000, // nBits - initial difficulty
                          1           // nVersion
       );
 
   consensus.hashGenesisBlock = genesis.GetHash();
   assert(consensus.hashGenesisBlock ==
-         uint256S("0x36de9b76dcd7899a52bab783f185c2563884afb4c6ee9f3b20a51e13a2"
-                  "84cfa7"));
+         uint256S("0xb675bea090e27659c91885afe341facf399cf84997918bac927948ee75"
+                  "409ebf"));
 
   // Network expiration disabled for mainnet (no forced updates)
   consensus.nNetworkExpirationInterval = 0;

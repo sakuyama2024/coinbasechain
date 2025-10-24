@@ -424,16 +424,16 @@ TEST_CASE("CBlockHeader array-based Deserialize", "[block]") {
 TEST_CASE("CBlockHeader MainNet genesis block golden vector", "[block]") {
     SECTION("MainNet genesis block from chainparams") {
         // This is the actual genesis block from chainparams.cpp
-        // Mined on: 2025-10-12
-        // Expected hash: 36de9b76dcd7899a52bab783f185c2563884afb4c6ee9f3b20a51e13a284cfa7
+        // Mined on: 2025-10-24
+        // Expected hash: b675bea090e27659c91885afe341facf399cf84997918bac927948ee75409ebf
 
         CBlockHeader genesis;
         genesis.nVersion = 1;
         genesis.hashPrevBlock.SetNull();
         genesis.minerAddress.SetNull();
-        genesis.nTime = 1760292878;      // Oct 12, 2025
-        genesis.nBits = 0x1e270fd8;      // 10,000x easier than Bitcoin
-        genesis.nNonce = 633285;         // Found by genesis miner
+        genesis.nTime = 1761330012;      // Oct 24, 2025
+        genesis.nBits = 0x1f06a000;      // Target: ~2.5 minutes at 50 H/s
+        genesis.nNonce = 8497;           // Found by genesis miner
         genesis.hashRandomX.SetNull();
 
         // Serialize and verify exact size
@@ -457,22 +457,22 @@ TEST_CASE("CBlockHeader MainNet genesis block golden vector", "[block]") {
             REQUIRE(serialized[i] == 0x00);
         }
 
-        // nTime = 1760292878 (0x68EBF00E) at offset 56 (little-endian: 0E F0 EB 68)
-        REQUIRE(serialized[56] == 0x0E);
-        REQUIRE(serialized[57] == 0xF0);
-        REQUIRE(serialized[58] == 0xEB);
+        // nTime = 1761330012 (0x68FF56DC) at offset 56 (little-endian: DC 56 FF 68)
+        REQUIRE(serialized[56] == 0xDC);
+        REQUIRE(serialized[57] == 0x56);
+        REQUIRE(serialized[58] == 0xFF);
         REQUIRE(serialized[59] == 0x68);
 
-        // nBits = 0x1e270fd8 at offset 60 (little-endian: D8 0F 27 1E)
-        REQUIRE(serialized[60] == 0xD8);
-        REQUIRE(serialized[61] == 0x0F);
-        REQUIRE(serialized[62] == 0x27);
-        REQUIRE(serialized[63] == 0x1E);
+        // nBits = 0x1f06a000 at offset 60 (little-endian: 00 A0 06 1F)
+        REQUIRE(serialized[60] == 0x00);
+        REQUIRE(serialized[61] == 0xA0);
+        REQUIRE(serialized[62] == 0x06);
+        REQUIRE(serialized[63] == 0x1F);
 
-        // nNonce = 633285 (0x0009A9C5) at offset 64 (little-endian: C5 A9 09 00)
-        REQUIRE(serialized[64] == 0xC5);
-        REQUIRE(serialized[65] == 0xA9);
-        REQUIRE(serialized[66] == 0x09);
+        // nNonce = 8497 (0x00002131) at offset 64 (little-endian: 31 21 00 00)
+        REQUIRE(serialized[64] == 0x31);
+        REQUIRE(serialized[65] == 0x21);
+        REQUIRE(serialized[66] == 0x00);
         REQUIRE(serialized[67] == 0x00);
 
         // hashRandomX is all zeros (offset 68-99)
@@ -484,9 +484,9 @@ TEST_CASE("CBlockHeader MainNet genesis block golden vector", "[block]") {
         uint256 hash = genesis.GetHash();
         std::string hashHex = hash.GetHex();
 
-        // Expected: 36de9b76dcd7899a52bab783f185c2563884afb4c6ee9f3b20a51e13a284cfa7
+        // Expected: b675bea090e27659c91885afe341facf399cf84997918bac927948ee75409ebf
         // (This is the display format; GetHex() reverses bytes per Bitcoin convention)
-        REQUIRE(hashHex == "36de9b76dcd7899a52bab783f185c2563884afb4c6ee9f3b20a51e13a284cfa7");
+        REQUIRE(hashHex == "b675bea090e27659c91885afe341facf399cf84997918bac927948ee75409ebf");
     }
 
     SECTION("Genesis block round-trip preserves hash") {
@@ -494,9 +494,9 @@ TEST_CASE("CBlockHeader MainNet genesis block golden vector", "[block]") {
         genesis.nVersion = 1;
         genesis.hashPrevBlock.SetNull();
         genesis.minerAddress.SetNull();
-        genesis.nTime = 1760292878;
-        genesis.nBits = 0x1e270fd8;
-        genesis.nNonce = 633285;
+        genesis.nTime = 1761330012;
+        genesis.nBits = 0x1f06a000;
+        genesis.nNonce = 8497;
         genesis.hashRandomX.SetNull();
 
         uint256 originalHash = genesis.GetHash();
@@ -599,9 +599,9 @@ TEST_CASE("CBlockHeader alpha-release compatibility", "[block][alpha]") {
         genesis.nVersion = 1;
         genesis.hashPrevBlock.SetNull();
         genesis.minerAddress.SetNull();
-        genesis.nTime = 1760292878;      // Oct 12, 2025
-        genesis.nBits = 0x1e270fd8;
-        genesis.nNonce = 633285;
+        genesis.nTime = 1761330012;      // Oct 24, 2025
+        genesis.nBits = 0x1f06a000;
+        genesis.nNonce = 8497;
         genesis.hashRandomX.SetNull();
 
         // Our implementation
@@ -617,7 +617,7 @@ TEST_CASE("CBlockHeader alpha-release compatibility", "[block][alpha]") {
         REQUIRE(our_hash == alpha_hash);
 
         // Also verify against the expected mainnet genesis hash (GetHex() displays in reversed byte order)
-        REQUIRE(our_hash.GetHex() == "36de9b76dcd7899a52bab783f185c2563884afb4c6ee9f3b20a51e13a284cfa7");
+        REQUIRE(our_hash.GetHex() == "b675bea090e27659c91885afe341facf399cf84997918bac927948ee75409ebf");
     }
 
     SECTION("Multiple test vectors match alpha-release") {
@@ -632,7 +632,7 @@ TEST_CASE("CBlockHeader alpha-release compatibility", "[block][alpha]") {
         TestVector vectors[] = {
             {1, 0, 0x207fffff, 0},
             {1, 1234567890, 0x1d00ffff, 42},
-            {1, 1760292878, 0x1e270fd8, 633285},
+            {1, 1761330012, 0x1f06a000, 8497},
             {2, 9999999, 0x1a0fffff, 123456},
         };
 
