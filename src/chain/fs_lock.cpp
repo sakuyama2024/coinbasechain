@@ -140,7 +140,7 @@ LockResult LockDirectory(const fs::path &directory,
   {
     std::ofstream lockfile(lockfile_path, std::ios::app);
     if (!lockfile) {
-      LOG_ERROR("Failed to create lock file: {}", lockfile_path.string());
+      LOG_CHAIN_ERROR("Failed to create lock file: {}", lockfile_path.string());
       return LockResult::ErrorWrite;
     }
   }
@@ -148,7 +148,7 @@ LockResult LockDirectory(const fs::path &directory,
   // Try to acquire lock
   auto file_lock = std::make_unique<FileLock>(lockfile_path);
   if (!file_lock->TryLock()) {
-    LOG_ERROR("Failed to lock directory {}: {}", directory.string(),
+    LOG_CHAIN_ERROR("Failed to lock directory {}: {}", directory.string(),
               file_lock->GetReason());
     return LockResult::ErrorLock;
   }

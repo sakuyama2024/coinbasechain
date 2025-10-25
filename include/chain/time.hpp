@@ -61,6 +61,16 @@ void SetMockTime(int64_t time);
 int64_t GetMockTime();
 
 /**
+ * Format a Unix timestamp as a human-readable ISO 8601 UTC string
+ *
+ * @param unix_time Unix timestamp in seconds since epoch
+ * @return Formatted string like "2025-10-25 14:33:09 UTC"
+ *
+ * Example: FormatTime(1729868000) -> "2024-10-25 12:00:00 UTC"
+ */
+std::string FormatTime(uint32_t unix_time);
+
+/**
  * RAII helper to set mock time and restore it when scope exits
  * Useful for tests that need to temporarily set mock time
  */

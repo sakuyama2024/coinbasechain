@@ -10,35 +10,30 @@ all:
         ct20:
           ansible_host: 178.18.251.16
           node_id: 0
-          p2p_port: 29590
         ct21:
           ansible_host: 185.225.233.49
           node_id: 1
-          p2p_port: 29590
         ct22:
           ansible_host: 207.244.248.15
           node_id: 2
-          p2p_port: 29590
         ct23:
           ansible_host: 194.140.197.98
           node_id: 3
-          p2p_port: 29590
         ct24:
           ansible_host: 173.212.251.205
           node_id: 4
-          p2p_port: 29590
         ct25:
           ansible_host: 144.126.138.46
           node_id: 5
-          p2p_port: 29590
       vars:
         ansible_user: root
         ansible_ssh_private_key_file: ~/.ssh/mykey
         ansible_python_interpreter: /usr/bin/python3
         coinbasechain_network: regtest
         coinbasechain_version: latest
+        p2p_port: 29590
         docker_data_dir: /var/lib/coinbasechain/regtest
-        container_name: "coinbasechain-regtest"
+        container_name: coinbasechain-regtest
 
     # Testnet Network - 10-minute blocks
     coinbasechain_testnet:
@@ -46,32 +41,26 @@ all:
         ct20:
           ansible_host: 178.18.251.16
           node_id: 0
-          p2p_port: 19590
           mining_address: "a000000000000000000000000000000000000001"
         ct21:
           ansible_host: 185.225.233.49
           node_id: 1
-          p2p_port: 19590
           mining_address: "a000000000000000000000000000000000000002"
         ct22:
           ansible_host: 207.244.248.15
           node_id: 2
-          p2p_port: 19590
           mining_address: "a000000000000000000000000000000000000003"
         ct23:
           ansible_host: 194.140.197.98
           node_id: 3
-          p2p_port: 19590
           mining_address: "a000000000000000000000000000000000000004"
         ct24:
           ansible_host: 173.212.251.205
           node_id: 4
-          p2p_port: 19590
           mining_address: "a000000000000000000000000000000000000005"
         ct25:
           ansible_host: 144.126.138.46
           node_id: 5
-          p2p_port: 19590
           mining_address: "a000000000000000000000000000000000000006"
       vars:
         ansible_user: root
@@ -79,8 +68,9 @@ all:
         ansible_python_interpreter: /usr/bin/python3
         coinbasechain_network: testnet
         coinbasechain_version: latest
+        p2p_port: 19590
         docker_data_dir: /var/lib/coinbasechain/testnet
-        container_name: "coinbasechain-testnet"
+        container_name: coinbasechain-testnet
 
     # Mainnet Network - 1-hour blocks (production)
     coinbasechain_mainnet:
@@ -88,35 +78,36 @@ all:
         ct20:
           ansible_host: 178.18.251.16
           node_id: 0
-          p2p_port: 9590
+          mining_address: "a000000000000000000000000000000000000001"
         ct21:
           ansible_host: 185.225.233.49
           node_id: 1
-          p2p_port: 9590
+          mining_address: "a000000000000000000000000000000000000002"
         ct22:
           ansible_host: 207.244.248.15
           node_id: 2
-          p2p_port: 9590
+          mining_address: "a000000000000000000000000000000000000003"
         ct23:
           ansible_host: 194.140.197.98
           node_id: 3
-          p2p_port: 9590
+          mining_address: "a000000000000000000000000000000000000004"
         ct24:
           ansible_host: 173.212.251.205
           node_id: 4
-          p2p_port: 9590
+          mining_address: "a000000000000000000000000000000000000005"
         ct25:
           ansible_host: 144.126.138.46
           node_id: 5
-          p2p_port: 9590
+          mining_address: "a000000000000000000000000000000000000006"
       vars:
         ansible_user: root
         ansible_ssh_private_key_file: ~/.ssh/mykey
         ansible_python_interpreter: /usr/bin/python3
         coinbasechain_network: mainnet
         coinbasechain_version: latest
+        p2p_port: 9590
         docker_data_dir: /var/lib/coinbasechain/mainnet
-        container_name: "coinbasechain-mainnet"
+        container_name: coinbasechain-mainnet
 
     # Combined group for all nodes (useful for common operations)
     coinbasechain_nodes:

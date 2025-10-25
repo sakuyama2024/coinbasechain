@@ -76,6 +76,14 @@ bool MessageRouter::handle_verack(PeerPtr peer) {
     addr_manager_->good(addr);
     LOG_NET_DEBUG("Marked outbound peer {}:{} as good in address manager",
                   peer->address(), peer->port());
+
+    // Request additional peer addresses (Bitcoin Core: GETADDR after handshake, rate-limited)
+    if (!peer->has_sent_getaddr()) {
+      auto getaddr = std::make_unique<message::GetAddrMessage>();
+      peer->send_message(std::move(getaddr));
+      peer->mark_getaddr_sent();
+      LOG_NET_DEBUG("Sent GETADDR to {}:{} to populate address manager", peer->address(), peer->port());
+    }
   }
 
   // Announce our tip to this peer immediately (Bitcoin Core does this with no time throttling)
@@ -102,6 +110,12 @@ bool MessageRouter::handle_addr(PeerPtr peer, message::AddrMessage* msg) {
 bool MessageRouter::handle_getaddr(PeerPtr peer) {
   if (!addr_manager_) {
     return false;
+  }
+
+  // Privacy: Only respond to inbound peers
+  if (!peer->is_inbound()) {
+    LOG_NET_TRACE("Ignoring GETADDR from outbound peer {}", peer->id());
+    return true; // Not an error; just ignore
   }
 
   auto response = std::make_unique<message::AddrMessage>();

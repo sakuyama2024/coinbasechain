@@ -21,7 +21,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     std::unique_ptr<Message> msg;
 
     // Create message based on type selector
-    switch (msg_type % 11) {
+switch (msg_type % 9) {
         case 0:
             msg = std::make_unique<VersionMessage>();
             break;
@@ -44,15 +44,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             msg = std::make_unique<InvMessage>();
             break;
         case 7:
-            msg = std::make_unique<GetDataMessage>();
-            break;
-        case 8:
-            msg = std::make_unique<NotFoundMessage>();
-            break;
-        case 9:
             msg = std::make_unique<GetHeadersMessage>();
             break;
-        case 10:
+        case 8:
             msg = std::make_unique<HeadersMessage>();
             break;
     }
@@ -69,7 +63,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
             // Create new message of same type and deserialize
             std::unique_ptr<Message> msg2;
-            switch (msg_type % 11) {
+switch (msg_type % 9) {
                 case 0: msg2 = std::make_unique<VersionMessage>(); break;
                 case 1: msg2 = std::make_unique<VerackMessage>(); break;
                 case 2: msg2 = std::make_unique<PingMessage>(); break;
@@ -77,10 +71,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 case 4: msg2 = std::make_unique<AddrMessage>(); break;
                 case 5: msg2 = std::make_unique<GetAddrMessage>(); break;
                 case 6: msg2 = std::make_unique<InvMessage>(); break;
-                case 7: msg2 = std::make_unique<GetDataMessage>(); break;
-                case 8: msg2 = std::make_unique<NotFoundMessage>(); break;
-                case 9: msg2 = std::make_unique<GetHeadersMessage>(); break;
-                case 10: msg2 = std::make_unique<HeadersMessage>(); break;
+case 7: msg2 = std::make_unique<GetHeadersMessage>(); break;
+                case 8: msg2 = std::make_unique<HeadersMessage>(); break;
             }
 
             if (msg2) {

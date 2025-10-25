@@ -200,7 +200,7 @@ private:
 ```
 start()
   ├─► Initialize components (PeerManager, AddressManager, etc.)
-  ├─► Load persisted data (banlist.json, peers.dat, anchors.dat)
+  ├─► Load persisted data (banlist.json, peers.dat, anchors.json)
   ├─► Start I/O threads (4 threads default)
   ├─► Begin listening on port (if listen_enabled)
   ├─► Bootstrap from DNS seeds (if address book empty)
@@ -1369,16 +1369,16 @@ public:
 
 ```
 1. On startup:
-   - Load anchors.dat
+   - Load anchors.json
    - Attempt connection to anchors FIRST (before DNS seeds)
    - Ensures at least some connections to known-good peers
-   
+
 2. During operation:
    - Track which outbound peers are reliable (long-lived, honest)
-   
+
 3. On shutdown:
    - Select 2-3 best outbound peers
-   - Save as anchors.dat
+   - Save as anchors.json
    - These become priority connections next startup
 ```
 

@@ -110,17 +110,37 @@ bool AnchorManager::SaveAnchors(const std::string &filepath) {
     }
     root["anchors"] = anchors_array;
 
-    // Write to file
-    std::ofstream file(filepath);
-    if (!file.is_open()) {
-      LOG_NET_ERROR("Failed to open anchors file for writing: {}", filepath);
-      return false;
+    // Write atomically via temp file then rename
+    const std::string tmp = filepath + ".tmp";
+    {
+      std::ofstream file(tmp, std::ios::trunc);
+      if (!file.is_open()) {
+        LOG_NET_ERROR("Failed to open anchors temp file for writing: {}", tmp);
+        return false;
+      }
+      file << root.dump(2);
+      file.flush();
+      if (!file) {
+        LOG_NET_ERROR("Failed to write anchors temp file: {}", tmp);
+        return false;
+      }
     }
 
-    file << root.dump(2);
-    file.close();
+    std::error_code ec;
+    std::filesystem::rename(tmp, filepath, ec);
+    if (ec) {
+      // On cross-device or permission issues, try replace by remove+rename
+      std::filesystem::remove(filepath, ec);
+      std::filesystem::rename(tmp, filepath, ec);
+      if (ec) {
+        LOG_NET_ERROR("Failed to atomically replace anchors file: {} -> {}: {}", tmp, filepath, ec.message());
+        // Cleanup temp best-effort
+        std::filesystem::remove(tmp);
+        return false;
+      }
+    }
 
-    LOG_NET_DEBUG("Successfully saved {} anchors", anchors.size());
+    LOG_NET_DEBUG("Successfully saved {} anchors (atomic)", anchors.size());
     return true;
 
   } catch (const std::exception &e) {
@@ -137,7 +157,7 @@ bool AnchorManager::LoadAnchors(const std::string &filepath) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
       LOG_NET_DEBUG("No anchors file found at {}", filepath);
-      return true; // Not an error - first run
+      return false; // Indicate no anchors loaded
     }
 
     // Parse JSON
@@ -173,8 +193,12 @@ bool AnchorManager::LoadAnchors(const std::string &filepath) {
       anchors.push_back(addr);
     }
 
-    LOG_NET_INFO("Loaded {} anchor addresses from {}", anchors.size(),
-                 filepath);
+    LOG_NET_INFO("Loaded {} anchor addresses from {}", anchors.size(), filepath);
+    if (anchors.empty()) {
+      // Nothing to reconnect; still delete file to avoid reuse
+      std::filesystem::remove(filepath);
+      LOG_NET_DEBUG("Anchors file was empty; deleted {}", filepath);
+    }
 
     // Try to reconnect to anchors using the callback
     for (const auto &addr : anchors) {

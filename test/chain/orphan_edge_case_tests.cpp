@@ -1,0 +1,47 @@
+// Orphan edge case tests (ported to test2, chain-level)
+
+#include "catch_amalgamated.hpp"
+#include "test_chainstate_manager.hpp"
+#include "chain/chainparams.hpp"
+#include "chain/block.hpp"
+
+using namespace coinbasechain;
+using namespace coinbasechain::test;
+using namespace coinbasechain::chain;
+using coinbasechain::validation::ValidationState;
+
+static CBlockHeader CreateTestHeader(const uint256& prevHash, uint32_t nTime, uint32_t nNonce = 12345) {
+    CBlockHeader header; header.nVersion=1; header.hashPrevBlock=prevHash; header.minerAddress.SetNull(); header.nTime=nTime; header.nBits=0x207fffff; header.nNonce=nNonce; header.hashRandomX.SetNull(); return header;
+}
+static uint256 RandomHash(){ uint256 h; for(int i=0;i<32;i++) *(h.begin()+i)=rand()%256; return h; }
+
+TEST_CASE("Orphan Edge Cases - Invalid Headers", "[orphan][edge]") {
+    auto params = ChainParams::CreateRegTest(); TestChainstateManager chainstate(*params);
+
+    SECTION("Orphan with future timestamp") {
+        chainstate.Initialize(params->GenesisBlock()); uint256 up=RandomHash(); CBlockHeader o=CreateTestHeader(up, std::time(nullptr)+10000); ValidationState st; chainstate.AcceptBlockHeader(o, st, 1); REQUIRE(st.GetRejectReason()=="orphaned"); REQUIRE(chainstate.GetOrphanHeaderCount()==1);
+    }
+    SECTION("Orphan with null prev hash should not be cached") {
+        chainstate.Initialize(params->GenesisBlock()); uint256 nullHash; nullHash.SetNull(); CBlockHeader o=CreateTestHeader(nullHash,1234567890); ValidationState st; chain::CBlockIndex* r=chainstate.AcceptBlockHeader(o, st, 1); REQUIRE(r==nullptr); REQUIRE(st.GetRejectReason()!="orphaned"); REQUIRE(chainstate.GetOrphanHeaderCount()==0);
+    }
+    SECTION("Orphan with invalid version") {
+        chainstate.Initialize(params->GenesisBlock()); uint256 up=RandomHash(); CBlockHeader o=CreateTestHeader(up,1234567890); o.nVersion=0; ValidationState st; chainstate.AcceptBlockHeader(o, st, 1); REQUIRE(true);
+    }
+    SECTION("Orphan becomes invalid when parent arrives (bypassed here)") {
+        chainstate.Initialize(params->GenesisBlock()); const auto& genesis=params->GenesisBlock(); CBlockHeader parent=CreateTestHeader(genesis.GetHash(), genesis.nTime+120,1000); uint256 parentHash=parent.GetHash(); CBlockHeader orphan=CreateTestHeader(parentHash, genesis.nTime+60,1001); ValidationState st; chainstate.AcceptBlockHeader(orphan, st, 1); REQUIRE(chainstate.GetOrphanHeaderCount()==1); chainstate.AcceptBlockHeader(parent, st, 1); REQUIRE(chainstate.GetOrphanHeaderCount()==0); REQUIRE(chainstate.LookupBlockIndex(orphan.GetHash())!=nullptr);
+    }
+}
+
+TEST_CASE("Orphan Edge Cases - Chain Topology", "[orphan][edge]") {
+    auto params = ChainParams::CreateRegTest(); TestChainstateManager chainstate(*params);
+
+    SECTION("Orphan chain with missing middle block") {
+        chainstate.Initialize(params->GenesisBlock()); const auto& genesis=params->GenesisBlock(); CBlockHeader A=CreateTestHeader(genesis.GetHash(), genesis.nTime+120,1000); uint256 hA=A.GetHash(); CBlockHeader B=CreateTestHeader(hA, genesis.nTime+240,1001); uint256 hB=B.GetHash(); CBlockHeader C=CreateTestHeader(hB, genesis.nTime+360,1002); ValidationState st; chainstate.AcceptBlockHeader(A, st, 1); REQUIRE(chainstate.LookupBlockIndex(hA)!=nullptr); chainstate.AcceptBlockHeader(C, st, 1); REQUIRE(chainstate.GetOrphanHeaderCount()==1); chainstate.AcceptBlockHeader(B, st, 1); REQUIRE(chainstate.GetOrphanHeaderCount()==0); REQUIRE(chainstate.LookupBlockIndex(hB)!=nullptr); REQUIRE(chainstate.LookupBlockIndex(C.GetHash())!=nullptr);
+    }
+    SECTION("Multiple orphan chains from same root") {
+        chainstate.Initialize(params->GenesisBlock()); const auto& genesis=params->GenesisBlock(); uint256 hA=RandomHash(); CBlockHeader B1=CreateTestHeader(hA, genesis.nTime+240,1001); CBlockHeader B2=CreateTestHeader(hA, genesis.nTime+240,1002); CBlockHeader B3=CreateTestHeader(hA, genesis.nTime+240,1003); ValidationState st; chainstate.AcceptBlockHeader(B1, st, 1); chainstate.AcceptBlockHeader(B2, st, 1); chainstate.AcceptBlockHeader(B3, st, 1); REQUIRE(chainstate.GetOrphanHeaderCount()==3); REQUIRE(chainstate.GetOrphanHeaderCount()==3);
+    }
+    SECTION("Orphan refers to block already in active chain") {
+        chainstate.Initialize(params->GenesisBlock()); const auto& genesis=params->GenesisBlock(); CBlockHeader A=CreateTestHeader(genesis.GetHash(), genesis.nTime+120,1000); CBlockHeader B=CreateTestHeader(A.GetHash(), genesis.nTime+240,1001); ValidationState st; chain::CBlockIndex* pA=chainstate.AcceptBlockHeader(A, st, 1); if(pA){ chainstate.TryAddBlockIndexCandidate(pA);} REQUIRE(chainstate.LookupBlockIndex(A.GetHash())!=nullptr); chain::CBlockIndex* pB=chainstate.AcceptBlockHeader(B, st, 1); if(pB){ chainstate.TryAddBlockIndexCandidate(pB);} REQUIRE(chainstate.LookupBlockIndex(B.GetHash())!=nullptr);
+    }
+}

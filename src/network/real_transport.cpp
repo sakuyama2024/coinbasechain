@@ -37,7 +37,7 @@ RealTransportConnection::create_inbound(boost::asio::io_context &io_context,
     conn->remote_addr_ = remote_ep.address().to_string();
     conn->remote_port_ = remote_ep.port();
   } catch (const std::exception &e) {
-    LOG_WARN("Failed to get remote endpoint: {}", e.what());
+    LOG_NET_TRACE("failed to get remote endpoint: {}", e.what());
   }
 
   return conn;
@@ -64,7 +64,7 @@ void RealTransportConnection::do_connect(const std::string &address,
        resolver](const boost::system::error_code &ec,
                  boost::asio::ip::tcp::resolver::results_type results) {
         if (ec) {
-          LOG_DEBUG("Failed to resolve {}: {}", remote_addr_, ec.message());
+          LOG_NET_TRACE("failed to resolve {}: {}", remote_addr_, ec.message());
           if (callback) {
             try {
               callback(false);
@@ -83,7 +83,7 @@ void RealTransportConnection::do_connect(const std::string &address,
             [this, self, callback](const boost::system::error_code &ec,
                                    const boost::asio::ip::tcp::endpoint &) {
               if (ec) {
-                LOG_DEBUG("Failed to connect to {}:{}: {}", remote_addr_,
+                LOG_NET_TRACE("failed to connect to {}:{}: {}", remote_addr_,
                           remote_port_, ec.message());
                 if (callback) {
                   try {
@@ -98,14 +98,14 @@ void RealTransportConnection::do_connect(const std::string &address,
               }
 
               open_ = true;
-              LOG_DEBUG("Connected to {}:{}", remote_addr_, remote_port_);
+              LOG_NET_TRACE("connected to {}:{}", remote_addr_, remote_port_);
               if (callback) {
                 try {
                   callback(true);
                 } catch (const std::exception &e) {
-                  LOG_WARN("Exception in connect callback: {}", e.what());
+            LOG_NET_TRACE("exception in connect callback: {}", e.what());
                 } catch (...) {
-                  LOG_WARN("Unknown exception in connect callback");
+            LOG_NET_TRACE("unknown exception in connect callback");
                 }
               }
             });
@@ -129,7 +129,7 @@ void RealTransportConnection::start_read() {
         if (ec) {
           if (ec != boost::asio::error::eof &&
               ec != boost::asio::error::operation_aborted) {
-            LOG_DEBUG("Read error from {}:{}: {}", remote_addr_, remote_port_,
+            LOG_NET_TRACE("read error from {}:{}: {}", remote_addr_, remote_port_,
                       ec.message());
           }
           close();
@@ -137,26 +137,26 @@ void RealTransportConnection::start_read() {
             try {
               disconnect_callback_();
             } catch (const std::exception &e) {
-              LOG_WARN("Exception in disconnect callback: {}", e.what());
+              LOG_NET_TRACE("exception in disconnect callback: {}", e.what());
             } catch (...) {
-              LOG_WARN("Unknown exception in disconnect callback");
+              LOG_NET_TRACE("unknown exception in disconnect callback");
             }
           }
           return;
         }
 
         if (bytes_transferred > 0 && receive_callback_) {
-          LOG_NET_DEBUG("TCP received {} bytes from {}:{}", bytes_transferred,
+          LOG_NET_TRACE("tcp received {} bytes from {}:{}", bytes_transferred,
                         remote_addr_, remote_port_);
           std::vector<uint8_t> data(recv_buffer_.begin(),
                                     recv_buffer_.begin() + bytes_transferred);
           try {
             receive_callback_(data);
           } catch (const std::exception &e) {
-            LOG_WARN("Exception in receive callback from {}:{}: {}",
+            LOG_NET_TRACE("exception in receive callback from {}:{}: {}",
                      remote_addr_, remote_port_, e.what());
           } catch (...) {
-            LOG_WARN("Unknown exception in receive callback from {}:{}",
+            LOG_NET_TRACE("unknown exception in receive callback from {}:{}",
                      remote_addr_, remote_port_);
           }
         }
@@ -203,16 +203,16 @@ void RealTransportConnection::do_write() {
         writing_ = false;
 
         if (ec) {
-          LOG_DEBUG("Write error to {}:{}: {}", remote_addr_, remote_port_,
+          LOG_NET_TRACE("write error to {}:{}: {}", remote_addr_, remote_port_,
                     ec.message());
           close();
           if (disconnect_callback_) {
             try {
               disconnect_callback_();
             } catch (const std::exception &e) {
-              LOG_WARN("Exception in disconnect callback: {}", e.what());
+              LOG_NET_TRACE("exception in disconnect callback: {}", e.what());
             } catch (...) {
-              LOG_WARN("Unknown exception in disconnect callback");
+              LOG_NET_TRACE("unknown exception in disconnect callback");
             }
           }
           return;
@@ -286,7 +286,7 @@ bool RealTransport::listen(
     uint16_t port,
     std::function<void(TransportConnectionPtr)> accept_callback) {
   if (acceptor_) {
-    LOG_WARN("Already listening");
+    LOG_NET_TRACE("already listening");
     return false;
   }
 
@@ -297,12 +297,12 @@ bool RealTransport::listen(
         io_context_,
         boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), port));
 
-    LOG_INFO("Listening on port {}", port);
+    LOG_NET_INFO("listening on port {}", port);
     start_accept();
     return true;
 
   } catch (const std::exception &e) {
-    LOG_ERROR("Failed to listen on port {}: {}", port, e.what());
+    LOG_NET_ERROR("failed to listen on port {}: {}", port, e.what());
     return false;
   }
 }
@@ -321,7 +321,7 @@ void RealTransport::handle_accept(const boost::system::error_code &ec,
                                   boost::asio::ip::tcp::socket socket) {
   if (ec) {
     if (ec != boost::asio::error::operation_aborted) {
-      LOG_WARN("Accept error: {}", ec.message());
+      LOG_NET_TRACE("accept error: {}", ec.message());
       // Continue accepting despite error
       start_accept();
     }
@@ -337,9 +337,9 @@ void RealTransport::handle_accept(const boost::system::error_code &ec,
     try {
       accept_callback_(conn);
     } catch (const std::exception &e) {
-      LOG_WARN("Exception in accept callback: {}", e.what());
+      LOG_NET_TRACE("exception in accept callback: {}", e.what());
     } catch (...) {
-      LOG_WARN("Unknown exception in accept callback");
+      LOG_NET_TRACE("unknown exception in accept callback");
     }
   }
 
@@ -365,7 +365,7 @@ void RealTransport::stop() {
     return; // Already stopped
   }
 
-  LOG_INFO("Stopping transport");
+  LOG_NET_TRACE("stopping transport");
 
   stop_listening();
 

@@ -1,6 +1,7 @@
 #include "network/peer_manager.hpp"
 #include "chain/logging.hpp"
 #include <algorithm>
+#include <boost/asio/ip/address.hpp>
 
 namespace coinbasechain {
 namespace network {
@@ -19,7 +20,7 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
     return -1;
   }
 
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::unique_lock<std::mutex> lock(mutex_);
 
   // Check connection limits
   bool is_inbound = peer->is_inbound();
@@ -41,11 +42,10 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
 
   // Check inbound limit - try eviction if at capacity
   if (is_inbound && current_inbound >= config_.max_inbound_peers) {
-    // Release lock temporarily to call evict_inbound_peer
-    // (evict_inbound_peer will acquire its own lock)
-    mutex_.unlock();
+    // Release lock temporarily to call evict_inbound_peer (which locks internally)
+    lock.unlock();
     bool evicted = evict_inbound_peer();
-    mutex_.lock();
+    lock.lock();
 
     if (!evicted) {
       return -1; // Couldn't evict anyone, reject connection
@@ -57,6 +57,8 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
   int peer_id = allocate_peer_id();
   peer->set_id(peer_id);  // Set the ID on the peer object
   peers_[peer_id] = std::move(peer);
+
+  LOG_NET_DEBUG("Added connection peer={}", peer_id);
 
   // Initialize misbehavior tracking
   std::string peer_address = address.empty() ? peers_[peer_id]->address() : address;
@@ -91,13 +93,13 @@ void PeerManager::remove_peer(int peer_id) {
     peer_misbehavior_.erase(peer_id);
 
     LOG_NET_TRACE("remove_peer({}): peers_.size() AFTER = {}", peer_id, peers_.size());
-    LOG_NET_INFO("remove_peer: Erased peer {} from map (map size now: {})",
+    LOG_NET_TRACE("remove_peer: erased peer {} from map (map size now: {})",
                  peer_id, peers_.size());
   }
 
   // Disconnect outside the lock
   if (peer) {
-    LOG_NET_INFO("remove_peer: Calling disconnect() on peer {}", peer_id);
+    LOG_NET_TRACE("remove_peer: calling disconnect() on peer {}", peer_id);
     peer->disconnect();
   }
 }
@@ -109,29 +111,31 @@ PeerPtr PeerManager::get_peer(int peer_id) {
 }
 
 int PeerManager::find_peer_by_address(const std::string &address,
-                                      uint16_t port) {
+                                      uint16_t /*port*/) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  // Bitcoin Core pattern (net.cpp:332): FindNode(CNetAddr) - IP only comparison
-  // Checks static_cast<CNetAddr>(pnode->addr) == ip
-  //
-  // Why IP-only (not IP+port):
-  // - Outbound connections store peer's listening port (e.g., 19590)
-  // - Inbound connections store peer's ephemeral source port (e.g., 39546)
-  // - Same peer has different ports, so IP+port comparison fails to detect duplicates
-  //
-  // This matches Bitcoin Core's FindNode(CNetAddr) at net.cpp:332-341
-  // Bitcoin also has AlreadyConnectedToAddress() at net.cpp:365 with IP:port check OR'd
-
-  for (const auto &[id, peer] : peers_) {
-    if (!peer) {
-      continue;
+  // Normalize input address (convert IPv4-mapped IPv6 to IPv4 dotted-quad)
+  auto normalize = [](const std::string& s) -> std::string {
+    try {
+      boost::system::error_code ec;
+      auto ip = boost::asio::ip::make_address(s, ec);
+      if (ec) return s;
+      if (ip.is_v6() && ip.to_v6().is_v4_mapped()) {
+        auto v4 = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, ip.to_v6());
+        return v4.to_string();
+      }
+      return ip.to_string();
+    } catch (...) {
+      return s;
     }
+  };
 
-    // Check address only (ignore port - Bitcoin Core pattern)
-    // This correctly detects duplicates even when ports differ
-    // Use address() not target_address() - works for both inbound/outbound
-    if (peer->address() == address) {
+  const std::string needle = normalize(address);
+
+  // Compare normalized addresses only (ignore port)
+  for (const auto &[id, peer] : peers_) {
+    if (!peer) continue;
+    if (normalize(peer->address()) == needle) {
       return id;
     }
   }
@@ -426,7 +430,7 @@ bool PeerManager::Misbehaving(int peer_id, int penalty,
   LOG_NET_TRACE("Misbehaving() peer={} score: {} -> {} (threshold={})",
                 peer_id, old_score, data.misbehavior_score, DISCOURAGEMENT_THRESHOLD);
 
-  LOG_NET_INFO("Peer {} ({}) misbehavior +{}: {} (total score: {})", peer_id,
+  LOG_NET_TRACE("peer {} ({}) misbehavior +{}: {} (total score: {})", peer_id,
                data.address, penalty, reason, data.misbehavior_score);
 
   // Check if threshold exceeded
@@ -435,7 +439,7 @@ bool PeerManager::Misbehaving(int peer_id, int penalty,
 
     // Check if peer has NoBan permission (matches Bitcoin: track score but don't disconnect)
     if (HasPermission(data.permissions, NetPermissionFlags::NoBan)) {
-      LOG_NET_WARN("Warning: not punishing noban peer {} (score {} >= threshold {})",
+      LOG_NET_TRACE("noban peer {} not punished (score {} >= threshold {})",
                    peer_id, data.misbehavior_score, DISCOURAGEMENT_THRESHOLD);
       // DO NOT set should_discourage for NoBan peers
       return false;
@@ -443,7 +447,7 @@ bool PeerManager::Misbehaving(int peer_id, int penalty,
 
     // Normal peer: mark for disconnection
     data.should_discourage = true;
-    LOG_NET_WARN("Peer {} ({}) marked for disconnect (score {} >= threshold {})",
+    LOG_NET_TRACE("peer {} ({}) marked for disconnect (score {} >= threshold {})",
                  peer_id, data.address, data.misbehavior_score,
                  DISCOURAGEMENT_THRESHOLD);
     return true;
@@ -496,7 +500,7 @@ void PeerManager::IncrementUnconnectingHeaders(int peer_id) {
                 peer_id, data.num_unconnecting_headers_msgs, MAX_UNCONNECTING_HEADERS);
 
   if (data.num_unconnecting_headers_msgs >= MAX_UNCONNECTING_HEADERS) {
-    LOG_NET_INFO("Peer {} ({}) sent too many unconnecting headers ({} >= {})",
+    LOG_NET_TRACE("peer {} ({}) sent too many unconnecting headers ({} >= {})",
                  peer_id, data.address, data.num_unconnecting_headers_msgs,
                  MAX_UNCONNECTING_HEADERS);
 

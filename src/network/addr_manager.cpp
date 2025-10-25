@@ -199,17 +199,42 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
   std::uniform_int_distribution<int> dist(0, 99);
   bool use_tried = !tried_.empty() && (dist(rng_) < 80 || new_.empty());
 
+  const uint32_t now_ts = now();
+  const uint32_t COOLDOWN_SEC = 600; // 10 minutes
+  const int ATTEMPT_BYPASS = 30;     // After 30 attempts, allow sooner retries
+
+  auto ok = [&](const AddrInfo& info) -> bool {
+    if (info.last_try == 0) return true;
+    if (now_ts - info.last_try >= COOLDOWN_SEC) return true;
+    if (info.attempts >= ATTEMPT_BYPASS) return true;
+    return false;
+  };
+
   if (use_tried && !tried_.empty()) {
-    // Select random from tried
     std::uniform_int_distribution<size_t> idx_dist(0, tried_.size() - 1);
+    const size_t max_checks = std::min<size_t>(tried_.size(), 64);
+    for (size_t i = 0; i < max_checks; ++i) {
+      auto it = tried_.begin();
+      std::advance(it, idx_dist(rng_));
+      if (ok(it->second)) {
+        return it->second.address;
+      }
+    }
     auto it = tried_.begin();
     std::advance(it, idx_dist(rng_));
     return it->second.address;
   }
 
   if (!new_.empty()) {
-    // Select random from new
     std::uniform_int_distribution<size_t> idx_dist(0, new_.size() - 1);
+    const size_t max_checks = std::min<size_t>(new_.size(), 64);
+    for (size_t i = 0; i < max_checks; ++i) {
+      auto it = new_.begin();
+      std::advance(it, idx_dist(rng_));
+      if (ok(it->second)) {
+        return it->second.address;
+      }
+    }
     auto it = new_.begin();
     std::advance(it, idx_dist(rng_));
     return it->second.address;
@@ -302,7 +327,7 @@ bool AddressManager::Save(const std::string &filepath) {
   try {
     // Calculate size without calling size() to avoid recursive lock
     size_t total_size = tried_.size() + new_.size();
-    LOG_NET_INFO("Saving {} peer addresses to {}", total_size, filepath);
+    LOG_NET_TRACE("saving {} peer addresses to {}", total_size, filepath);
 
     json root;
     root["version"] = 1;
@@ -355,7 +380,7 @@ bool AddressManager::Save(const std::string &filepath) {
     file << root.dump(2);
     file.close();
 
-    LOG_NET_DEBUG("Successfully saved {} addresses ({} tried, {} new)",
+    LOG_NET_TRACE("successfully saved {} addresses ({} tried, {} new)",
                   total_size, tried_.size(), new_.size());
     return true;
 
@@ -371,12 +396,12 @@ bool AddressManager::Load(const std::string &filepath) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   try {
-    LOG_NET_INFO("Loading peer addresses from {}", filepath);
+    LOG_NET_TRACE("loading peer addresses from {}", filepath);
 
     // Open file
     std::ifstream file(filepath);
     if (!file.is_open()) {
-      LOG_NET_WARN("Peer address file not found: {} (starting fresh)",
+      LOG_NET_TRACE("peer address file not found: {} (starting fresh)",
                    filepath);
       return false;
     }
@@ -404,7 +429,7 @@ bool AddressManager::Load(const std::string &filepath) {
 
         // Load IP
         if (addr_json["ip"].size() != 16) {
-          LOG_NET_WARN("Invalid IP address in peers file, skipping");
+          LOG_NET_TRACE("invalid IP address in peers file, skipping");
           continue;
         }
         for (size_t i = 0; i < 16; ++i) {

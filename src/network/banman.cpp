@@ -14,7 +14,7 @@ namespace network {
 
 BanMan::BanMan(const std::string &datadir, bool auto_save)
     : m_datadir(datadir), m_auto_save(auto_save) {
-  LOG_INFO("BanMan initialized with datadir: {}, auto_save: {}",
+  LOG_NET_TRACE("BanMan initialized (datadir: {}, auto_save: {})",
            datadir.empty() ? "<none>" : datadir, auto_save);
 }
 
@@ -37,13 +37,13 @@ bool BanMan::Load() {
 
   std::string path = GetBanlistPath();
   if (path.empty()) {
-    LOG_DEBUG("BanMan: No datadir specified, skipping load");
+    LOG_NET_TRACE("BanMan: no datadir specified, skipping load");
     return true;
   }
 
   std::ifstream file(path);
   if (!file.is_open()) {
-    LOG_INFO("BanMan: No existing banlist found at {}", path);
+    LOG_NET_TRACE("BanMan: no existing banlist found at {}", path);
     return true; // Not an error - first run
   }
 
@@ -71,12 +71,12 @@ bool BanMan::Load() {
       loaded++;
     }
 
-    LOG_INFO("BanMan: Loaded {} bans from {} (skipped {} expired)", loaded,
+    LOG_NET_TRACE("BanMan: loaded {} bans from {} (skipped {} expired)", loaded,
              path, expired);
     return true;
 
   } catch (const std::exception &e) {
-    LOG_ERROR("BanMan: Failed to parse {}: {}", path, e.what());
+    LOG_NET_ERROR("BanMan: failed to parse {}: {}", path, e.what());
     return false;
   }
 }
@@ -85,7 +85,7 @@ bool BanMan::Load() {
 bool BanMan::SaveInternal() {
   std::string path = GetBanlistPath();
   if (path.empty()) {
-    LOG_DEBUG("BanMan: No datadir specified, skipping save");
+    LOG_NET_TRACE("BanMan: no datadir specified, skipping save");
     return true;
   }
 
@@ -109,16 +109,16 @@ bool BanMan::SaveInternal() {
 
     std::ofstream file(path);
     if (!file.is_open()) {
-      LOG_ERROR("BanMan: Failed to open {} for writing", path);
+      LOG_NET_ERROR("BanMan: failed to open {} for writing", path);
       return false;
     }
 
     file << j.dump(2);
-    LOG_DEBUG("BanMan: Saved {} bans to {}", m_banned.size(), path);
+    LOG_NET_TRACE("BanMan: saved {} bans to {}", m_banned.size(), path);
     return true;
 
   } catch (const std::exception &e) {
-    LOG_ERROR("BanMan: Failed to save {}: {}", path, e.what());
+    LOG_NET_ERROR("BanMan: failed to save {}: {}", path, e.what());
     return false;
   }
 }
@@ -139,10 +139,10 @@ void BanMan::Ban(const std::string &address, int64_t ban_time_offset) {
   m_banned[address] = entry;
 
   if (ban_time_offset > 0) {
-    LOG_WARN("BanMan: Banned {} until {} ({}s)", address, ban_until,
+    LOG_NET_WARN("BanMan: banned {} until {} ({}s)", address, ban_until,
              ban_time_offset);
   } else {
-    LOG_WARN("BanMan: Permanently banned {}", address);
+    LOG_NET_WARN("BanMan: permanently banned {}", address);
   }
   // Auto-save
   if (m_auto_save && !m_datadir.empty()) {
@@ -156,14 +156,14 @@ void BanMan::Unban(const std::string &address) {
   auto it = m_banned.find(address);
   if (it != m_banned.end()) {
     m_banned.erase(it);
-    LOG_INFO("BanMan: Unbanned {}", address);
+    LOG_NET_INFO("BanMan: unbanned {}", address);
 
     // Auto-save
     if (!m_datadir.empty()) {
         SaveInternal();
     }
   } else {
-    LOG_WARN("BanMan: Address {} was not banned", address);
+    LOG_NET_TRACE("BanMan: address {} was not banned", address);
   }
 }
 
@@ -187,7 +187,7 @@ void BanMan::Discourage(const std::string &address) {
   int64_t expiry = now + DISCOURAGEMENT_DURATION;
 
   m_discouraged[address] = expiry;
-  LOG_INFO("BanMan: Discouraged {} until {} (~24h)", address, expiry);
+  LOG_NET_INFO("BanMan: discouraged {} until {} (~24h)", address, expiry);
 }
 
 bool BanMan::IsDiscouraged(const std::string &address) const {
@@ -212,7 +212,7 @@ bool BanMan::IsDiscouraged(const std::string &address) const {
 void BanMan::ClearDiscouraged() {
   std::lock_guard<std::mutex> lock(m_discouraged_mutex);
   m_discouraged.clear();
-  LOG_INFO("BanMan: Cleared all discouraged addresses");
+  LOG_NET_TRACE("BanMan: cleared all discouraged addresses");
 }
 
 std::map<std::string, CBanEntry> BanMan::GetBanned() const {
@@ -223,7 +223,7 @@ std::map<std::string, CBanEntry> BanMan::GetBanned() const {
 void BanMan::ClearBanned() {
   std::lock_guard<std::mutex> lock(m_banned_mutex);
   m_banned.clear();
-  LOG_INFO("BanMan: Cleared all bans");
+  LOG_NET_TRACE("BanMan: cleared all bans");
 
   // Auto-save
   if (m_auto_save && !m_datadir.empty()) {
@@ -239,7 +239,7 @@ void BanMan::SweepBanned() {
 
   for (auto it = m_banned.begin(); it != m_banned.end();) {
     if (it->second.IsExpired(now)) {
-      LOG_DEBUG("BanMan: Sweeping expired ban for {}", it->first);
+    LOG_NET_TRACE("BanMan: sweeping expired ban for {}", it->first);
       it = m_banned.erase(it);
     } else {
       ++it;
@@ -248,7 +248,7 @@ void BanMan::SweepBanned() {
 
   size_t removed = before - m_banned.size();
   if (removed > 0) {
-    LOG_INFO("BanMan: Swept {} expired bans", removed);
+    LOG_NET_TRACE("BanMan: swept {} expired bans", removed);
 
     // Auto-save
     if (!m_datadir.empty()) {

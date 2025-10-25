@@ -383,10 +383,6 @@ std::unique_ptr<Message> create_message(const std::string &command) {
     return std::make_unique<GetAddrMessage>();
   if (command == protocol::commands::INV)
     return std::make_unique<InvMessage>();
-  if (command == protocol::commands::GETDATA)
-    return std::make_unique<GetDataMessage>();
-  if (command == protocol::commands::NOTFOUND)
-    return std::make_unique<NotFoundMessage>();
   if (command == protocol::commands::GETHEADERS)
     return std::make_unique<GetHeadersMessage>();
   if (command == protocol::commands::HEADERS)
@@ -552,73 +548,6 @@ bool InvMessage::deserialize(const uint8_t *data, size_t size) {
   return !d.has_error();
 }
 
-// GetDataMessage
-std::vector<uint8_t> GetDataMessage::serialize() const {
-  MessageSerializer s;
-  s.write_varint(inventory.size());
-  for (const auto &inv : inventory) {
-    s.write_inventory_vector(inv);
-  }
-  return s.data();
-}
-
-bool GetDataMessage::deserialize(const uint8_t *data, size_t size) {
-  MessageDeserializer d(data, size);
-  uint64_t count = d.read_varint();
-  if (count > protocol::MAX_INV_SIZE)
-    return false;
-
-  // SECURITY: Incremental allocation to prevent DoS attacks
-  inventory.clear();
-  uint64_t allocated = 0;
-  constexpr size_t batch_size =
-      protocol::MAX_VECTOR_ALLOCATE / sizeof(protocol::InventoryVector);
-
-  for (uint64_t i = 0; i < count; ++i) {
-    if (inventory.size() >= allocated) {
-      allocated = std::min(count, allocated + batch_size);
-      inventory.reserve(allocated);
-    }
-    inventory.push_back(d.read_inventory_vector());
-    if (d.has_error())
-      return false;
-  }
-  return !d.has_error();
-}
-
-// NotFoundMessage
-std::vector<uint8_t> NotFoundMessage::serialize() const {
-  MessageSerializer s;
-  s.write_varint(inventory.size());
-  for (const auto &inv : inventory) {
-    s.write_inventory_vector(inv);
-  }
-  return s.data();
-}
-
-bool NotFoundMessage::deserialize(const uint8_t *data, size_t size) {
-  MessageDeserializer d(data, size);
-  uint64_t count = d.read_varint();
-  if (count > protocol::MAX_INV_SIZE)
-    return false;
-
-  // SECURITY: Incremental allocation to prevent DoS attacks
-  inventory.clear();
-  uint64_t allocated = 0;
-  constexpr size_t batch_size =
-      protocol::MAX_VECTOR_ALLOCATE / sizeof(protocol::InventoryVector);
-
-  for (uint64_t i = 0; i < count; ++i) {
-    if (inventory.size() >= allocated) {
-      allocated = std::min(count, allocated + batch_size);
-      inventory.reserve(allocated);
-    }
-    inventory.push_back(d.read_inventory_vector());
-    if (d.has_error())
-      return false;
-  }
-  return !d.has_error();
-}
 
 // GetHeadersMessage
 GetHeadersMessage::GetHeadersMessage() : version(protocol::PROTOCOL_VERSION) {

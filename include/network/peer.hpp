@@ -117,6 +117,10 @@ public:
   bool sync_started() const { return sync_started_; }
   void set_sync_started(bool started) { sync_started_ = started; }
 
+  // Discovery state
+  bool has_sent_getaddr() const { return getaddr_sent_; }
+  void mark_getaddr_sent() { getaddr_sent_ = true; }
+
 private:
   // Private constructor - use create_outbound/create_inbound
   Peer(boost::asio::io_context &io_context, TransportConnectionPtr connection,
@@ -179,6 +183,7 @@ private:
   MessageHandler message_handler_;
   bool successfully_connected_{false}; // Set to true after VERACK received
   bool sync_started_{false};  // Bitcoin Core: CNodeState::fSyncStarted - whether we've started headers sync with this peer
+  bool getaddr_sent_{false};  // Whether we've sent GETADDR to this peer (discovery)
 
   // Peer info from VERSION
   int32_t peer_version_ = 0;

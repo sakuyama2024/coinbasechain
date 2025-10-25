@@ -83,7 +83,7 @@ void BlockRelayManager::FlushBlockAnnouncements() {
   // This is called periodically (like Bitcoin's SendMessages loop)
   auto all_peers = peer_manager_.get_all_peers();
 
-  LOG_NET_DEBUG("FlushBlockAnnouncements: checking {} peers", all_peers.size());
+  LOG_NET_TRACE("FlushBlockAnnouncements: checking {} peers", all_peers.size());
 
   for (const auto &peer : all_peers) {
     if (!peer || !peer->is_connected() || peer->state() != PeerState::READY) {
@@ -153,7 +153,7 @@ bool BlockRelayManager::HandleInvMessage(PeerPtr peer,
     return false;
   }
 
-  LOG_NET_DEBUG("Received INV with {} items from peer {}",
+  LOG_NET_TRACE("Received INV with {} items from peer {}",
                 msg->inventory.size(), peer->id());
 
   // Process each inventory item

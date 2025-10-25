@@ -52,7 +52,7 @@ void AddTimeData(const std::string &peer_addr, int64_t nOffsetSample) {
 
   // Add data to median filter
   g_time_offsets.input(nOffsetSample);
-  LOG_DEBUG("Added time data from peer {}: offset={:+d}s ({:+d} minutes), "
+  LOG_CHAIN_TRACE("Added time data from peer {}: offset={:+d}s ({:+d} minutes), "
             "total samples={}",
             peer_addr, nOffsetSample, nOffsetSample / 60,
             g_time_offsets.size());
@@ -92,7 +92,7 @@ void AddTimeData(const std::string &peer_addr, int64_t nOffsetSample) {
       nTimeOffset = nMedian;
       LOG_CHAIN_TRACE("AddTimeData: Time offset adjusted: {:+d}s -> {:+d}s",
                       oldOffset, nTimeOffset);
-      LOG_INFO("Network time offset updated: {:+d}s ({:+d} minutes) based on "
+      LOG_CHAIN_TRACE("Network time offset updated: {:+d}s ({:+d} minutes) based on "
                "{} samples",
                nTimeOffset, nTimeOffset / 60, g_time_offsets.size());
     } else {
@@ -114,11 +114,11 @@ void AddTimeData(const std::string &peer_addr, int64_t nOffsetSample) {
 
         if (!fMatch) {
           g_warning_emitted = true;
-          LOG_ERROR(
+          LOG_CHAIN_ERROR(
               "WARNING: Please check that your computer's date and time are "
               "correct! "
               "If your clock is wrong, Coinbase Chain will not work properly.");
-          LOG_ERROR("Your clock differs from network time by more than {:+d} "
+          LOG_CHAIN_ERROR("Your clock differs from network time by more than {:+d} "
                     "minutes (max adjustment). "
                     "Median network offset: {:+d}s",
                     max_adjustment / 60, nMedian);
@@ -134,7 +134,7 @@ void AddTimeData(const std::string &peer_addr, int64_t nOffsetSample) {
       }
       log_message += "| median offset = " + std::to_string(nTimeOffset) +
                      "s (" + std::to_string(nTimeOffset / 60) + " minutes)";
-      LOG_DEBUG("{}", log_message);
+      LOG_CHAIN_TRACE("{}", log_message);
     }
   }
 }

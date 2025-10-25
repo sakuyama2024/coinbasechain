@@ -254,7 +254,7 @@ bool RPCServer::Start() {
   running_ = true;
   server_thread_ = std::thread(&RPCServer::ServerThread, this);
 
-  LOG_INFO("RPC server started on {}", socket_path_);
+  LOG_NET_INFO("RPC server started on {}", socket_path_);
   return true;
 }
 
@@ -278,7 +278,7 @@ void RPCServer::Stop() {
 
   unlink(socket_path_.c_str());
 
-  LOG_INFO("RPC server stopped");
+  LOG_NET_INFO("RPC server stopped");
 }
 
 void RPCServer::ServerThread() {
@@ -290,7 +290,7 @@ void RPCServer::ServerThread() {
         accept(server_fd_, (struct sockaddr *)&client_addr, &client_len);
     if (client_fd < 0) {
       if (running_) {
-        LOG_WARN("Failed to accept RPC connection");
+        LOG_NET_WARN("failed to accept RPC connection");
       }
       continue;
     }
@@ -318,7 +318,7 @@ void RPCServer::HandleClient(int client_fd) {
 
   // SECURITY FIX: Bounds check before creating string
   if (received >= static_cast<ssize_t>(buffer.size())) {
-    LOG_ERROR("RPC request too large: {} bytes", received);
+    LOG_NET_ERROR("RPC request too large: {} bytes", received);
     std::string error = "{\"error\":\"Request too large\"}\n";
     send(client_fd, error.c_str(), error.size(), 0);
     return;
@@ -359,7 +359,7 @@ void RPCServer::HandleClient(int client_fd) {
       }
     }
   } catch (const nlohmann::json::exception& e) {
-    LOG_WARN("RPC JSON parse error: {}", e.what());
+    LOG_NET_WARN("RPC JSON parse error: {}", e.what());
     std::string error = "{\"error\":\"Invalid JSON\"}\n";
     send(client_fd, error.c_str(), error.size(), 0);
     return;
@@ -383,7 +383,7 @@ std::string RPCServer::ExecuteCommand(const std::string &method,
     return it->second(params);
   } catch (const std::exception &e) {
     // SECURITY FIX: Log full error internally but return sanitized error to client
-    LOG_ERROR("RPC command '{}' failed: {}", method, e.what());
+    LOG_NET_ERROR("RPC command '{}' failed: {}", method, e.what());
 
     // Return sanitized error message (escape special characters)
     std::ostringstream oss;
@@ -448,6 +448,34 @@ RPCServer::HandleGetBlockchainInfo(const std::vector<std::string> &params) {
     difficulty = dDiff;
   }
 
+  // Compute average inter-block times over recent windows
+  auto compute_avg = [](const chain::CBlockIndex *p, int window) -> double {
+    if (!p || !p->pprev || window <= 0) return 0.0;
+    const chain::CBlockIndex *cur = p;
+    long long sum = 0;
+    int count = 0;
+    for (int i = 0; i < window && cur && cur->pprev; ++i) {
+      long long dt = static_cast<long long>(cur->nTime) - static_cast<long long>(cur->pprev->nTime);
+      sum += dt;
+      cur = cur->pprev;
+      ++count;
+    }
+    if (count == 0) return 0.0;
+    return static_cast<double>(sum) / static_cast<double>(count);
+  };
+
+  double avg10 = compute_avg(tip, 10);
+  double avg20 = compute_avg(tip, 20);
+  double avg40 = compute_avg(tip, 40);
+
+  const auto &consensus = params_.GetConsensus();
+
+  // Calculate log2_chainwork for compact display (Bitcoin Core approach)
+  double log2_chainwork = 0.0;
+  if (tip) {
+    log2_chainwork = std::log(tip->nChainWork.getdouble()) / std::log(2.0);
+  }
+
   std::ostringstream oss;
   oss << "{\n"
       << "  \"chain\": \"" << params_.GetChainTypeString() << "\",\n"
@@ -457,8 +485,19 @@ RPCServer::HandleGetBlockchainInfo(const std::vector<std::string> &params) {
       << (tip ? tip->GetBlockHash().GetHex() : "null") << "\",\n"
       << "  \"difficulty\": " << difficulty << ",\n"
       << "  \"time\": " << (tip ? tip->nTime : 0) << ",\n"
+      << "  \"time_str\": \"" << (tip ? util::FormatTime(tip->nTime) : "null") << "\",\n"
       << "  \"mediantime\": " << (tip ? tip->GetMedianTimePast() : 0) << ",\n"
+      << "  \"mediantime_str\": \"" << (tip ? util::FormatTime(tip->GetMedianTimePast()) : "null") << "\",\n"
       << "  \"chainwork\": \"" << (tip ? tip->nChainWork.GetHex() : "0") << "\",\n"
+      << "  \"log2_chainwork\": " << std::fixed << std::setprecision(6) << log2_chainwork << ",\n"
+      << "  \"avg_block_time_10\": " << avg10 << ",\n"
+      << "  \"avg_block_time_20\": " << avg20 << ",\n"
+      << "  \"avg_block_time_40\": " << avg40 << ",\n"
+      << "  \"asert\": {\n"
+      << "    \"target_spacing\": " << consensus.nPowTargetSpacing << ",\n"
+      << "    \"half_life\": " << consensus.nASERTHalfLife << ",\n"
+      << "    \"anchor_height\": " << consensus.nASERTAnchorHeight << "\n"
+      << "  },\n"
       << "  \"initialblockdownload\": " << (chainstate_manager_.IsInitialBlockDownload() ? "true" : "false") << "\n"
       << "}\n";
   return oss.str();

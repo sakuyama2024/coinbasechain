@@ -3,6 +3,10 @@
 
 #include "chain/time.hpp"
 #include <atomic>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
+#include <string>
 
 namespace coinbasechain {
 namespace util {
@@ -66,6 +70,23 @@ void SetMockTime(int64_t time) {
 }
 
 int64_t GetMockTime() { return g_mock_time.load(std::memory_order_relaxed); }
+
+std::string FormatTime(uint32_t unix_time) {
+  if (unix_time == 0) {
+    return "1970-01-01 00:00:00 UTC";
+  }
+
+  std::time_t t = static_cast<std::time_t>(unix_time);
+  std::tm* tm_utc = std::gmtime(&t);
+
+  if (!tm_utc) {
+    return "invalid";
+  }
+
+  std::ostringstream oss;
+  oss << std::put_time(tm_utc, "%Y-%m-%d %H:%M:%S UTC");
+  return oss.str();
+}
 
 } // namespace util
 } // namespace coinbasechain

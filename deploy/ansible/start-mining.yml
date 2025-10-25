@@ -1,39 +1,53 @@
 ---
 # Ansible Playbook: Start mining on CoinbaseChain nodes
-# Usage: ansible-playbook -i inventory.yml start-mining.yml
+#
+# Usage:
+#   ansible-playbook -i inventory.yml start-mining.yml --limit coinbasechain_testnet
+#   ansible-playbook -i inventory.yml start-mining.yml --limit coinbasechain_mainnet
+#   ansible-playbook -i inventory.yml start-mining.yml --limit coinbasechain_regtest
 #
 # Mining addresses are configured per-node in inventory.yml
 # Each node will mine to its own unique address for reward distribution
 
 - name: Start mining on CoinbaseChain nodes
-  hosts: coinbasechain_nodes
+  hosts: all
   become: true
 
-  vars:
-    container_name: "coinbasechain-{{ coinbasechain_network }}"
-
   tasks:
-    - name: Start mining on {{ inventory_hostname }} with address {{ mining_address }}
+    - name: Determine target network from group membership
+      set_fact:
+        target_network: >-
+          {{ 'mainnet' if 'coinbasechain_mainnet' in group_names
+             else 'testnet' if 'coinbasechain_testnet' in group_names
+             else 'regtest' if 'coinbasechain_regtest' in group_names
+             else 'unknown' }}
+        target_container: >-
+          {{ 'coinbasechain-mainnet' if 'coinbasechain_mainnet' in group_names
+             else 'coinbasechain-testnet' if 'coinbasechain_testnet' in group_names
+             else 'coinbasechain-regtest' if 'coinbasechain_regtest' in group_names
+             else 'unknown' }}
+
+    - name: Start mining on {{ inventory_hostname }} ({{ target_network }}) with address {{ mining_address }}
       shell: |
-        docker exec {{ container_name }} coinbasechain-cli startmining {{ mining_address }}
+        docker exec {{ target_container }} coinbasechain-cli startmining {{ mining_address }}
       register: mining_result
       ignore_errors: yes
       when: mining_address is defined
 
-    - name: Start mining on {{ inventory_hostname }} (no address specified)
+    - name: Start mining on {{ inventory_hostname }} ({{ target_network }}) (no address specified)
       shell: |
-        docker exec {{ container_name }} coinbasechain-cli startmining
+        docker exec {{ target_container }} coinbasechain-cli startmining
       register: mining_result_noaddr
       ignore_errors: yes
       when: mining_address is not defined
 
     - name: Display mining result
       debug:
-        msg: "{{ inventory_hostname }}: {{ mining_result.stdout | default(mining_result_noaddr.stdout) }}"
+        msg: "{{ inventory_hostname }} ({{ target_network }}): {{ mining_result.stdout | default(mining_result_noaddr.stdout) }}"
 
-    - name: Get mining info
+    - name: Get mining info from {{ target_network }}
       shell: |
-        docker exec {{ container_name }} coinbasechain-cli getmininginfo
+        docker exec {{ target_container }} coinbasechain-cli getmininginfo
       register: mining_info
 
     - name: Display mining info

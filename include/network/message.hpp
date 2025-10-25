@@ -237,33 +237,6 @@ public:
   bool deserialize(const uint8_t *data, size_t size) override;
 };
 
-/**
- * GETDATA message - Request inventory data
- */
-class GetDataMessage : public Message {
-public:
-  std::vector<protocol::InventoryVector> inventory;
-
-  GetDataMessage() = default;
-
-  std::string command() const override { return protocol::commands::GETDATA; }
-  std::vector<uint8_t> serialize() const override;
-  bool deserialize(const uint8_t *data, size_t size) override;
-};
-
-/**
- * NOTFOUND message - Requested data not available
- */
-class NotFoundMessage : public Message {
-public:
-  std::vector<protocol::InventoryVector> inventory;
-
-  NotFoundMessage() = default;
-
-  std::string command() const override { return protocol::commands::NOTFOUND; }
-  std::vector<uint8_t> serialize() const override;
-  bool deserialize(const uint8_t *data, size_t size) override;
-};
 
 /**
  * GETHEADERS message - Request block headers

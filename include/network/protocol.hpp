@@ -21,8 +21,7 @@ constexpr uint32_t MIN_PROTOCOL_VERSION = 1;
 namespace magic {
 constexpr uint32_t MAINNET = 0x554E4943; // "UNIC" - Unicity mainnet
 constexpr uint32_t TESTNET = 0xA3F8D412; // High bit separation from mainnet
-constexpr uint32_t REGTEST =
-    0x4B7C2E91; // High bit separation from mainnet/testnet
+constexpr uint32_t REGTEST = 0x4B7C2E91; // High bit separation from mainnet/testnet
 } // namespace magic
 
  
@@ -33,8 +32,7 @@ constexpr uint16_t REGTEST = 29590; // MAINNET + 20000
 } // namespace ports
 
 // Service flags - what services this node provides
-// For our headers-only chain, NODE_NETWORK means we can serve headers (not full blocks)
-// This differs from Bitcoin where NODE_NETWORK means serving complete blocks
+// NODE_NETWORK means we can serve headers which are the full blocks in a headers-only chain
 enum ServiceFlags : uint64_t {
   NODE_NONE = 0,
   NODE_NETWORK = (1 << 0), // Can serve block headers (headers-only network)
@@ -54,8 +52,6 @@ constexpr const char *GETADDR = "getaddr";
 
 // Block announcements and requests
 constexpr const char *INV = "inv";
-constexpr const char *GETDATA = "getdata";
-constexpr const char *NOTFOUND = "notfound";
 constexpr const char *GETHEADERS = "getheaders";
 constexpr const char *HEADERS = "headers";
 constexpr const char *SENDHEADERS = "sendheaders"; // Push-based header sync
@@ -88,25 +84,20 @@ constexpr size_t MAX_VECTOR_ALLOCATE =
     5 * 1000 * 1000; // 5 MB - Incremental allocation limit
 
 // Network message limits (Bitcoin Core src/net.h)
-constexpr size_t MAX_PROTOCOL_MESSAGE_LENGTH =
-    4 * 1000 * 1000; // 4 MB - Single message limit
-constexpr size_t DEFAULT_MAX_RECEIVE_BUFFER =
-    5 * 1000; // 5 KB per peer (unused - we use RECV_FLOOD_SIZE)
-constexpr size_t DEFAULT_MAX_SEND_BUFFER =
-    1 * 1000; // 1 KB per peer (unused - send queue unbounded)
-constexpr size_t DEFAULT_RECV_FLOOD_SIZE =
-    5 * 1000 * 1000; // 5 MB - Flood protection (enforced)
+constexpr size_t MAX_PROTOCOL_MESSAGE_LENGTH = 4 * 1000 * 1000; // 4 MB - Single message limit
+constexpr size_t DEFAULT_MAX_RECEIVE_BUFFER = 5 * 1000; // 5 KB per peer (unused - we use RECV_FLOOD_SIZE)
+constexpr size_t DEFAULT_MAX_SEND_BUFFER = 1 * 1000; // 1 KB per peer (unused - send queue unbounded)
+constexpr size_t DEFAULT_RECV_FLOOD_SIZE = 5 * 1000 * 1000; // 5 MB - Flood protection (enforced)
 
-// Protocol-specific limits )
-constexpr unsigned int MAX_LOCATOR_SZ =
-    101;                                 // GETHEADERS/GETBLOCKS locator limit
+// Protocol-specific limits
+constexpr unsigned int MAX_LOCATOR_SZ = 101;  // GETHEADERS/GETBLOCKS locator limit
 constexpr uint32_t MAX_INV_SIZE = 50000; // Inventory items
 constexpr uint32_t MAX_HEADERS_SIZE = 2000; // Headers per response
 constexpr uint32_t MAX_ADDR_SIZE = 1000;    // Addresses per ADDR message
 
 // Orphan header management limits (DoS protection)
 constexpr size_t MAX_ORPHAN_HEADERS = 1000;         // Total orphans across all peers
-constexpr size_t MAX_ORPHAN_HEADERS_PER_PEER = 50; // Max orphans per peer
+constexpr size_t MAX_ORPHAN_HEADERS_PER_PEER = 50;  // Max orphans per peer
 constexpr int64_t ORPHAN_HEADER_EXPIRE_TIME = 600;  // 10 minutes in seconds
 
 // Connection limits
@@ -116,10 +107,8 @@ constexpr unsigned int DEFAULT_MAX_INBOUND_CONNECTIONS = 125;
 // Timeouts and intervals (in seconds)
 constexpr int VERSION_HANDSHAKE_TIMEOUT_SEC = 60; // 1 minute for handshake
 constexpr int PING_INTERVAL_SEC = 120;            // 2 minutes between pings
-constexpr int PING_TIMEOUT_SEC =
-    20 * 60; // 20 minutes - peer must respond to ping
-constexpr int INACTIVITY_TIMEOUT_SEC =
-    20 * 60; // 20 minutes - matches Bitcoin's TIMEOUT_INTERVAL
+constexpr int PING_TIMEOUT_SEC = 20 * 60;         // 20 minutes - peer must respond to ping
+constexpr int INACTIVITY_TIMEOUT_SEC = 20 * 60;   // 20 minutesL
 
 // Block relay timing (Bitcoin Core behavior)
 constexpr int64_t MAX_BLOCK_RELAY_AGE = 10; // Only relay blocks received in last 10 seconds

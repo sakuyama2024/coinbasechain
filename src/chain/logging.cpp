@@ -76,8 +76,7 @@ void LogManager::Shutdown() {
     return;
   }
 
-  LOG_INFO("Shutting down logging system");
-
+  // Silently shutdown - "Shutdown complete" was already logged by application
   spdlog::shutdown();
   s_loggers.clear();
   initialized_ = false;

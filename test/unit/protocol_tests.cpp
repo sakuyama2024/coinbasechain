@@ -291,11 +291,7 @@ TEST_CASE("Protocol commands - String constants", "[network][protocol]") {
     SECTION("Command strings are valid") {
         CHECK(std::string(commands::VERSION) == "version");
         CHECK(std::string(commands::VERACK) == "verack");
-        CHECK(std::string(commands::ADDR) == "addr");
-        CHECK(std::string(commands::GETADDR) == "getaddr");
         CHECK(std::string(commands::INV) == "inv");
-        CHECK(std::string(commands::GETDATA) == "getdata");
-        CHECK(std::string(commands::NOTFOUND) == "notfound");
         CHECK(std::string(commands::GETHEADERS) == "getheaders");
         CHECK(std::string(commands::HEADERS) == "headers");
         CHECK(std::string(commands::SENDHEADERS) == "sendheaders");

@@ -39,7 +39,7 @@ public:
     bool listen_enabled;    // Enable inbound connections
     bool enable_nat;        // Enable UPnP NAT traversal
     size_t io_threads;      // Number of IO threads
-    std::string datadir;    // Data directory (for banlist.json)
+    std::string datadir;    // Data directory
 
     std::chrono::seconds connect_interval; // Time between connection attempts
     std::chrono::seconds maintenance_interval; // Time between maintenance tasks
@@ -48,11 +48,9 @@ public:
     // They must be explicitly set based on chain type to prevent
     // accidental mainnet/testnet/regtest network confusion
     Config()
-        : network_magic(0) // INVALID - must be explicitly set
-          ,
-          listen_port(0) // INVALID - must be explicitly set
-          ,
-          listen_enabled(true), // Default: accept inbound connections
+        : network_magic(0),
+          listen_port(0),
+          listen_enabled(true), 
           enable_nat(true), io_threads(4), datadir(""),
           connect_interval(std::chrono::seconds(5)),
           maintenance_interval(std::chrono::seconds(30)) {}
@@ -83,12 +81,15 @@ public:
 
   // Periodic tip announcements (public for testing/simulation)
   void announce_tip_to_peers();
-
+  
   // Announce tip to a single peer (called when peer becomes READY)
   void announce_tip_to_peer(Peer* peer);
-
+  
   // Flush pending block announcements from all peers' queues
   void flush_block_announcements();
+
+  // Test-only hook: trigger initial sync selection (normally run via timers)
+  void test_hook_check_initial_sync();
 
   // Self-connection prevention
   uint64_t get_local_nonce() const { return local_nonce_; }
@@ -111,7 +112,7 @@ public:
   size_t outbound_peer_count() const;
   size_t inbound_peer_count() const;
 
-  // Anchors (for eclipse attack resistance)
+  // Anchors
   std::vector<protocol::NetworkAddress> GetAnchors() const;
   bool SaveAnchors(const std::string &filepath);
   bool LoadAnchors(const std::string &filepath);
@@ -192,8 +193,6 @@ private:
   void request_headers_from_peer(PeerPtr peer);
   bool handle_headers_message(PeerPtr peer, message::HeadersMessage *msg);
   bool handle_getheaders_message(PeerPtr peer, message::GetHeadersMessage *msg);
-
-  // Block relay helpers
   bool handle_inv_message(PeerPtr peer, message::InvMessage *msg);
 };
 

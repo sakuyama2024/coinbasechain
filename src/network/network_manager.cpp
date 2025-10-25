@@ -44,7 +44,7 @@ NetworkManager::NetworkManager(
     transport_ = std::make_shared<RealTransport>(config_.io_threads);
   }
 
-  LOG_NET_INFO("NetworkManager initialized with local nonce: {} (external_io_context: {})",
+  LOG_NET_TRACE("NetworkManager initialized (local nonce: {}, external_io_context: {})",
                local_nonce_, external_io_context ? "yes" : "no");
 
   // Create components
@@ -132,11 +132,9 @@ bool NetworkManager::start() {
         });
 
     if (success) {
-      LOG_NET_INFO("Listening on port {}", config_.listen_port);
-
       // Start NAT traversal if enabled
       if (nat_manager_ && nat_manager_->Start(config_.listen_port)) {
-        LOG_NET_INFO("UPnP NAT traversal enabled - External: {}:{}",
+        LOG_NET_TRACE("UPnP NAT traversal enabled - external {}:{}",
                      nat_manager_->GetExternalIP(),
                      nat_manager_->GetExternalPort());
       }
@@ -150,9 +148,13 @@ bool NetworkManager::start() {
   // Anchors are the last 2-3 outbound peers we connected to before shutdown
   // We try to reconnect to them first to maintain network view consistency
   if (!config_.datadir.empty()) {
-    std::string anchors_path = config_.datadir + "/anchors.dat";
-    if (LoadAnchors(anchors_path)) {
-      LOG_NET_INFO("Loaded anchors, will connect to them first");
+    std::string anchors_path = config_.datadir + "/anchors.json";
+    if (std::filesystem::exists(anchors_path)) {
+      if (LoadAnchors(anchors_path)) {
+        LOG_NET_TRACE("loaded anchors, will connect to them first");
+      } else {
+        LOG_NET_DEBUG("No anchors loaded from {}", anchors_path);
+      }
     }
   }
 
@@ -181,24 +183,7 @@ void NetworkManager::stop() {
 
   running_.store(false, std::memory_order_release);
 
-  // Save anchor peers before shutdown (for eclipse attack resistance)
-  // This allows us to reconnect to the same peers on next startup
-  if (!config_.datadir.empty()) {
-    std::string anchors_path = config_.datadir + "/anchors.dat";
-    if (SaveAnchors(anchors_path)) {
-      LOG_NET_INFO("Saved anchor peers for next startup");
-    }
-  }
-
-  // Stop NAT traversal
-  if (nat_manager_) {
-    nat_manager_->Stop();
-  }
-
-  // Disconnect all peers FIRST (closes their connections and cancels pending async ops)
-  peer_manager_->disconnect_all();
-
-  // Cancel timers
+  // Cancel timers first to prevent new connections/operations from starting
   if (connect_timer_) {
     connect_timer_->cancel();
   }
@@ -212,16 +197,39 @@ void NetworkManager::stop() {
     sendmessages_timer_->cancel();
   }
 
-  // Stop transport (stops listening and joins IO threads)
-  // Must be done AFTER disconnecting peers to avoid hanging on pending async operations
+  // Save anchors BEFORE stopping io_context (which closes all connections)
+  // We need active peer connections to query their addresses
+  if (!config_.datadir.empty()) {
+    std::string anchors_path = config_.datadir + "/anchors.json";
+    if (SaveAnchors(anchors_path)) {
+      LOG_NET_TRACE("saved anchors for next startup");
+    }
+  }
+
+  // CRITICAL: Stop io_context after saving anchors
+  // This aborts all async I/O operations and closes connections
+  // This MUST be done BEFORE explicitly disconnecting peers to prevent their async
+  // disconnect callbacks from being processed during shutdown
+  // Bitcoin Core pattern: Stop async processing before cleanup
+  io_context_.stop();
+
+  // Reset work guard (no longer needed after stopping io_context)
+  work_guard_.reset();
+
+  // Now disconnect peers (their callbacks won't be processed since io_context is stopped)
+  peer_manager_->disconnect_all();
+
+  // Stop NAT traversal after peers are disconnected
+  if (nat_manager_) {
+    nat_manager_->Stop();
+  }
+
+  // Stop transport (can't post new async operations since io_context is stopped)
   if (transport_) {
     transport_->stop();
   }
 
-  // Stop IO threads
-  work_guard_.reset(); // Allow io_context to finish
-
-  // Join all threads
+  // Join all threads (should return quickly now that io_context is stopped)
   for (auto &thread : io_threads_) {
     if (thread.joinable()) {
       thread.join();
@@ -234,10 +242,10 @@ void NetworkManager::stop() {
 }
 
 bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
-  LOG_NET_DEBUG("connect_to() called");
+  LOG_NET_TRACE("connect_to() called");
 
   if (!running_.load(std::memory_order_acquire)) {
-    LOG_NET_DEBUG("connect_to() failed: not running");
+    LOG_NET_TRACE("connect_to() failed: not running");
     return false;
   }
 
@@ -252,13 +260,13 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
 
   // Check if address is banned
   if (ban_man_ && ban_man_->IsBanned(address)) {
-    LOG_NET_INFO("Refusing to connect to banned address: {}", address);
+    LOG_NET_TRACE("refusing to connect to banned address: {}", address);
     return false;
   }
 
   // Check if address is discouraged
   if (ban_man_ && ban_man_->IsDiscouraged(address)) {
-    LOG_NET_INFO("Refusing to connect to discouraged address: {}", address);
+    LOG_NET_TRACE("refusing to connect to discouraged address: {}", address);
     return false;
   }
 
@@ -266,16 +274,16 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
   // Bitcoin Core: AlreadyConnectedToAddress() check at net.cpp:2881
   // This prevents wasting connection slots and eclipse attack vulnerabilities
   if (already_connected_to_address(address, port)) {
-    LOG_NET_INFO("Already connected to {}:{}, skipping duplicate", address, port);
+    LOG_NET_TRACE("already connected to {}:{}, skipping duplicate", address, port);
     return false;
   }
 
   // Check if we can add more outbound connections
   bool needs_more = peer_manager_->needs_more_outbound();
   size_t outbound = peer_manager_->outbound_count();
-  LOG_NET_DEBUG("connect_to(): needs_more_outbound={}, outbound_count={}", needs_more, outbound);
+  LOG_NET_TRACE("connect_to(): needs_more_outbound={}, outbound_count={}", needs_more, outbound);
   if (!needs_more) {
-    LOG_NET_DEBUG("connect_to() failed: don't need more outbound connections");
+    LOG_NET_TRACE("connect_to() failed: don't need more outbound connections");
     return false;
   }
 
@@ -290,35 +298,36 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
       address, port, [this, peer_id_ptr, address, port, addr](bool success) {
         // This callback fires when TCP connection completes (can be very fast!)
         // We need to ensure the peer is in peer_manager before this fires
-        LOG_NET_DEBUG("CALLBACK FIRED for {}:{}, success={}", address, port, success);
+        LOG_NET_TRACE("CALLBACK FIRED for {}:{}, success={}", address, port, success);
 
         // Wait briefly to ensure peer has been added to manager
         // (This handles the race where connection completes before we add peer)
         boost::asio::post(io_context_, [this, peer_id_ptr, address, port, addr, success]() {
           if (!peer_id_ptr->has_value()) {
-            LOG_NET_DEBUG("peer_id_ptr has no value, returning");
+            LOG_NET_TRACE("peer_id_ptr has no value, returning");
             return;
           }
 
           int peer_id = peer_id_ptr->value();
-          LOG_NET_DEBUG("Got peer_id={}", peer_id);
+          LOG_NET_TRACE("Got peer_id={}", peer_id);
 
           auto peer_ptr = peer_manager_->get_peer(peer_id);
           if (!peer_ptr) {
-            LOG_NET_DEBUG("Could not get peer {} from manager", peer_id);
+            LOG_NET_TRACE("Could not get peer {} from manager", peer_id);
             return;
           }
 
           if (success) {
             // Connection succeeded - mark address as good and start peer protocol
-            LOG_NET_DEBUG("Connected to {}:{}, starting peer {}", address, port,
+            LOG_NET_TRACE("Connected to {}:{}, starting peer {}", address, port,
                           peer_id);
             addr_manager_->good(addr);
             peer_ptr->start();
           } else {
-            // Connection failed - remove the peer
-            LOG_NET_DEBUG("Failed to connect to {}:{}, removing peer {}", address,
+            // Connection failed - record failure and remove the peer
+            LOG_NET_TRACE("Failed to connect to {}:{}, recording failure and removing peer {}", address,
                           port, peer_id);
+            addr_manager_->failed(addr);
             peer_manager_->remove_peer(peer_id);
           }
         });
@@ -353,7 +362,7 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
 
   // Store the peer_id so the callback can use it
   *peer_id_ptr = peer_id;
-  LOG_NET_DEBUG("Added peer {} to manager, stored in callback ptr", peer_id);
+  LOG_NET_TRACE("Added peer {} to manager, stored in callback ptr", peer_id);
 
   return true;
 }
@@ -388,7 +397,7 @@ void NetworkManager::bootstrap_from_fixed_seeds(const chain::ChainParams &params
   const auto &fixed_seeds = params.FixedSeeds();
 
   if (fixed_seeds.empty()) {
-    LOG_NET_DEBUG("No fixed seeds available for bootstrap");
+  LOG_NET_TRACE("no fixed seeds available for bootstrap");
     return;
   }
 
@@ -494,8 +503,10 @@ void NetworkManager::attempt_outbound_connections() {
     return;
   }
 
+  const int nTries = 100;
+
   // Check if we need more outbound connections
-  while (peer_manager_->needs_more_outbound()) {
+  for (int i = 0; i < nTries && peer_manager_->needs_more_outbound(); i++) {
     // Select an address from the address manager
     auto maybe_addr = addr_manager_->select();
     if (!maybe_addr) {
@@ -513,15 +524,23 @@ void NetworkManager::attempt_outbound_connections() {
     }
 
     const std::string &ip_str = *maybe_ip_str;
-    LOG_NET_DEBUG("Attempting outbound connection to {}:{}", ip_str, addr.port);
+
+    if (already_connected_to_address(ip_str, addr.port)) {
+      continue;
+    }
+
+    LOG_NET_TRACE("Attempting outbound connection to {}:{}", ip_str, addr.port);
 
     // Mark as attempt (connection may still fail)
     addr_manager_->attempt(addr);
 
-    // Try to connect - connect_to handles address tracking on success/failure
+    // Try to connect
+    // Bitcoin Core: Don't mark as failed here for other failure cases
+    // The connection callback will mark as failed for actual network errors
     if (!connect_to(addr)) {
-      LOG_NET_DEBUG("Failed to initiate connection to {}:{}", ip_str, addr.port);
-      addr_manager_->failed(addr);
+      LOG_NET_TRACE("Failed to initiate connection to {}:{}", ip_str, addr.port);
+      // Note: Don't call addr_manager_->failed() here
+      // Real connection failures are handled in the connection callback
     }
   }
 }
@@ -556,7 +575,7 @@ void NetworkManager::handle_inbound_connection(
     return;
   }
 
-  // Check if address is discouraged (probabilistic check)
+  // Check if address is discouraged 
   if (ban_man_ && ban_man_->IsDiscouraged(remote_address)) {
     LOG_NET_INFO("Rejected discouraged address: {}", remote_address);
     connection->close();
@@ -565,17 +584,11 @@ void NetworkManager::handle_inbound_connection(
 
   // Check if we can accept more inbound connections
   if (!peer_manager_->can_accept_inbound()) {
-    // Reject connection - too many inbound peers
-    LOG_NET_DEBUG("Rejecting inbound connection from {} (at capacity)",
+    LOG_NET_TRACE("Rejecting inbound connection from {} (at capacity)",
                   remote_address);
     connection->close();
     return;
   }
-
-  // NOTE: We used to reject duplicate inbound connections here, but Bitcoin Core
-  // does the duplicate detection in the VERSION message handler using nonce comparison.
-  // So we let the inbound connection through and reject it later if needed.
-  // See handle_message() for the actual duplicate detection logic.
 
   // Get current blockchain height for VERSION message
   int32_t current_height = chainstate_manager_.GetChainHeight();
@@ -649,7 +662,7 @@ void NetworkManager::run_sendmessages() {
 
   // Flush queued block announcements (Bitcoin Core SendMessages pattern)
   if (block_relay_manager_) {
-    LOG_NET_DEBUG("SendMessages: flushing block announcements");
+    LOG_NET_TRACE("SendMessages: flushing block announcements");
     block_relay_manager_->FlushBlockAnnouncements();
   }
 }
@@ -668,6 +681,11 @@ void NetworkManager::schedule_next_sendmessages() {
   });
 }
 
+void NetworkManager::test_hook_check_initial_sync() {
+  // Expose initial sync trigger for tests when io_threads==0
+  check_initial_sync();
+}
+
 void NetworkManager::schedule_next_feeler() {
   LOG_NET_TRACE("schedule_next_feeler: ENTER (running={}, has_timer={})",
                 running_.load(std::memory_order_acquire), (feeler_timer_ != nullptr));
@@ -677,9 +695,14 @@ void NetworkManager::schedule_next_feeler() {
     return;
   }
 
-  // Bitcoin Core pattern: Make one feeler connection every FEELER_INTERVAL (2 minutes)
-  feeler_timer_->expires_after(FEELER_INTERVAL);
-  LOG_NET_TRACE("schedule_next_feeler: Timer set for FEELER_INTERVAL (120s)");
+  // Exponential/Poisson scheduling around mean FEELER_INTERVAL
+  static thread_local std::mt19937 rng(std::random_device{}());
+  std::exponential_distribution<double> exp(1.0 / std::chrono::duration_cast<std::chrono::seconds>(FEELER_INTERVAL).count());
+  double delay_s = exp(rng);
+  auto delay = std::chrono::seconds(std::max(1, static_cast<int>(delay_s)));
+
+  feeler_timer_->expires_after(delay);
+  LOG_NET_TRACE("schedule_next_feeler: Timer set for {}s (Poisson)", delay.count());
 
   feeler_timer_->async_wait([this](const boost::system::error_code &ec) {
     LOG_NET_TRACE("schedule_next_feeler: Timer fired (ec={}, running={})",
@@ -704,7 +727,6 @@ void NetworkManager::attempt_feeler_connection() {
   LOG_NET_TRACE("attempt_feeler_connection: Selecting address from NEW table");
   auto addr = addr_manager_->select_new_for_feeler();
   if (!addr) {
-    LOG_NET_DEBUG("No addresses available for feeler connection");
     LOG_NET_TRACE("attempt_feeler_connection: No address found in NEW table");
     return;
   }
@@ -712,7 +734,6 @@ void NetworkManager::attempt_feeler_connection() {
   // Convert NetworkAddress to IP string
   auto addr_str_opt = network_address_to_string(*addr);
   if (!addr_str_opt) {
-    LOG_NET_DEBUG("Failed to convert feeler address to string");
     LOG_NET_TRACE("attempt_feeler_connection: Address conversion failed");
     return;
   }
@@ -720,7 +741,6 @@ void NetworkManager::attempt_feeler_connection() {
   std::string address = *addr_str_opt;
   uint16_t port = addr->port;
 
-  LOG_NET_INFO("Attempting feeler connection to {}:{}", address, port);
   LOG_NET_TRACE("attempt_feeler_connection: Selected address={}:{}", address, port);
 
   // Create peer_id container for async callback
@@ -731,20 +751,15 @@ void NetworkManager::attempt_feeler_connection() {
 
   auto connection = transport_->connect(
       address, port, [this, peer_id_ptr, address, port, addr](bool success) {
-        LOG_NET_INFO("FEELER CALLBACK FIRED: success={}, peer_id_ptr has_value={}",
-                      success, peer_id_ptr->has_value());
         LOG_NET_TRACE("attempt_feeler_connection: TCP callback fired (success={}, peer_id_set={})",
                       success, peer_id_ptr->has_value());
 
         // Callback fires when TCP connection completes
         boost::asio::post(io_context_, [this, peer_id_ptr, address, port, addr, success]() {
-          LOG_NET_INFO("FEELER CALLBACK POST EXECUTED: peer_id_ptr has_value={}",
-                        peer_id_ptr->has_value());
           LOG_NET_TRACE("attempt_feeler_connection: Posted callback executing (peer_id_set={})",
                         peer_id_ptr->has_value());
 
           if (!peer_id_ptr->has_value()) {
-            LOG_NET_INFO("FEELER CALLBACK ABORTED: peer_id_ptr is nullopt");
             LOG_NET_TRACE("attempt_feeler_connection: Callback aborted (peer_id not set)");
             return;
           }
@@ -753,7 +768,6 @@ void NetworkManager::attempt_feeler_connection() {
           LOG_NET_TRACE("attempt_feeler_connection: Looking up peer_id={}", peer_id);
           auto peer_ptr = peer_manager_->get_peer(peer_id);
           if (!peer_ptr) {
-            LOG_NET_DEBUG("FEELER CALLBACK: peer {} not found in manager", peer_id);
             LOG_NET_TRACE("attempt_feeler_connection: Peer {} not found in manager", peer_id);
             return;
           }
@@ -761,14 +775,12 @@ void NetworkManager::attempt_feeler_connection() {
           if (success) {
             // Connection succeeded - mark address as good and start peer protocol
             // The peer will auto-disconnect after VERACK (see handle_verack())
-            LOG_NET_DEBUG("Feeler connected to {}:{}, starting peer {}", address, port, peer_id);
             LOG_NET_TRACE("attempt_feeler_connection: Connection SUCCESS - marking address good, starting peer {}",
                           peer_id);
             addr_manager_->good(*addr);
             peer_ptr->start();
           } else {
             // Connection failed - remove the peer
-            LOG_NET_DEBUG("Feeler failed to connect to {}:{}, removing peer {}", address, port, peer_id);
             LOG_NET_TRACE("attempt_feeler_connection: Connection FAILED - marking address bad, removing peer {}",
                           peer_id);
             addr_manager_->failed(*addr);
@@ -778,7 +790,6 @@ void NetworkManager::attempt_feeler_connection() {
       });
 
   if (!connection) {
-    LOG_NET_ERROR("Failed to create feeler connection to {}:{}", address, port);
     LOG_NET_TRACE("attempt_feeler_connection: Transport connection creation FAILED");
     addr_manager_->failed(*addr);
     return;
@@ -804,16 +815,12 @@ void NetworkManager::attempt_feeler_connection() {
   LOG_NET_TRACE("attempt_feeler_connection: Adding peer to manager");
   int peer_id = peer_manager_->add_peer(peer);
   if (peer_id < 0) {
-    LOG_NET_DEBUG("Failed to add feeler peer to manager");
     LOG_NET_TRACE("attempt_feeler_connection: Failed to add peer to manager (peer_id={})", peer_id);
     return;
   }
 
   // Store peer_id for callback access
   *peer_id_ptr = peer_id;
-  LOG_NET_TRACE("attempt_feeler_connection: Stored peer_id={} for callback", peer_id);
-
-  LOG_NET_DEBUG("Feeler connection initiated to {}:{} (peer_id={})", address, port, peer_id);
   LOG_NET_TRACE("attempt_feeler_connection: EXIT (peer_id={}, waiting for TCP callback)", peer_id);
 }
 

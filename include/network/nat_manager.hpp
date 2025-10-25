@@ -7,6 +7,8 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <condition_variable>
+#include <mutex>
 
 namespace coinbasechain {
 namespace network {
@@ -45,6 +47,8 @@ private:
     std::atomic<bool> running_{false};
 
     std::thread refresh_thread_;
+    std::condition_variable refresh_cv_;
+    std::mutex refresh_mutex_;
 
     // UPnP device info
     std::string gateway_url_;

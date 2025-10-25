@@ -9,8 +9,6 @@
 namespace coinbasechain {
 namespace network {
 
-// Peer ID is now assigned by PeerManager::add_peer(), not auto-generated
-
 // Helper to generate random nonce
 static uint64_t generate_nonce() {
   static std::random_device rd;
@@ -24,7 +22,6 @@ static int64_t get_timestamp() { return util::GetTime(); }
 
 
 // Peer implementation
-
 Peer::Peer(boost::asio::io_context &io_context,
            TransportConnectionPtr connection, uint32_t network_magic,
            bool is_inbound, int32_t start_height,
@@ -41,7 +38,6 @@ Peer::Peer(boost::asio::io_context &io_context,
                  : (connection ? PeerState::CONNECTING : PeerState::DISCONNECTED)) {}
 
 Peer::~Peer() {
-  LOG_NET_INFO("Peer destructor called for peer {} address={}", id_, address());
   disconnect();
 }
 
@@ -108,15 +104,15 @@ void Peer::start() {
 
   // Start receiving data
   connection_->start();
-  LOG_NET_DEBUG("Started connection for peer {}", id_);
+  LOG_NET_TRACE("Started connection for peer {}", id_);
 
   if (is_inbound_) {
     // Inbound: wait for VERSION from peer
-    LOG_NET_DEBUG("Peer {} is inbound, waiting for VERSION", id_);
+    LOG_NET_TRACE("Peer {} is inbound, waiting for VERSION", id_);
     start_handshake_timeout();
   } else {
     // Outbound: send our VERSION
-    LOG_NET_DEBUG("Peer {} is outbound, sending VERSION", id_);
+    LOG_NET_TRACE("Peer {} is outbound, sending VERSION", id_);
     send_version();
     start_handshake_timeout();
   }
@@ -132,7 +128,7 @@ void Peer::disconnect() {
   }
 
   state_ = PeerState::DISCONNECTING;
-  LOG_NET_DEBUG("Disconnecting peer {} ({})", id_, address());
+  LOG_NET_DEBUG("disconnecting peer={}", id_);
 
   cancel_all_timers();
 
@@ -166,7 +162,7 @@ void Peer::send_message(std::unique_ptr<message::Message> msg) {
                       header_bytes.end());
   full_message.insert(full_message.end(), payload.begin(), payload.end());
 
-  LOG_NET_DEBUG("Sending {} to {} (size: {} bytes, state: {})",
+  LOG_NET_TRACE("Sending {} to {} (size: {} bytes, state: {})",
                 command, address(), full_message.size(), static_cast<int>(state_));
 
   // Send via transport
@@ -179,7 +175,7 @@ void Peer::send_message(std::unique_ptr<message::Message> msg) {
     stats_.messages_sent++;
     stats_.bytes_sent += full_message.size();
     stats_.last_send = util::GetSteadyTime();
-    LOG_NET_DEBUG("Successfully sent {} to {}", command, address());
+    LOG_NET_TRACE("Successfully sent {} to {}", command, address());
   } else {
     LOG_NET_ERROR("Failed to send {} to {}", command, address());
     disconnect();
@@ -202,12 +198,12 @@ uint16_t Peer::port() const {
 
 void Peer::on_connected() {
   state_ = PeerState::CONNECTED;
-  LOG_NET_INFO("Connected to peer: {}:{}", address(), port());
+  LOG_NET_TRACE("connected to peer: {}:{}", address(), port());
 }
 
 void Peer::on_disconnect() {
   state_ = PeerState::DISCONNECTED;
-  LOG_NET_INFO("Peer disconnected: {}:{}", address(), port());
+  LOG_NET_TRACE("peer disconnected: {}:{}", address(), port());
 }
 
 void Peer::on_transport_receive(const std::vector<uint8_t> &data) {
@@ -226,7 +222,7 @@ void Peer::on_transport_receive(const std::vector<uint8_t> &data) {
   // Accumulate received data into buffer
   recv_buffer_.insert(recv_buffer_.end(), data.begin(), data.end());
 
-  LOG_NET_DEBUG("Peer {} buffer now {} bytes (added {}), processing messages",
+  LOG_NET_TRACE("Peer {} buffer now {} bytes (added {}), processing messages",
                 address(), recv_buffer_.size(), data.size());
 
   // Update stats
@@ -238,7 +234,7 @@ void Peer::on_transport_receive(const std::vector<uint8_t> &data) {
 }
 
 void Peer::on_transport_disconnect() {
-  LOG_NET_INFO("Transport disconnected: {}:{}", address(), port());
+  LOG_NET_TRACE("Transport disconnected: {}:{}", address(), port());
   disconnect();
 }
 
@@ -266,7 +262,7 @@ void Peer::send_version() {
   // Match Bitcoin Core: sends CService{} (empty/all zeros) for addrMe in VERSION.
   // Peers discover our real address from the connection itself (what IP they see).
   version_msg->addr_from = protocol::NetworkAddress();
-  LOG_NET_DEBUG("VERSION addr_from set to empty (matching Bitcoin Core)");
+  LOG_NET_TRACE("VERSION addr_from set to empty (matching Bitcoin Core)");
 
   // Use our local nonce for self-connection prevention
   version_msg->nonce = local_nonce_;
@@ -286,9 +282,7 @@ void Peer::handle_version(const message::VersionMessage &msg) {
   // Prevents: time manipulation via multiple AddTimeData() calls, protocol
   // violations
   if (peer_version_ != 0) {
-    LOG_NET_WARN(
-        "Duplicate VERSION from peer {} (already have version {}), ignoring",
-        address(), peer_version_);
+    LOG_NET_WARN("duplicate version message from peer={}, ignoring", id_);
     return;
   }
 
@@ -296,9 +290,8 @@ void Peer::handle_version(const message::VersionMessage &msg) {
   // Bitcoin Core: rejects version < MIN_PROTO_VERSION (209)
   // Prevents: compatibility issues, potential exploits in old protocol versions
   if (msg.version < static_cast<int32_t>(protocol::MIN_PROTOCOL_VERSION)) {
-    LOG_NET_WARN(
-        "Peer {} using obsolete protocol version {} (min: {}), disconnecting",
-        address(), msg.version, protocol::MIN_PROTOCOL_VERSION);
+    LOG_NET_WARN("peer={} using obsolete protocol version {} (min: {}), disconnecting",
+        id_, msg.version, protocol::MIN_PROTOCOL_VERSION);
     disconnect();
     return;
   }
@@ -309,16 +302,14 @@ void Peer::handle_version(const message::VersionMessage &msg) {
   peer_user_agent_ = msg.user_agent;
   peer_nonce_ = msg.nonce;
 
-  LOG_NET_INFO(
+  LOG_NET_TRACE(
       "Received VERSION from {} - version: {}, user_agent: {}, nonce: {}",
       address(), peer_version_, peer_user_agent_, peer_nonce_);
 
   // Check for self-connection (inbound only, outbound is checked by
   // NetworkManager)
   if (is_inbound_ && peer_nonce_ == local_nonce_) {
-    LOG_NET_WARN(
-        "Self-connection detected (nonce match), disconnecting from {}",
-        address());
+    LOG_NET_WARN("self connection detected, disconnecting peer={}", id_);
     disconnect();
     return;
   }
@@ -355,14 +346,13 @@ void Peer::handle_verack() {
     return;
   }
 
-  LOG_NET_DEBUG("Received VERACK from {} - handshake complete", address());
+  LOG_NET_TRACE("Received VERACK from {} - handshake complete", address());
 
   // FEELER connections: Disconnect immediately after handshake completes
   // Bitcoin Core pattern (net_processing.cpp:3606): "feeler connection completed peer=%d; disconnecting"
   // Purpose: Test address liveness without consuming an outbound slot
   if (is_feeler()) {
-    LOG_NET_INFO("Feeler connection completed to peer {} ({}); disconnecting",
-                 id_, address());
+    LOG_NET_DEBUG("feeler connection completed peer={}; disconnecting", id_);
     disconnect();
     return;
   }
@@ -385,14 +375,14 @@ void Peer::process_received_data(std::vector<uint8_t> &buffer) {
     protocol::MessageHeader header;
     if (!message::deserialize_header(buffer.data(),
                                      protocol::MESSAGE_HEADER_SIZE, header)) {
-      LOG_NET_ERROR("Invalid message header");
+    LOG_NET_ERROR("invalid message header peer={}", id_);
       disconnect();
       return;
     }
 
     // Validate magic
     if (header.magic != network_magic_) {
-      LOG_NET_ERROR("Invalid network magic");
+      LOG_NET_ERROR("invalid network magic peer={}", id_);
       disconnect();
       return;
     }
@@ -400,8 +390,8 @@ void Peer::process_received_data(std::vector<uint8_t> &buffer) {
     // Validate payload size (already checked in deserialize_header, but
     // double-check for safety)
     if (header.length > protocol::MAX_PROTOCOL_MESSAGE_LENGTH) {
-      LOG_NET_ERROR("Message too large: {} bytes (max: {})", header.length,
-                    protocol::MAX_PROTOCOL_MESSAGE_LENGTH);
+      LOG_NET_ERROR("message too large: {} bytes (max: {}) peer={}", header.length,
+                    protocol::MAX_PROTOCOL_MESSAGE_LENGTH, id_);
       disconnect();
       return;
     }
@@ -420,7 +410,7 @@ void Peer::process_received_data(std::vector<uint8_t> &buffer) {
     // Verify checksum
     auto checksum = message::compute_checksum(payload);
     if (checksum != header.checksum) {
-      LOG_NET_ERROR("Checksum mismatch");
+    LOG_NET_ERROR("checksum mismatch peer={}", id_);
       disconnect();
       return;
     }
@@ -439,16 +429,15 @@ void Peer::process_message(const protocol::MessageHeader &header,
 
   std::string command = header.get_command();
 
-  LOG_NET_DEBUG("Received {} from {} (payload size: {} bytes, peer_version: {})",
+  LOG_NET_TRACE("Received {} from {} (payload size: {} bytes, peer_version: {})",
                 command, address(), payload.size(), peer_version_);
 
   // SECURITY: Enforce VERSION must be first message (critical)
   // Bitcoin Core: checks if (pfrom.nVersion == 0) and rejects all non-VERSION
   // messages Prevents: protocol state violations, handshake bypass attacks
   if (peer_version_ == 0 && command != protocol::commands::VERSION) {
-    LOG_NET_WARN("Received {} before VERSION from peer {}, disconnecting "
-                 "(protocol violation)",
-                 command, address());
+    LOG_NET_WARN("received {} before VERSION from peer={}, disconnecting (protocol violation)",
+                 command, id_);
     disconnect();
     return;
   }
@@ -456,15 +445,14 @@ void Peer::process_message(const protocol::MessageHeader &header,
   // Create message object
   auto msg = message::create_message(command);
   if (!msg) {
-    LOG_NET_WARN("Unknown message type: {}", command);
+    LOG_NET_WARN("unknown message type: {} peer={}", command, id_);
     return;
   }
 
   // Deserialize
   if (!msg->deserialize(payload.data(), payload.size())) {
-    LOG_NET_ERROR("Failed to deserialize message: {} - disconnecting peer "
-                  "(protocol violation)",
-                  command);
+    LOG_NET_ERROR("failed to deserialize message: {} - disconnecting (protocol violation) peer={}",
+                  command, id_);
     // Malformed messages indicate protocol violation or malicious peer
     disconnect();
     return;
@@ -512,8 +500,8 @@ void Peer::schedule_ping() {
             now - self->ping_sent_time_);
 
         if (ping_age.count() > protocol::PING_TIMEOUT_SEC) {
-          LOG_NET_WARN("Ping timeout (no PONG for {}s), disconnecting from {}",
-                       ping_age.count(), self->address());
+      LOG_NET_DEBUG("ping timeout: {} seconds, peer={}",
+                       ping_age.count(), self->id_);
           self->disconnect();
           return;
         }
@@ -539,7 +527,7 @@ void Peer::handle_pong(const message::PongMessage &msg) {
     auto ping_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         now - ping_sent_time_);
     stats_.ping_time_ms = ping_time.count();
-    LOG_NET_DEBUG("Ping time for {}: {}ms", address(), stats_.ping_time_ms);
+    LOG_NET_TRACE("Ping time for {}: {}ms", address(), stats_.ping_time_ms);
 
     // Clear nonce to indicate we received the PONG
     last_ping_nonce_ = 0;
@@ -552,7 +540,7 @@ void Peer::start_handshake_timeout() {
       std::chrono::seconds(protocol::VERSION_HANDSHAKE_TIMEOUT_SEC));
   handshake_timer_.async_wait([self](const boost::system::error_code &ec) {
     if (!ec && self->state_ != PeerState::READY) {
-      LOG_NET_WARN("Handshake timeout");
+      LOG_NET_DEBUG("version handshake timeout peer={}", self->id_);
       self->disconnect();
     }
   });

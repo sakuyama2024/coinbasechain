@@ -1,15 +1,44 @@
 ---
 # Simplified Ansible Playbook: Deploy CoinbaseChain using Docker CLI
 # No Python dependencies required - uses direct shell commands
+#
+# Usage:
+#   ansible-playbook -i inventory.yml deploy-simple.yml --limit coinbasechain_testnet
+#   ansible-playbook -i inventory.yml deploy-simple.yml --limit coinbasechain_mainnet
+#   ansible-playbook -i inventory.yml deploy-simple.yml --limit coinbasechain_regtest
 
 - name: Deploy CoinbaseChain Docker Network (Simple)
-  hosts: coinbasechain_nodes
+  hosts: all
   become: true
 
-  vars:
-    container_name: "coinbasechain-{{ coinbasechain_network }}"
-
   tasks:
+    # =========================================================================
+    # 0. Validate deployment configuration
+    # =========================================================================
+    - name: Display deployment configuration
+      debug:
+        msg:
+          - "=========================================="
+          - " CoinbaseChain Deployment Configuration"
+          - "=========================================="
+          - " Network: {{ coinbasechain_network }}"
+          - " P2P Port: {{ p2p_port }}"
+          - " Container Name: {{ container_name }}"
+          - " Data Directory: {{ docker_data_dir }}"
+          - " Node: {{ inventory_hostname }} ({{ ansible_host }})"
+          - "=========================================="
+      tags: [always]
+
+    - name: Validate required variables
+      assert:
+        that:
+          - coinbasechain_network is defined
+          - p2p_port is defined
+          - docker_data_dir is defined
+        fail_msg: "Missing required variables. Check inventory.yml group_vars."
+        success_msg: "All required variables are defined."
+      tags: [always]
+
     # =========================================================================
     # 1. Transfer project files
     # =========================================================================
@@ -98,7 +127,7 @@
       tags: [deploy]
 
     - name: Check container status
-      shell: docker ps -f name={{ container_name }} --format "\{\{.Names\}\}\t\{\{.Status\}\}\t\{\{.Ports\}\}"
+      shell: docker ps -f name={{ container_name }} --format 'table {% raw %}{{.Names}}\t{{.Status}}\t{{.Ports}}{% endraw %}'
       register: container_status
       tags: [deploy, info]
 

@@ -41,43 +41,46 @@ NATManager::~NATManager() {
 
 bool NATManager::Start(uint16_t internal_port) {
     if (running_) {
-        LOG_WARN("NAT manager already running");
+        LOG_NET_TRACE("NAT manager already running");
         return false;
     }
 
     internal_port_ = internal_port;
     running_ = true;
 
-    LOG_INFO("Starting NAT traversal for port {}", internal_port);
+    LOG_NET_TRACE("starting NAT traversal for port {}", internal_port);
 
     // Discover UPnP device
     DiscoverUPnPDevice();
 
     if (gateway_url_.empty()) {
-        LOG_WARN("No UPnP-capable gateway found");
+        LOG_NET_TRACE("no UPnP-capable gateway found");
         running_ = false;
         return false;
     }
 
     // Map port
     if (!MapPort(internal_port)) {
-        LOG_ERROR("Failed to map port via UPnP");
+        LOG_NET_ERROR("failed to map port via UPnP");
         running_ = false;
         return false;
     }
 
     // Start refresh thread
     refresh_thread_ = std::thread([this]() {
+        std::unique_lock<std::mutex> lock(refresh_mutex_);
         while (running_) {
-            std::this_thread::sleep_for(
-                std::chrono::seconds(REFRESH_INTERVAL_SECONDS));
-            if (running_) {
-                RefreshMapping();
+            if (refresh_cv_.wait_for(lock, std::chrono::seconds(REFRESH_INTERVAL_SECONDS), [this]() { return !running_; })) {
+                break; // stop requested
             }
+            // Perform mapping refresh outside the lock
+            lock.unlock();
+            RefreshMapping();
+            lock.lock();
         }
     });
 
-    LOG_INFO("NAT traversal successful - External {}:{}",
+    LOG_NET_TRACE("NAT traversal successful - external {}:{}",
              external_ip_, external_port_);
     return true;
 }
@@ -87,9 +90,10 @@ void NATManager::Stop() {
         return;
     }
 
-    LOG_INFO("Stopping NAT traversal");
+    LOG_NET_TRACE("stopping NAT traversal");
 
     // Stop refresh thread
+    refresh_cv_.notify_all();
     if (refresh_thread_.joinable()) {
         refresh_thread_.join();
     }
@@ -100,7 +104,7 @@ void NATManager::Stop() {
 
 void NATManager::DiscoverUPnPDevice() {
 #ifdef DISABLE_NAT_SUPPORT
-    LOG_INFO("NAT support disabled at compile time");
+    LOG_NET_TRACE("NAT support disabled at compile time");
     return;
 #else
     int error = 0;
@@ -115,7 +119,7 @@ void NATManager::DiscoverUPnPDevice() {
     );
 
     if (!devlist) {
-        LOG_DEBUG("UPnP discovery failed: error code {}", error);
+        LOG_NET_TRACE("UPnP discovery failed: error code {}", error);
         return;
     }
 
@@ -129,7 +133,7 @@ void NATManager::DiscoverUPnPDevice() {
     freeUPNPDevlist(devlist);
 
     if (result != 1) {
-        LOG_DEBUG("No valid IGD found (result: {})", result);
+        LOG_NET_TRACE("no valid IGD found (result: {})", result);
         return;
     }
 
@@ -144,7 +148,7 @@ void NATManager::DiscoverUPnPDevice() {
             data.first.servicetype,
             ext_ip) == UPNPCOMMAND_SUCCESS) {
         external_ip_ = ext_ip;
-        LOG_DEBUG("Gateway found at {} (LAN: {}, WAN: {})",
+        LOG_NET_TRACE("gateway found at {} (LAN: {}, WAN: {})",
                   control_url_, lanaddr, external_ip_);
     }
 
@@ -154,7 +158,7 @@ void NATManager::DiscoverUPnPDevice() {
 
 bool NATManager::MapPort(uint16_t internal_port) {
 #ifdef DISABLE_NAT_SUPPORT
-    LOG_DEBUG("NAT support disabled, skipping port mapping");
+    LOG_NET_TRACE("NAT support disabled, skipping port mapping");
     return false;
 #else
     if (gateway_url_.empty()) {
@@ -207,12 +211,12 @@ bool NATManager::MapPort(uint16_t internal_port) {
     FreeUPNPUrls(&urls);
 
     if (ret != UPNPCOMMAND_SUCCESS) {
-        LOG_ERROR("UPnP port mapping failed: error code {}", ret);
+        LOG_NET_ERROR("UPnP port mapping failed: error code {}", ret);
         return false;
     }
 
     port_mapped_ = true;
-    LOG_INFO("UPnP port mapping created: {} -> {}", external_port_, internal_port);
+    LOG_NET_TRACE("UPnP port mapping created: {} -> {}", external_port_, internal_port);
     return true;
 #endif // DISABLE_NAT_SUPPORT
 }
@@ -258,12 +262,12 @@ void NATManager::UnmapPort() {
     FreeUPNPUrls(&urls);
 
     port_mapped_ = false;
-    LOG_INFO("UPnP port mapping removed");
+    LOG_NET_TRACE("UPnP port mapping removed");
 #endif // DISABLE_NAT_SUPPORT
 }
 
 void NATManager::RefreshMapping() {
-    LOG_DEBUG("Refreshing UPnP port mapping");
+    LOG_NET_TRACE("refreshing UPnP port mapping");
 
     // Remove old mapping and create new one
     // This ensures the mapping stays active

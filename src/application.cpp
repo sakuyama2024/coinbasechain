@@ -241,13 +241,6 @@ void Application::shutdown() {
     if (!network_manager_->address_manager().Save(peers_file)) {
       LOG_ERROR("Failed to save peer addresses");
     }
-
-    LOG_INFO("Saving anchor connections to disk...");
-    std::string anchors_file = (config_.datadir / "anchors.json").string();
-    if (!network_manager_->SaveAnchors(anchors_file)) {
-      LOG_DEBUG(
-          "No anchors to save (this is normal if no peers were connected)");
-    }
   }
 
   // Shutdown RandomX
@@ -362,10 +355,6 @@ bool Application::init_network() {
   std::string peers_file = (config_.datadir / "peers.json").string();
   network_manager_->address_manager().Load(peers_file);
 
-  // Load and reconnect to anchor peers (for eclipse attack resistance)
-  // Note: The anchors file is deleted after reading (Bitcoin Core behavior)
-  std::string anchors_file = (config_.datadir / "anchors.json").string();
-  network_manager_->LoadAnchors(anchors_file);
 
   return true;
 }
@@ -415,8 +404,8 @@ void Application::periodic_save_loop() {
   using namespace std::chrono;
 
   // Bitcoin Core intervals:
-  // - Headers: 10 minutes (our choice for headers-only chain)
-  // - Peers: 15 minutes (Bitcoin Core default: DUMP_PEERS_INTERVAL)
+  // - Headers: 10 minutes
+  // - Peers: 15 minutes
   const auto header_interval = minutes(10);
   const auto peer_interval = minutes(15);
 

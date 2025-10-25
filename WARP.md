@@ -163,7 +163,7 @@ struct CBlockHeader {
 ├── blocks/headers.dat       # Serialized block headers
 ├── chainstate/              # LevelDB chain state
 ├── peers.dat                # Known peer addresses
-├── anchors.dat              # Trusted anchor nodes
+├── anchors.json             # Trusted anchor nodes
 ├── banlist.dat              # Banned peers
 └── node.sock                # Unix socket for RPC
 ```

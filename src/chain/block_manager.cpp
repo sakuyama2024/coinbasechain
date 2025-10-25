@@ -36,9 +36,8 @@ bool BlockManager::Initialize(const CBlockHeader &genesis) {
   m_genesis_hash = genesis.GetHash();
   m_initialized = true;
 
-  LOG_CHAIN_INFO("BlockManager initialized with genesis: {}",
+  LOG_CHAIN_TRACE("BlockManager initialized with genesis: {}",
                  m_genesis_hash.ToString());
-  LOG_CHAIN_TRACE("Initialize: Success, tip set to genesis");
 
   return true;
 }
@@ -104,14 +103,14 @@ CBlockIndex *BlockManager::AddToBlockIndex(const CBlockHeader &header) {
     // Not genesis - calculate height and chain work
     pindex->nHeight = pindex->pprev->nHeight + 1;
     pindex->nChainWork = pindex->pprev->nChainWork + GetBlockProof(*pindex);
-    LOG_CHAIN_TRACE("AddToBlockIndex: Created new block index height={} chainwork={}",
-                    pindex->nHeight, pindex->nChainWork.ToString().substr(0, 16));
+    LOG_CHAIN_TRACE("AddToBlockIndex: Created new block index height={} log2_work={:.6f}",
+                    pindex->nHeight, std::log(pindex->nChainWork.getdouble()) / std::log(2.0));
   } else {
     // Genesis block
     pindex->nHeight = 0;
     pindex->nChainWork = GetBlockProof(*pindex);
-    LOG_CHAIN_TRACE("AddToBlockIndex: Created GENESIS block index chainwork={}",
-                    pindex->nChainWork.ToString().substr(0, 16));
+    LOG_CHAIN_TRACE("AddToBlockIndex: Created GENESIS block index log2_work={:.6f}",
+                    std::log(pindex->nChainWork.getdouble()) / std::log(2.0));
   }
 
   return pindex;
@@ -121,7 +120,7 @@ bool BlockManager::Save(const std::string &filepath) const {
   using json = nlohmann::json;
 
   try {
-    LOG_CHAIN_INFO("Saving {} headers to {}", m_block_index.size(), filepath);
+    LOG_CHAIN_TRACE("Saving {} headers to {}", m_block_index.size(), filepath);
 
     json root;
     root["version"] = 1; // Format version for future compatibility
@@ -180,7 +179,7 @@ bool BlockManager::Save(const std::string &filepath) const {
     file << root.dump(2); // Pretty print with 2-space indent
     file.close();
 
-    LOG_CHAIN_INFO("Successfully saved {} headers", m_block_index.size());
+    LOG_CHAIN_TRACE("Successfully saved {} headers", m_block_index.size());
     return true;
 
   } catch (const std::exception &e) {
@@ -194,12 +193,12 @@ bool BlockManager::Load(const std::string &filepath,
   using json = nlohmann::json;
 
   try {
-    LOG_CHAIN_INFO("Loading headers from {}", filepath);
+    LOG_CHAIN_TRACE("Loading headers from {}", filepath);
 
     // Open file
     std::ifstream file(filepath);
     if (!file.is_open()) {
-      LOG_CHAIN_WARN("Header file not found: {} (starting fresh)", filepath);
+      LOG_CHAIN_TRACE("Header file not found: {} (starting fresh)", filepath);
       return false;
     }
 
@@ -219,7 +218,7 @@ bool BlockManager::Load(const std::string &filepath,
     std::string genesis_hash_str = root.value("genesis_hash", "");
     std::string tip_hash_str = root.value("tip_hash", "");
 
-    LOG_CHAIN_INFO("Loading {} headers, genesis: {}, tip: {}", block_count,
+    LOG_CHAIN_TRACE("Loading {} headers, genesis: {}, tip: {}", block_count,
                    genesis_hash_str, tip_hash_str);
 
     // CRITICAL: Validate genesis block hash matches expected network
@@ -236,7 +235,7 @@ bool BlockManager::Load(const std::string &filepath,
       return false;
     }
 
-    LOG_CHAIN_INFO("Genesis block validation passed: {}", genesis_hash_str);
+    LOG_CHAIN_TRACE("Genesis block validation passed: {}", genesis_hash_str);
 
     // Clear existing state
     m_block_index.clear();
@@ -317,11 +316,11 @@ bool BlockManager::Load(const std::string &filepath,
         return false;
       }
       m_active_chain.SetTip(*tip);
-      LOG_CHAIN_INFO("Restored active chain to height {}", tip->nHeight);
+      LOG_CHAIN_TRACE("Restored active chain to height {}", tip->nHeight);
     }
 
     m_initialized = true;
-    LOG_CHAIN_INFO("Successfully loaded {} headers", m_block_index.size());
+    LOG_CHAIN_TRACE("Successfully loaded {} headers", m_block_index.size());
     return true;
 
   } catch (const std::exception &e) {

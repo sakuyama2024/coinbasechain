@@ -61,7 +61,7 @@ void HeaderSyncManager::CheckInitialSync() {
 
     // We found a ready outbound peer! Start initial sync with this peer
     int current_height = chainstate_manager_.GetChainHeight();
-    LOG_NET_INFO("initial getheaders ({}) to peer={} (outbound)",
+LOG_NET_DEBUG("initial getheaders ({}) peer={}",
                  current_height, peer->id());
 
     SetSyncPeer(peer->id());
@@ -89,7 +89,7 @@ void HeaderSyncManager::CheckInitialSync() {
 
     // We found a ready inbound peer! Use it as fallback for initial sync
     int current_height = chainstate_manager_.GetChainHeight();
-    LOG_NET_INFO("initial getheaders ({}) to peer={} (no outbound available)",
+LOG_NET_DEBUG("initial getheaders ({}) peer={}",
                  current_height, peer->id());
 
     SetSyncPeer(peer->id());
@@ -126,7 +126,7 @@ void HeaderSyncManager::RequestHeadersFromPeer(PeerPtr peer) {
   // hash_stop is all zeros (get as many as possible)
   msg->hash_stop.fill(0);
 
-  LOG_NET_DEBUG("Requesting headers from peer {} (locator size: {})",
+  LOG_NET_TRACE("requesting headers from peer={} (locator size: {})",
                 peer->id(), msg->block_locator_hashes.size());
 
   peer->send_message(std::move(msg));
@@ -153,8 +153,8 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
         chainstate_manager_.LookupBlockIndex(headers.back().GetHash());
     if (last_header_index && last_header_index->nChainWork > 0) {
       skip_dos_checks = true;
-      LOG_NET_TRACE("Peer {} sent {} headers, last header already validated (work={}), skipping DoS checks",
-                    peer_id, headers.size(), last_header_index->nChainWork.ToString().substr(0, 16));
+      LOG_NET_TRACE("Peer {} sent {} headers, last header already validated (log2_work={:.6f}), skipping DoS checks",
+                    peer_id, headers.size(), std::log(last_header_index->nChainWork.getdouble()) / std::log(2.0));
     }
   }
 
@@ -173,14 +173,14 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
     // Bitcoin Core (line 2896): "Nothing interesting. Stop asking this peers for more headers."
     // Empty headers means peer has reached the end of their chain - they have no more to give us.
     // This could happen if peer reorged to our chain, or we've synced to their tip.
-    LOG_INFO("Received empty headers from peer {} - peer has no more headers to send", peer_id);
+LOG_NET_DEBUG("received headers (0) peer={}", peer_id);
     ClearSyncPeer();
     return true;
   }
 
   // DoS Protection: Check headers message size limit
   if (headers.size() > protocol::MAX_HEADERS_SIZE) {
-    LOG_ERROR("Rejecting oversized headers message from peer {} (size={}, max={})",
+    LOG_NET_ERROR("Rejecting oversized headers message from peer {} (size={}, max={})",
               peer_id, headers.size(), protocol::MAX_HEADERS_SIZE);
     peer_manager_.ReportOversizedMessage(peer_id);
     // Check if peer should be disconnected
@@ -194,14 +194,14 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
     return false;
   }
 
-  LOG_INFO("Processing {} headers from peer {}", headers.size(), peer_id);
+LOG_NET_DEBUG("received headers ({}) peer={}", headers.size(), peer_id);
 
   // DoS Protection: Check if first header connects to known chain
   const uint256 &first_prev = headers[0].hashPrevBlock;
   bool prev_exists = chainstate_manager_.LookupBlockIndex(first_prev) != nullptr;
 
   if (!prev_exists) {
-    LOG_WARN("Headers don't connect to known chain from peer {} (first header prevhash: {})",
+    LOG_NET_WARN("headers don't connect to known chain from peer={} (first prevhash: {})",
              peer_id, first_prev.ToString());
     peer_manager_.IncrementUnconnectingHeaders(peer_id);
     // Check if peer should be disconnected
@@ -221,7 +221,7 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   // DoS Protection: Cheap PoW commitment check
   bool pow_ok = chainstate_manager_.CheckHeadersPoW(headers);
   if (!pow_ok) {
-    LOG_ERROR("Headers failed PoW commitment check from peer {}", peer_id);
+    LOG_NET_ERROR("headers failed PoW commitment check from peer={}", peer_id);
     peer_manager_.ReportInvalidPoW(peer_id);
     if (peer_manager_.ShouldDisconnect(peer_id)) {
       if (ban_man_) {
@@ -236,7 +236,7 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   // DoS Protection: Check headers are continuous
   bool continuous_ok = validation::CheckHeadersAreContinuous(headers);
   if (!continuous_ok) {
-    LOG_ERROR("Non-continuous headers from peer {}", peer_id);
+    LOG_NET_ERROR("non-continuous headers from peer={}", peer_id);
     peer_manager_.ReportNonContinuousHeaders(peer_id);
     if (peer_manager_.ShouldDisconnect(peer_id)) {
       if (ban_man_) {
@@ -270,7 +270,7 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
         // might have sufficient work even if this batch doesn't.
         if (headers.size() != protocol::MAX_HEADERS_SIZE) {
           // Batch was not full - peer has no more headers to offer
-          LOG_NET_DEBUG("Ignoring low-work chain from peer {} (work={}, threshold={}, height={})",
+          LOG_NET_TRACE("ignoring low-work chain from peer={} (work={}, threshold={}, height={})",
                         peer_id,
                         total_work.ToString(),
                         minimum_work.ToString(),
@@ -281,7 +281,7 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
         }
         // Batch was full - peer likely has more headers with additional work coming.
         // Don't abandon peer, just skip processing this batch and request more.
-        LOG_NET_DEBUG("Low-work headers from peer {} but batch is full (size={}, work={}, threshold={}), continuing sync",
+        LOG_NET_TRACE("low-work headers from peer={} but batch is full (size={}, work={}, threshold={}), continuing sync",
                       peer_id,
                       headers.size(),
                       total_work.ToString(),
@@ -313,14 +313,14 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
 
       // Orphaned header - not an error
       if (reason == "orphaned") {
-        LOG_INFO("Header from peer {} cached as orphan: {}",
+        LOG_NET_TRACE("header from peer={} cached as orphan: {}",
                  peer_id, header.GetHash().ToString().substr(0, 16));
         continue;
       }
 
       // DoS Protection: Orphan limit exceeded
       if (reason == "orphan-limit") {
-        LOG_WARN("Peer {} exceeded orphan limit", peer_id);
+        LOG_NET_TRACE("peer={} exceeded orphan limit", peer_id);
         peer_manager_.ReportTooManyOrphans(peer_id);
         if (peer_manager_.ShouldDisconnect(peer_id)) {
           if (ban_man_) {
@@ -373,7 +373,7 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
           reason == "bad-version" ||
           reason == "bad-prevblk" || reason == "bad-genesis" ||
           reason == "genesis-via-accept") {
-        LOG_ERROR("Peer {} sent invalid header: {}", peer_id, reason);
+        LOG_NET_ERROR("peer={} sent invalid header: {}", peer_id, reason);
         peer_manager_.ReportInvalidHeader(peer_id, reason);
         if (peer_manager_.ShouldDisconnect(peer_id)) {
           if (ban_man_) {
@@ -386,7 +386,7 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
       }
 
       // Unknown rejection reason - log and fail
-      LOG_ERROR("Failed to accept header from peer {} - Hash: {}, Reason: {}, Debug: {}",
+      LOG_NET_ERROR("failed to accept header from peer={} - hash: {} reason: {} debug: {}",
                 peer_id, header.GetHash().ToString(), reason, state.GetDebugMessage());
       ClearSyncPeer();
       return false;
@@ -397,9 +397,9 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   }
 
   // Activate best chain ONCE for the entire batch
-  LOG_INFO("Calling ActivateBestChain for batch of {} headers", headers.size());
+  LOG_NET_TRACE("calling ActivateBestChain for batch of {} headers", headers.size());
   bool activate_result = chainstate_manager_.ActivateBestChain(nullptr);
-  LOG_INFO("ActivateBestChain returned {}", activate_result ? "true" : "FALSE");
+  LOG_NET_TRACE("ActivateBestChain returned {}", activate_result ? "true" : "FALSE");
   if (!activate_result) {
     ClearSyncPeer();
     return false;
@@ -409,12 +409,12 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   if (chainstate_manager_.IsInitialBlockDownload()) {
     const chain::CBlockIndex *tip = chainstate_manager_.GetTip();
     if (tip) {
-      LOG_INFO("Synchronizing block headers, height: {}", tip->nHeight);
+      LOG_NET_TRACE("synchronizing block headers, height: {}", tip->nHeight);
     }
   } else {
     const chain::CBlockIndex *tip = chainstate_manager_.GetTip();
     if (tip) {
-      LOG_INFO("New block header: height={}, hash={}...", tip->nHeight,
+      LOG_NET_TRACE("new block header: height={} hash={}...", tip->nHeight,
                tip->GetBlockHash().ToString().substr(0, 16));
     }
   }
@@ -439,7 +439,7 @@ bool HeaderSyncManager::HandleGetHeadersMessage(
     return false;
   }
 
-  LOG_NET_DEBUG("Peer {} requested headers (locator size: {})", peer->id(),
+  LOG_NET_TRACE("peer={} requested headers (locator size: {})", peer->id(),
                 msg->block_locator_hashes.size());
 
   // Find the fork point using the block locator
@@ -456,7 +456,7 @@ bool HeaderSyncManager::HandleGetHeadersMessage(
     if (chainstate_manager_.IsOnActiveChain(pindex)) {
       // Found a block that exists AND is on our active chain
       fork_point = pindex;
-      LOG_NET_INFO("Found fork point at height {} (hash={}) on active chain",
+      LOG_NET_TRACE("found fork point at height {} (hash={}) on active chain",
                    fork_point->nHeight, hash.ToString().substr(0, 16));
       break;
     }
@@ -469,18 +469,18 @@ bool HeaderSyncManager::HandleGetHeadersMessage(
       fork_point = fork_point->pprev;
     }
     if (fork_point) {
-      LOG_NET_INFO("No common blocks in locator - using genesis at height {}",
+      LOG_NET_TRACE("no common blocks in locator - using genesis at height {}",
                    fork_point->nHeight);
     }
   }
 
   if (!fork_point) {
-    LOG_NET_WARN("No blocks to send to peer {}", peer->id());
+    LOG_NET_TRACE("no blocks to send to peer={}", peer->id());
     return false;
   }
 
   const chain::CBlockIndex *tip = chainstate_manager_.GetTip();
-  LOG_NET_DEBUG("Preparing headers: fork_point height={}, tip height={}",
+  LOG_NET_TRACE("preparing headers: fork_point height={} tip height={}",
                 fork_point->nHeight, tip ? tip->nHeight : -1);
 
   // Build HEADERS response
@@ -490,9 +490,23 @@ bool HeaderSyncManager::HandleGetHeadersMessage(
   const chain::CBlockIndex *pindex =
       chainstate_manager_.GetBlockAtHeight(fork_point->nHeight + 1);
 
+  // Respect hash_stop (0 = no limit)
+  uint256 stop_hash;
+  bool has_stop = false;
+  {
+    // Convert std::array<uint8_t, 32> to uint256
+    std::memcpy(stop_hash.data(), msg->hash_stop.data(), 32);
+    has_stop = !stop_hash.IsNull();
+  }
+
   while (pindex && response->headers.size() < protocol::MAX_HEADERS_SIZE) {
     CBlockHeader hdr = pindex->GetBlockHeader();
     response->headers.push_back(hdr);
+
+    // If caller requested a stop-hash, include it and then stop
+    if (has_stop && pindex->GetBlockHash() == stop_hash) {
+      break;
+    }
 
     if (pindex == tip) {
       break;
@@ -502,9 +516,8 @@ bool HeaderSyncManager::HandleGetHeadersMessage(
     pindex = chainstate_manager_.GetBlockAtHeight(pindex->nHeight + 1);
   }
 
-  LOG_NET_DEBUG("Sending {} headers to peer {} (from height {} to {})",
-                response->headers.size(), peer->id(), fork_point->nHeight + 1,
-                fork_point->nHeight + response->headers.size());
+LOG_NET_DEBUG("sending headers ({}) peer={}",
+                response->headers.size(), peer->id());
 
   peer->send_message(std::move(response));
   return true;

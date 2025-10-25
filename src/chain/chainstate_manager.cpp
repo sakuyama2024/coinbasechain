@@ -13,9 +13,25 @@
 #include <cassert>
 #include <ctime>
 #include <iostream>
+#include <cmath>
+#include <algorithm>
 
 namespace coinbasechain {
 namespace validation {
+
+// Format UNIX timestamp as "YYYY-MM-DD HH:MM:SS UTC" (Bitcoin Core style)
+static std::string FormatDateTimeUTC(int64_t t) {
+  std::time_t tt = static_cast<std::time_t>(t);
+  std::tm tm{};
+#if defined(_WIN32)
+  gmtime_s(&tm, &tt);
+#else
+  gmtime_r(&tt, &tm);
+#endif
+  char buf[32];
+  std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+  return std::string(buf);
+}
 
 ChainstateManager::ChainstateManager(const chain::ChainParams &params,
                                      int suspicious_reorg_depth)
@@ -54,7 +70,7 @@ ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,
   // Step 2: Cheap POW commitment check (anti-DoS)
   if (!CheckProofOfWork(header, crypto::POWVerifyMode::COMMITMENT_ONLY)) {
     state.Invalid("high-hash", "proof of work commitment failed");
-    LOG_DEBUG("Block header {} failed POW commitment check",
+    LOG_CHAIN_ERROR("Block header {} failed POW commitment check",
               hash.ToString().substr(0, 16));
     return nullptr;
   }
@@ -64,7 +80,7 @@ ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,
     // This claims to be a genesis block
     if (hash != params_.GetConsensus().hashGenesisBlock) {
       state.Invalid("bad-genesis", "genesis block hash mismatch");
-      LOG_ERROR("Rejected fake genesis block: {} (expected: {})",
+      LOG_CHAIN_ERROR("Rejected fake genesis block: {} (expected: {})",
                 hash.ToString(),
                 params_.GetConsensus().hashGenesisBlock.ToString());
       return nullptr;
@@ -80,18 +96,18 @@ ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,
       block_manager_.LookupBlockIndex(header.hashPrevBlock);
   if (!pindexPrev) {
     // Parent not found - this is an ORPHAN header
-    LOG_DEBUG("Orphan header {}: parent {} not found",
+    LOG_CHAIN_TRACE("Orphan header {}: parent {} not found",
               hash.ToString().substr(0, 16),
               header.hashPrevBlock.ToString().substr(0, 16));
 
     // Try to cache as orphan (Bitcoin Core-style)
     if (TryAddOrphanHeader(header, peer_id)) {
-      LOG_INFO("Cached orphan header: hash={}, parent={}, peer={}",
+      LOG_CHAIN_TRACE("Cached orphan header: hash={}, parent={}, peer={}",
                hash.ToString().substr(0, 16),
                header.hashPrevBlock.ToString().substr(0, 16), peer_id);
       state.Invalid("orphaned", "header cached as orphan (parent not found)");
     } else {
-      LOG_WARN("Failed to cache orphan header {} (DoS limit exceeded)",
+      LOG_CHAIN_TRACE("Failed to cache orphan header {} (DoS limit exceeded)",
                hash.ToString().substr(0, 16));
       state.Invalid("orphan-limit", "orphan pool full or peer limit exceeded");
     }
@@ -100,7 +116,7 @@ ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,
 
   // Step 5: Check if parent is marked invalid
   if (pindexPrev->nStatus & chain::BLOCK_FAILED_MASK) {
-    LOG_DEBUG("Block header {} has prev block invalid: {}",
+    LOG_CHAIN_TRACE("Block header {} has prev block invalid: {}",
               hash.ToString().substr(0, 16),
               header.hashPrevBlock.ToString().substr(0, 16));
     state.Invalid("bad-prevblk", "previous block is invalid");
@@ -119,7 +135,7 @@ ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,
           invalid_walk->nStatus |= chain::BLOCK_FAILED_CHILD;
           invalid_walk = invalid_walk->pprev;
         }
-        LOG_DEBUG(
+        LOG_CHAIN_TRACE(
             "Block header {} has prev block that descends from invalid block",
             hash.ToString().substr(0, 16));
         state.Invalid("bad-prevblk",
@@ -147,7 +163,7 @@ ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,
   int64_t adjusted_time = GetAdjustedTime();
   if (!ContextualCheckBlockHeaderWrapper(header, pindexPrev, adjusted_time,
                                          state)) {
-    LOG_ERROR("Contextual check failed for block {}: {} - {}",
+    LOG_CHAIN_ERROR("Contextual check failed for block {}: {} - {}",
               hash.ToString().substr(0, 16), state.GetRejectReason(),
               state.GetDebugMessage());
     // Mark as invalid and track it
@@ -158,7 +174,7 @@ ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,
 
   // Step 9: Full POW verification (EXPENSIVE - this is why we cache the result)
   if (!CheckBlockHeaderWrapper(header, state)) {
-    LOG_ERROR("Block header check failed for block {}: {} - {}",
+    LOG_CHAIN_ERROR("Block header check failed for block {}: {} - {}",
               hash.ToString().substr(0, 16), state.GetRejectReason(),
               state.GetDebugMessage());
     // Mark as invalid and track it
@@ -173,9 +189,9 @@ ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,
   // Step 11: Update best header
   chain_selector_.UpdateBestHeader(pindex);
 
-  LOG_INFO("Accepted new block header: hash={}, height={}, work={}",
+  LOG_CHAIN_TRACE("Accepted new block header: hash={}, height={}, log2_work={:.6f}",
            hash.ToString().substr(0, 16), pindex->nHeight,
-           pindex->nChainWork.ToString().substr(0, 16));
+           std::log(pindex->nChainWork.getdouble()) / std::log(2.0));
 
   // Step 12: Process any orphan children waiting for this parent
   ProcessOrphanHeaders(hash);
@@ -239,7 +255,7 @@ bool ChainstateManager::ActivateBestChain(chain::CBlockIndex *pindexMostWork) {
   // Get current tip
   chain::CBlockIndex *pindexOldTip = block_manager_.GetTip();
 
-  LOG_DEBUG("ActivateBestChain: pindexOldTip={} (height={}), pindexMostWork={} "
+  LOG_CHAIN_TRACE("ActivateBestChain: pindexOldTip={} (height={}), pindexMostWork={} "
             "(height={})",
             pindexOldTip ? pindexOldTip->GetBlockHash().ToString().substr(0, 16)
                          : "null",
@@ -256,7 +272,7 @@ bool ChainstateManager::ActivateBestChain(chain::CBlockIndex *pindexMostWork) {
   // Check if new chain has more work
   if (pindexOldTip && pindexMostWork->nChainWork <= pindexOldTip->nChainWork) {
     // Not enough work to switch
-    LOG_DEBUG("Block accepted but not activated (insufficient work). Height: "
+    LOG_CHAIN_TRACE("Block accepted but not activated (insufficient work). Height: "
               "{}, Hash: {}",
               pindexMostWork->nHeight,
               pindexMostWork->GetBlockHash().ToString().substr(0, 16));
@@ -270,21 +286,17 @@ bool ChainstateManager::ActivateBestChain(chain::CBlockIndex *pindexMostWork) {
   LOG_CHAIN_TRACE("ActivateBestChain: fork_point={} (height={})",
                   pindexFork ? pindexFork->GetBlockHash().ToString().substr(0, 16) : "null",
                   pindexFork ? pindexFork->nHeight : -1);
-  LOG_DEBUG("ActivateBestChain: pindexFork={} (height={})",
-            pindexFork ? pindexFork->GetBlockHash().ToString().substr(0, 16)
-                       : "null",
-            pindexFork ? pindexFork->nHeight : -1);
 
   // Handle the case where no fork point exists (chains have no common ancestor)
   if (!pindexFork) {
-    LOG_ERROR("ActivateBestChain: No common ancestor found between old tip and "
+    LOG_CHAIN_ERROR("ActivateBestChain: No common ancestor found between old tip and "
               "new chain");
-    LOG_ERROR("  Old tip: height={}, hash={}",
+    LOG_CHAIN_ERROR("  Old tip: height={}, hash={}",
               pindexOldTip ? pindexOldTip->nHeight : -1,
               pindexOldTip
                   ? pindexOldTip->GetBlockHash().ToString().substr(0, 16)
                   : "null");
-    LOG_ERROR("  New tip: height={}, hash={}", pindexMostWork->nHeight,
+    LOG_CHAIN_ERROR("  New tip: height={}, hash={}", pindexMostWork->nHeight,
               pindexMostWork->GetBlockHash().ToString().substr(0, 16));
     return false;
   }
@@ -301,22 +313,22 @@ bool ChainstateManager::ActivateBestChain(chain::CBlockIndex *pindexMostWork) {
   // Use height difference
   int reorg_depth = pindexOldTip->nHeight - pindexFork->nHeight;
 
-  LOG_DEBUG("ActivateBestChain: reorg_depth={}, suspicious_reorg_depth_={}",
+  LOG_CHAIN_TRACE("ActivateBestChain: reorg_depth={}, suspicious_reorg_depth_={}",
             reorg_depth, suspicious_reorg_depth_);
 
   // Deep reorg protection
   // If suspiciousreorgdepth=N, reject reorgs >= N (allow up to N-1)
   if (suspicious_reorg_depth_ > 0 && reorg_depth >= suspicious_reorg_depth_) {
-    LOG_ERROR("CRITICAL: Detected suspicious reorg of {} blocks, local policy "
+    LOG_CHAIN_ERROR("CRITICAL: Detected suspicious reorg of {} blocks, local policy "
               "allows {} blocks. "
               "This may indicate a severe network issue or attack. Refusing to "
               "reorganize.",
               reorg_depth, suspicious_reorg_depth_ - 1);
-    LOG_ERROR("* current tip @ height {} ({})", pindexOldTip->nHeight,
+    LOG_CHAIN_ERROR("* current tip @ height {} ({})", pindexOldTip->nHeight,
               pindexOldTip->GetBlockHash().ToString());
-    LOG_ERROR("*   reorg tip @ height {} ({})", pindexMostWork->nHeight,
+    LOG_CHAIN_ERROR("*   reorg tip @ height {} ({})", pindexMostWork->nHeight,
               pindexMostWork->GetBlockHash().ToString());
-    LOG_ERROR("*  fork point @ height {} ({})", pindexFork->nHeight,
+    LOG_CHAIN_ERROR("*  fork point @ height {} ({})", pindexFork->nHeight,
               pindexFork->GetBlockHash().ToString());
 
     // Notify subscribers (e.g., Application for graceful shutdown)
@@ -336,7 +348,7 @@ bool ChainstateManager::ActivateBestChain(chain::CBlockIndex *pindexMostWork) {
     LOG_CHAIN_TRACE("ActivateBestChain: Disconnecting block height={} hash={}",
                     pindexWalk->nHeight, pindexWalk->GetBlockHash().ToString().substr(0, 16));
     if (!DisconnectTip()) {
-      LOG_ERROR("Failed to disconnect block during reorg");
+      LOG_CHAIN_ERROR("Failed to disconnect block during reorg");
       return false;
     }
     pindexWalk = block_manager_.GetTip();
@@ -358,16 +370,16 @@ bool ChainstateManager::ActivateBestChain(chain::CBlockIndex *pindexMostWork) {
     LOG_CHAIN_TRACE("ActivateBestChain: Connecting block height={} hash={}",
                     (*it)->nHeight, (*it)->GetBlockHash().ToString().substr(0, 16));
     if (!ConnectTip(*it)) {
-      LOG_ERROR("Failed to connect block during reorg at height {}",
+      LOG_CHAIN_ERROR("Failed to connect block during reorg at height {}",
                 (*it)->nHeight);
 
       // ERROR RECOVERY: Roll back to old tip
-      LOG_WARN("Attempting to roll back to old tip...");
+      LOG_CHAIN_TRACE("Attempting to roll back to old tip...");
 
       // First, disconnect any blocks we successfully connected
       while (block_manager_.GetTip() != pindexFork) {
         if (!DisconnectTip()) {
-          LOG_ERROR(
+          LOG_CHAIN_ERROR(
               "CRITICAL: Rollback failed! Chain state may be inconsistent!");
           return false;
         }
@@ -377,7 +389,7 @@ bool ChainstateManager::ActivateBestChain(chain::CBlockIndex *pindexMostWork) {
       for (auto rit = disconnected_blocks.rbegin();
            rit != disconnected_blocks.rend(); ++rit) {
         if (!ConnectTip(*rit)) { // No const_cast needed now
-          LOG_ERROR("CRITICAL: Failed to restore old chain! Chain state may be "
+          LOG_CHAIN_ERROR("CRITICAL: Failed to restore old chain! Chain state may be "
                     "inconsistent!");
           return false;
         }
@@ -387,10 +399,10 @@ bool ChainstateManager::ActivateBestChain(chain::CBlockIndex *pindexMostWork) {
       // but guard against unexpected state corruption
       const chain::CBlockIndex *restored_tip = block_manager_.GetTip();
       if (restored_tip) {
-        LOG_INFO("Rollback successful - restored old tip at height {}",
+LOG_CHAIN_TRACE("Rollback successful - restored old tip at height {}",
                  restored_tip->nHeight);
       } else {
-        LOG_ERROR("CRITICAL: Rollback completed but tip is null! Chain state "
+        LOG_CHAIN_ERROR("CRITICAL: Rollback completed but tip is null! Chain state "
                   "is inconsistent!");
       }
       return false;
@@ -405,21 +417,16 @@ bool ChainstateManager::ActivateBestChain(chain::CBlockIndex *pindexMostWork) {
     assert(pindexOldTip &&
            "pindexOldTip must be non-null if blocks were disconnected");
 
-    LOG_WARN("REORGANIZE: Disconnect {} blocks; Connect {} blocks",
+    LOG_CHAIN_DEBUG("REORGANIZE: Disconnect {} blocks; Connect {} blocks",
              disconnected_blocks.size(), connect_blocks.size());
-    LOG_INFO("REORGANIZE: Old tip: height={}, hash={}", pindexOldTip->nHeight,
+    LOG_CHAIN_TRACE("REORGANIZE: Old tip: height={}, hash={}", pindexOldTip->nHeight,
              pindexOldTip->GetBlockHash().ToString().substr(0, 16));
-    LOG_INFO("REORGANIZE: New tip: height={}, hash={}", pindexMostWork->nHeight,
+    LOG_CHAIN_TRACE("REORGANIZE: New tip: height={}, hash={}", pindexMostWork->nHeight,
              pindexMostWork->GetBlockHash().ToString().substr(0, 16));
-    LOG_INFO("REORGANIZE: Fork point: height={}, hash={}",
+    LOG_CHAIN_TRACE("REORGANIZE: Fork point: height={}, hash={}",
              pindexFork ? pindexFork->nHeight : -1,
              pindexFork ? pindexFork->GetBlockHash().ToString().substr(0, 16)
                         : "null");
-  } else {
-    LOG_INFO("New best chain activated! Height: {}, Hash: {}, Work: {}",
-             pindexMostWork->nHeight,
-             pindexMostWork->GetBlockHash().ToString().substr(0, 16),
-             pindexMostWork->nChainWork.ToString().substr(0, 16));
   }
 
   // Emit final tip notification
@@ -427,6 +434,15 @@ bool ChainstateManager::ActivateBestChain(chain::CBlockIndex *pindexMostWork) {
 
   // Prune candidates that now have less work than active tip
   chain_selector_.PruneBlockIndexCandidates(block_manager_);
+
+  // Log successful chain activation with chainwork (Bitcoin Core style)
+  // Only log if this is a non-reorg activation (no blocks disconnected)
+  if (disconnected_blocks.empty()) {
+    LOG_CHAIN_INFO("New best chain activated! Height: {}, Hash: {}, log2_work: {:.6f}",
+                   pindexMostWork->nHeight,
+                   pindexMostWork->GetBlockHash().ToString().substr(0, 16),
+                   std::log(pindexMostWork->nChainWork.getdouble()) / std::log(2.0));
+  }
 
   return true;
 }
@@ -473,7 +489,7 @@ ChainstateManager::GetBlockAtHeight(int height) const {
 
 bool ChainstateManager::ConnectTip(chain::CBlockIndex *pindexNew) {
   if (!pindexNew) {
-    LOG_ERROR("ConnectTip: null block index");
+    LOG_CHAIN_ERROR("ConnectTip: null block index");
     return false;
   }
 
@@ -502,8 +518,26 @@ bool ChainstateManager::ConnectTip(chain::CBlockIndex *pindexNew) {
 
   block_manager_.SetActiveTip(*pindexNew);
 
-  LOG_DEBUG("ConnectTip: height={}, hash={}", pindexNew->nHeight,
-            pindexNew->GetBlockHash().ToString().substr(0, 16));
+  // Bitcoin Core-style: UpdateTip log with extra fields
+  const std::string best_hash = pindexNew->GetBlockHash().ToString();
+  double log2_work = std::log(pindexNew->nChainWork.getdouble()) / std::log(2.0);
+  std::string date_str = FormatDateTimeUTC(pindexNew->GetBlockTime());
+  int32_t version = pindexNew->nVersion;
+  // Headers-only: no transactions/UTXO cache; use zeros to match Core's fields
+  uint64_t total_tx = 0;
+  double progress = 0.0;
+  int64_t now = util::GetTime();
+  if (now > 0) {
+    progress = static_cast<double>(pindexNew->GetBlockTime()) / static_cast<double>(now);
+    if (progress < 0.0) progress = 0.0;
+    if (progress > 1.0) progress = 1.0;
+  }
+  double cache_mib = 0.0;
+  int cache_percent = 0;
+  LOG_CHAIN_DEBUG(
+      "UpdateTip: new best={} height={} version=0x{:08x} log2_work={:.8g} tx={} date='{}' progress={:.6f} cache={:.1f}MiB({}%)",
+      best_hash, pindexNew->nHeight, static_cast<uint32_t>(version), log2_work,
+      total_tx, date_str, progress, cache_mib, cache_percent);
 
   // Emit block connected notification AFTER updating tip
   CBlockHeader header = pindexNew->GetBlockHeader();
@@ -515,19 +549,17 @@ bool ChainstateManager::ConnectTip(chain::CBlockIndex *pindexNew) {
 bool ChainstateManager::DisconnectTip() {
   chain::CBlockIndex *pindexDelete = block_manager_.GetTip();
   if (!pindexDelete) {
-    LOG_ERROR("DisconnectTip: no tip to disconnect");
+    LOG_CHAIN_ERROR("DisconnectTip: no tip to disconnect");
     return false;
   }
 
   if (!pindexDelete->pprev) {
-    LOG_ERROR("DisconnectTip: cannot disconnect genesis block");
+    LOG_CHAIN_ERROR("DisconnectTip: cannot disconnect genesis block");
     return false;
   }
 
   LOG_CHAIN_TRACE("DisconnectTip: disconnecting block height={} hash={}",
                   pindexDelete->nHeight, pindexDelete->GetBlockHash().ToString().substr(0, 16));
-  LOG_DEBUG("DisconnectTip: height={}, hash={}", pindexDelete->nHeight,
-            pindexDelete->GetBlockHash().ToString().substr(0, 16));
 
   // NOTIFICATION SEMANTICS:
   // Notify BEFORE updating state
@@ -581,7 +613,7 @@ bool ChainstateManager::IsInitialBlockDownload() const {
 
   // All checks passed - we're synced!
   // Latch to false permanently
-  LOG_INFO("Initial Block Download complete at height {}!", tip->nHeight);
+  LOG_CHAIN_TRACE("Initial Block Download complete at height {}!", tip->nHeight);
   m_cached_finished_ibd.store(true, std::memory_order_relaxed);
 
   return false;
@@ -603,7 +635,7 @@ bool ChainstateManager::Initialize(const CBlockHeader &genesis_header) {
 
     chain_selector_.AddCandidateUnchecked(genesis);
     chain_selector_.SetBestHeader(genesis);
-    LOG_DEBUG("Initialized with genesis as candidate: height={}, hash={}",
+    LOG_CHAIN_TRACE("Initialized with genesis as candidate: height={}, hash={}",
               genesis->nHeight,
               genesis->GetBlockHash().ToString().substr(0, 16));
   }
@@ -656,14 +688,14 @@ bool ChainstateManager::Load(const std::string &filepath) {
         chain_selector_.AddCandidateUnchecked(mutable_block);
         candidate_count++;
 
-        LOG_DEBUG("Added leaf as candidate: height={}, hash={}, work={}",
+    LOG_CHAIN_TRACE("Added leaf as candidate: height={}, hash={}, log2_work={:.6f}",
                   block.nHeight, hash.ToString().substr(0, 16),
-                  block.nChainWork.ToString().substr(0, 16));
+                  std::log(block.nChainWork.getdouble()) / std::log(2.0));
 
         // Track best header (most chainwork)
         chain_selector_.UpdateBestHeader(mutable_block);
       } else {
-        LOG_DEBUG("Found invalid leaf (not added to candidates): height={}, "
+        LOG_CHAIN_TRACE("Found invalid leaf (not added to candidates): height={}, "
                   "hash={}, status={}",
                   block.nHeight, hash.ToString().substr(0, 16), block.nStatus);
       }
@@ -671,22 +703,22 @@ bool ChainstateManager::Load(const std::string &filepath) {
   }
 
   chain::CBlockIndex *tip = block_manager_.GetTip();
-  LOG_INFO(
+  LOG_CHAIN_TRACE(
       "Loaded chain state: {} total blocks, {} leaf nodes, {} valid candidates",
       block_index.size(), leaf_count, candidate_count);
 
   if (tip) {
-    LOG_INFO("Active chain tip: height={}, hash={}", tip->nHeight,
+    LOG_CHAIN_TRACE("Active chain tip: height={}, hash={}", tip->nHeight,
              tip->GetBlockHash().ToString().substr(0, 16));
   }
 
   if (chain_selector_.GetBestHeader()) {
-    LOG_INFO(
-        "Best header: height={}, hash={}, work={}",
+    LOG_CHAIN_TRACE(
+        "Best header: height={}, hash={}, log2_work={:.6f}",
         chain_selector_.GetBestHeader()->nHeight,
         chain_selector_.GetBestHeader()->GetBlockHash().ToString().substr(0,
                                                                           16),
-        chain_selector_.GetBestHeader()->nChainWork.ToString().substr(0, 16));
+        std::log(chain_selector_.GetBestHeader()->nChainWork.getdouble()) / std::log(2.0));
   }
 
   return true;
@@ -729,7 +761,7 @@ void ChainstateManager::ProcessOrphanHeaders(const uint256 &parentHash) {
     return;
   }
 
-  LOG_INFO("Processing {} orphan headers that were waiting for parent {}",
+  LOG_CHAIN_TRACE("Processing {} orphan headers that were waiting for parent {}",
            orphansToProcess.size(), parentHash.ToString().substr(0, 16));
 
   // Process each orphan (this is recursive - orphan may have orphan children)
@@ -758,7 +790,7 @@ void ChainstateManager::ProcessOrphanHeaders(const uint256 &parentHash) {
     }
 
     // Recursively process the orphan
-    LOG_DEBUG("Processing orphan header: hash={}, parent={}",
+    LOG_CHAIN_TRACE("Processing orphan header: hash={}, parent={}",
               hash.ToString().substr(0, 16),
               orphan_header.hashPrevBlock.ToString().substr(0, 16));
 
@@ -767,12 +799,12 @@ void ChainstateManager::ProcessOrphanHeaders(const uint256 &parentHash) {
         AcceptBlockHeader(orphan_header, orphan_state, orphan_peer_id);
 
     if (!pindex) {
-      LOG_DEBUG("Orphan header {} failed validation: {}",
+      LOG_CHAIN_TRACE("Orphan header {} failed validation: {}",
                 hash.ToString().substr(0, 16), orphan_state.GetRejectReason());
       // If it's orphaned again (missing grandparent), it will be re-added to
       // pool If it's invalid, it won't be re-added
     } else {
-      LOG_INFO("Successfully processed orphan header: hash={}, height={}",
+      LOG_CHAIN_TRACE("Successfully processed orphan header: hash={}, height={}",
                hash.ToString().substr(0, 16), pindex->nHeight);
     }
   }
@@ -800,7 +832,7 @@ bool ChainstateManager::TryAddOrphanHeader(const CBlockHeader &header,
   LOG_CHAIN_TRACE("TryAddOrphanHeader: peer={} has {}/{} orphans",
                   peer_id, peer_orphan_count, protocol::MAX_ORPHAN_HEADERS_PER_PEER);
   if (peer_orphan_count >= static_cast<int>(protocol::MAX_ORPHAN_HEADERS_PER_PEER)) {
-    LOG_WARN("Peer {} exceeded orphan limit ({}/{}), rejecting orphan {}",
+    LOG_CHAIN_TRACE("Peer {} exceeded orphan limit ({}/{}), rejecting orphan {}",
              peer_id, peer_orphan_count, protocol::MAX_ORPHAN_HEADERS_PER_PEER,
              hash.ToString().substr(0, 16));
     return false;
@@ -809,12 +841,12 @@ bool ChainstateManager::TryAddOrphanHeader(const CBlockHeader &header,
   // DoS Protection 2: Check total limit
   if (m_orphan_headers.size() >= protocol::MAX_ORPHAN_HEADERS) {
     // Evict oldest orphan to make room
-    LOG_DEBUG("Orphan pool full ({}/{}), evicting oldest",
+    LOG_CHAIN_TRACE("Orphan pool full ({}/{}), evicting oldest",
               m_orphan_headers.size(), protocol::MAX_ORPHAN_HEADERS);
 
     size_t evicted = EvictOrphanHeaders();
     if (evicted == 0) {
-      LOG_ERROR("Failed to evict any orphans, pool stuck at max size");
+      LOG_CHAIN_ERROR("Failed to evict any orphans, pool stuck at max size");
       return false;
     }
   }
@@ -825,7 +857,7 @@ bool ChainstateManager::TryAddOrphanHeader(const CBlockHeader &header,
   // Update peer count
   m_peer_orphan_count[peer_id]++;
 
-  LOG_DEBUG("Added orphan header to pool: hash={}, peer={}, pool_size={}, "
+  LOG_CHAIN_TRACE("Added orphan header to pool: hash={}, peer={}, pool_size={}, "
             "peer_orphans={}",
             hash.ToString().substr(0, 16), peer_id, m_orphan_headers.size(),
             m_peer_orphan_count[peer_id]);
@@ -847,7 +879,7 @@ size_t ChainstateManager::EvictOrphanHeaders() {
   auto it = m_orphan_headers.begin();
   while (it != m_orphan_headers.end()) {
     if (now - it->second.nTimeReceived > params_.GetConsensus().nOrphanHeaderExpireTime) {
-      LOG_DEBUG("Evicting expired orphan header: hash={}, age={}s",
+    LOG_CHAIN_TRACE("Evicting expired orphan header: hash={}, age={}s",
                 it->first.ToString().substr(0, 16),
                 now - it->second.nTimeReceived);
 
@@ -879,7 +911,7 @@ size_t ChainstateManager::EvictOrphanHeaders() {
       }
     }
 
-    LOG_DEBUG("Evicting oldest orphan header: hash={}, age={}s",
+    LOG_CHAIN_TRACE("Evicting oldest orphan header: hash={}, age={}s",
               oldest->first.ToString().substr(0, 16),
               now - oldest->second.nTimeReceived);
 
@@ -898,7 +930,7 @@ size_t ChainstateManager::EvictOrphanHeaders() {
   }
 
   if (evicted > 0) {
-    LOG_INFO("Evicted {} orphan headers (pool size now: {})", evicted,
+    LOG_CHAIN_TRACE("Evicted {} orphan headers (pool size now: {})", evicted,
              m_orphan_headers.size());
   }
 
@@ -917,7 +949,7 @@ bool ChainstateManager::CheckHeadersPoW(
   LOG_CHAIN_TRACE("CheckHeadersPoW: checking {} headers", headers.size());
   for (const auto &header : headers) {
     if (!CheckProofOfWork(header, crypto::POWVerifyMode::COMMITMENT_ONLY)) {
-      LOG_DEBUG("Header failed PoW commitment check: {}",
+      LOG_CHAIN_TRACE("Header failed PoW commitment check: {}",
                 header.GetHash().ToString().substr(0, 16));
       LOG_CHAIN_TRACE("CheckHeadersPoW: FAILED on header {}",
                       header.GetHash().ToString().substr(0, 16));
@@ -967,20 +999,19 @@ bool ChainstateManager::InvalidateBlock(const uint256 &hash) {
   // Look up the block
   chain::CBlockIndex *pindex = block_manager_.LookupBlockIndex(hash);
   if (!pindex) {
-    LOG_ERROR("InvalidateBlock: block {} not found", hash.ToString());
+    LOG_CHAIN_ERROR("InvalidateBlock: block {} not found", hash.ToString());
     return false;
   }
 
   // Can't invalidate genesis
   if (pindex->nHeight == 0) {
-    LOG_ERROR("InvalidateBlock: cannot invalidate genesis block");
+    LOG_CHAIN_ERROR("InvalidateBlock: cannot invalidate genesis block");
     return false;
   }
 
   LOG_CHAIN_TRACE("InvalidateBlock: Found block height={} on_active_chain={}",
                   pindex->nHeight, IsOnActiveChain(pindex));
-  LOG_INFO("Invalidating block {} at height {}", hash.ToString(),
-           pindex->nHeight);
+  LOG_CHAIN_DEBUG("InvalidateBlock: {}", hash.ToString());
 
   chain::CBlockIndex *to_mark_failed = pindex;
   bool pindex_was_in_chain = false;
@@ -1004,13 +1035,13 @@ bool ChainstateManager::InvalidateBlock(const uint256 &hash) {
         candidate->IsValid(chain::BLOCK_VALID_TREE)) {
       candidate_blocks_by_work.insert(
           std::make_pair(candidate->nChainWork, candidate));
-      LOG_DEBUG("Pre-built candidate: height={}, hash={}, work={}",
+    LOG_CHAIN_TRACE("Pre-built candidate: height={}, hash={}, log2_work={:.6f}",
                 candidate->nHeight, block_hash.ToString().substr(0, 16),
-                candidate->nChainWork.ToString().substr(0, 16));
+                std::log(candidate->nChainWork.getdouble()) / std::log(2.0));
     }
   }
 
-  LOG_DEBUG("Pre-built {} candidate blocks for invalidation",
+  LOG_CHAIN_TRACE("Pre-built {} candidate blocks for invalidation",
             candidate_blocks_by_work.size());
 
   // Step 2: Disconnect loop with incremental candidate addition
@@ -1027,7 +1058,7 @@ bool ChainstateManager::InvalidateBlock(const uint256 &hash) {
 
     // Disconnect the current tip
     if (!DisconnectTip()) {
-      LOG_ERROR("Failed to disconnect tip during invalidation");
+      LOG_CHAIN_ERROR("Failed to disconnect tip during invalidation");
       return false;
     }
 
@@ -1054,11 +1085,11 @@ bool ChainstateManager::InvalidateBlock(const uint256 &hash) {
         // Check if this fork has at least as much work as the new tip
         if (fork_candidate->nChainWork >= invalid_walk_tip->pprev->nChainWork) {
           chain_selector_.AddCandidateUnchecked(fork_candidate);
-          LOG_DEBUG(
-              "Added competing fork as candidate: height={}, hash={}, work={}",
+LOG_CHAIN_TRACE(
+              "Added competing fork as candidate: height={}, hash={}, log2_work={:.6f}",
               fork_candidate->nHeight,
               fork_candidate->GetBlockHash().ToString().substr(0, 16),
-              fork_candidate->nChainWork.ToString().substr(0, 16));
+              std::log(fork_candidate->nChainWork.getdouble()) / std::log(2.0));
           candidate_it = candidate_blocks_by_work.erase(candidate_it);
         } else {
           ++candidate_it;
@@ -1077,14 +1108,14 @@ bool ChainstateManager::InvalidateBlock(const uint256 &hash) {
 
     to_mark_failed = invalid_walk_tip;
 
-    LOG_DEBUG("Disconnected and invalidated block at height {}: {}",
+    LOG_CHAIN_TRACE("Disconnected and invalidated block at height {}: {}",
               invalid_walk_tip->nHeight,
               invalid_walk_tip->GetBlockHash().ToString().substr(0, 16));
   }
 
   // Safety check: If block is still in chain, something went wrong
   if (block_manager_.ActiveChain().Contains(to_mark_failed)) {
-    LOG_ERROR(
+    LOG_CHAIN_ERROR(
         "InvalidateBlock: block still in active chain after disconnect loop");
     return false;
   }
@@ -1107,7 +1138,7 @@ bool ChainstateManager::InvalidateBlock(const uint256 &hash) {
       const_cast<chain::CBlockIndex *>(&block)->nStatus |=
           chain::BLOCK_FAILED_CHILD;
       chain_selector_.RemoveCandidate(const_cast<chain::CBlockIndex *>(&block));
-      LOG_DEBUG("Marked descendant {} at height {} as BLOCK_FAILED_CHILD",
+      LOG_CHAIN_TRACE("Marked descendant {} at height {} as BLOCK_FAILED_CHILD",
                 block_hash.ToString().substr(0, 16), block.nHeight);
     }
   }
@@ -1142,7 +1173,7 @@ bool ChainstateManager::InvalidateBlock(const uint256 &hash) {
     }
   }
 
-  LOG_INFO("Successfully invalidated block {} and {} descendants",
+  LOG_CHAIN_TRACE("Successfully invalidated block {} and {} descendants",
            hash.ToString(), pindex_was_in_chain ? "disconnected" : "marked");
 
   // NOTE: Bitcoin Core does NOT call ActivateBestChain() here

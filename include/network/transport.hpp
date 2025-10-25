@@ -13,7 +13,7 @@ namespace network {
 // Abstract transport interface for network communication
 // Allows dependency injection of different implementations:
 // - RealTransport: TCP sockets via boost::asio
-// - SimulatedTransport: In-memory message passing for testing
+// - NetworkBridgedTransport: In-memory message passing for testing (in test/)
 
 
 // Forward declarations

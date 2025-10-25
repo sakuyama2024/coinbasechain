@@ -32,7 +32,7 @@ bool CPUMiner::Start(int target_height) {
   // If two threads call Start() simultaneously, only one will succeed
   bool expected = false;
   if (!mining_.compare_exchange_strong(expected, true)) {
-    LOG_WARN("Miner: Already mining");
+    LOG_CHAIN_WARN("Miner: Already mining");
     return false;
   }
 
@@ -41,7 +41,7 @@ bool CPUMiner::Start(int target_height) {
     worker_.join();
   }
 
-  LOG_INFO("Miner: Starting (chain: {}, target_height: {})",
+  LOG_CHAIN_TRACE("Miner: Starting (chain: {}, target_height: {})",
            params_.GetChainTypeString(),
            target_height == -1 ? "unlimited" : std::to_string(target_height));
 
@@ -71,10 +71,10 @@ void CPUMiner::Stop() {
   // ALWAYS join the thread if it exists
   // Even if mining_ was already false, the thread might still be exiting!
   if (worker_.joinable()) {
-    LOG_INFO("Miner: Stopping...");
-    LOG_INFO("Miner: Waiting for worker thread to join...");
+    LOG_CHAIN_TRACE("Miner: Stopping...");
+    LOG_CHAIN_TRACE("Miner: Waiting for worker thread to join...");
     worker_.join();
-    LOG_INFO("Miner: Worker thread joined successfully");
+    LOG_CHAIN_TRACE("Miner: Worker thread joined successfully");
 
     int64_t elapsed;
     {
@@ -87,11 +87,11 @@ void CPUMiner::Stop() {
     uint64_t hashes = total_hashes_.load();
     double hashrate = (elapsed > 0) ? (double)hashes / elapsed : 0.0;
 
-    LOG_INFO("Miner: Stopped");
-    LOG_INFO("  Total hashes: {}", hashes);
-    LOG_INFO("  Time: {}s", elapsed);
-    LOG_INFO("  Hashrate: {} H/s", hashrate);
-    LOG_INFO("  Blocks found: {}", blocks_found_.load());
+    LOG_CHAIN_TRACE("Miner: Stopped");
+    LOG_CHAIN_TRACE("  Total hashes: {}", hashes);
+    LOG_CHAIN_TRACE("  Time: {}s", elapsed);
+    LOG_CHAIN_TRACE("  Hashrate: {} H/s", hashrate);
+    LOG_CHAIN_TRACE("  Blocks found: {}", blocks_found_.load());
   }
 }
 
@@ -123,15 +123,15 @@ void CPUMiner::MiningWorker() {
   BlockTemplate local_template = CreateBlockTemplate();
   uint256 template_prev_hash = local_template.hashPrevBlock;
 
-  LOG_INFO("Miner: Mining block at height {}", local_template.nHeight);
-  LOG_INFO("  Previous: {}...",
+  LOG_CHAIN_TRACE("Miner: Mining block at height {}", local_template.nHeight);
+  LOG_CHAIN_TRACE("  Previous: {}...",
            local_template.hashPrevBlock.ToString().substr(0, 16));
-  LOG_INFO("  Target:   0x{:x}", local_template.nBits);
+  LOG_CHAIN_TRACE("  Target:   0x{:x}", local_template.nBits);
 
   while (mining_.load()) {
     // Check if we need to regenerate template (chain tip changed)
     if (ShouldRegenerateTemplate(template_prev_hash)) {
-      LOG_INFO("Miner: Chain tip changed, regenerating template");
+      LOG_CHAIN_TRACE("Miner: Chain tip changed, regenerating template");
       local_template = CreateBlockTemplate();
       template_prev_hash = local_template.hashPrevBlock;
       nonce = 0; // Restart nonce
@@ -156,7 +156,7 @@ void CPUMiner::MiningWorker() {
       CBlockHeader found_header = local_template.header;
       found_header.hashRandomX = rx_hash;
 
-      LOG_INFO("Miner: *** BLOCK FOUND *** Height: {}, Nonce: {}, Hash: {}",
+      LOG_CHAIN_TRACE("Miner: *** BLOCK FOUND *** Height: {}, Nonce: {}, Hash: {}",
                local_template.nHeight, nonce,
                found_header.GetHash().ToString().substr(0, 16));
 
@@ -164,7 +164,7 @@ void CPUMiner::MiningWorker() {
       // This validates, activates best chain, and emits notifications
       validation::ValidationState state;
       if (!chainstate_.ProcessNewBlockHeader(found_header, state)) {
-        LOG_ERROR("Miner: Failed to process mined block: {} - {}",
+        LOG_CHAIN_ERROR("Miner: Failed to process mined block: {} - {}",
                   state.GetRejectReason(), state.GetDebugMessage());
         // Skip template creation and try next nonce
         // (validation failure means tip didn't advance)
@@ -177,7 +177,7 @@ void CPUMiner::MiningWorker() {
       const chain::CBlockIndex *tip = chainstate_.GetTip();
       int actual_height = tip ? tip->nHeight : -1;
       if (target != -1 && actual_height >= target) {
-        LOG_INFO("Miner: Reached target height {} (actual chain: {}), stopping", target, actual_height);
+        LOG_CHAIN_TRACE("Miner: Reached target height {} (actual chain: {}), stopping", target, actual_height);
         mining_.store(false);
         break;
       }
@@ -199,12 +199,12 @@ void CPUMiner::MiningWorker() {
 
       if (local_template.header.nTime < max_future_time) {
         local_template.header.nTime++;
-        LOG_DEBUG("Miner: Nonce space exhausted, incremented nTime to {}",
+        LOG_CHAIN_TRACE("Miner: Nonce space exhausted, incremented nTime to {}",
                   local_template.header.nTime);
       } else {
         // Timestamp would exceed maximum future time
         // This should never happen in regtest, but regenerate template just in case
-        LOG_WARN("Miner: Timestamp at maximum ({}), regenerating template",
+        LOG_CHAIN_TRACE("Miner: Timestamp at maximum ({}), regenerating template",
                  local_template.header.nTime);
         local_template = CreateBlockTemplate();
         template_prev_hash = local_template.hashPrevBlock;
@@ -213,7 +213,7 @@ void CPUMiner::MiningWorker() {
     }
   }
 
-  LOG_INFO("Miner: Worker thread exiting normally");
+  LOG_CHAIN_TRACE("Miner: Worker thread exiting normally");
 }
 
 BlockTemplate CPUMiner::CreateBlockTemplate() {

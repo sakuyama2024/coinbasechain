@@ -45,7 +45,7 @@ chain::CBlockIndex *ChainSelector::FindMostWorkChain() {
     // silent bugs.
     if ((pindexCandidate->nStatus & chain::BLOCK_FAILED_MASK) ||
         !pindexCandidate->IsValid(chain::BLOCK_VALID_TREE)) {
-      LOG_DEBUG("Skipping invalid candidate: height={}, hash={}, status=0x{:x}",
+      LOG_CHAIN_TRACE("Skipping invalid candidate: height={}, hash={}, status=0x{:x}",
                 pindexCandidate->nHeight,
                 pindexCandidate->GetBlockHash().ToString().substr(0, 16),
                 pindexCandidate->nStatus);
@@ -57,7 +57,7 @@ chain::CBlockIndex *ChainSelector::FindMostWorkChain() {
   }
 
   // No valid candidates found
-  LOG_ERROR("No valid candidates in set (size={})", m_candidates.size());
+  LOG_CHAIN_TRACE("No valid candidates in set (size={})", m_candidates.size());
   return nullptr;
 }
 
@@ -83,7 +83,7 @@ void ChainSelector::TryAddBlockIndexCandidate(
 
   // Check validation status
   if (!pindex->IsValid(chain::BLOCK_VALID_TREE)) {
-    LOG_DEBUG("Block {} not added to candidates: not validated to TREE level",
+    LOG_CHAIN_TRACE("Block {} not added to candidates: not validated to TREE level",
               pindex->GetBlockHash().ToString().substr(0, 16));
     return;
   }
@@ -104,7 +104,7 @@ void ChainSelector::TryAddBlockIndexCandidate(
   for (const auto &[hash, block_index] : block_manager.GetBlockIndex()) {
     if (block_index.pprev == pindex) {
       has_children = true;
-      LOG_WARN("Block {} not added to candidates: has child {} (not a leaf)",
+      LOG_CHAIN_TRACE("Block {} not added to candidates: has child {} (not a leaf)",
                pindex->GetBlockHash().ToString().substr(0, 16),
                hash.ToString().substr(0, 16));
       break;
@@ -120,7 +120,7 @@ void ChainSelector::TryAddBlockIndexCandidate(
   if (pindex->pprev) {
     auto it = m_candidates.find(pindex->pprev);
     if (it != m_candidates.end()) {
-      LOG_DEBUG("Removed parent from candidates (extended): height={}, hash={}",
+      LOG_CHAIN_TRACE("Removed parent from candidates (extended): height={}, hash={}",
                 pindex->pprev->nHeight,
                 pindex->pprev->GetBlockHash().ToString().substr(0, 16));
       m_candidates.erase(it);
@@ -130,9 +130,9 @@ void ChainSelector::TryAddBlockIndexCandidate(
   // Add the new block as a candidate
   m_candidates.insert(pindex);
 
-  LOG_DEBUG("Added candidate: height={}, hash={}, work={}, candidates_count={}",
+  LOG_CHAIN_TRACE("Added candidate: height={}, hash={}, log2_work={:.6f}, candidates_count={}",
             pindex->nHeight, pindex->GetBlockHash().ToString().substr(0, 16),
-            pindex->nChainWork.ToString().substr(0, 16), m_candidates.size());
+            std::log(pindex->nChainWork.getdouble()) / std::log(2.0), m_candidates.size());
 }
 
 void ChainSelector::PruneBlockIndexCandidates(
@@ -168,31 +168,31 @@ void ChainSelector::PruneBlockIndexCandidates(
 
     // Rule 1: Remove if less work than tip
     if (pindex->nChainWork < pindexTip->nChainWork) {
-      LOG_DEBUG("Pruning candidate (less work): height={}, hash={}, work={} < "
-                "tip_work={}",
+      LOG_CHAIN_TRACE("Pruning candidate (less work): height={}, hash={}, log2_work={:.6f} < "
+                "tip_log2_work={:.6f}",
                 pindex->nHeight,
                 pindex->GetBlockHash().ToString().substr(0, 16),
-                pindex->nChainWork.ToString().substr(0, 16),
-                pindexTip->nChainWork.ToString().substr(0, 16));
+                std::log(pindex->nChainWork.getdouble()) / std::log(2.0),
+                std::log(pindexTip->nChainWork.getdouble()) / std::log(2.0));
       should_remove = true;
     }
     // Rule 2: Remove if it IS the current tip
     else if (pindex == pindexTip) {
-      LOG_DEBUG("Pruning candidate (is current tip): height={}, hash={}",
+      LOG_CHAIN_TRACE("Pruning candidate (is current tip): height={}, hash={}",
                 pindex->nHeight,
                 pindex->GetBlockHash().ToString().substr(0, 16));
       should_remove = true;
     }
     // Rule 3: Remove if it's an ancestor of the tip (interior of active chain)
     else if (block_manager.ActiveChain().Contains(pindex)) {
-      LOG_DEBUG("Pruning candidate (on active chain): height={}, hash={}",
+      LOG_CHAIN_TRACE("Pruning candidate (on active chain): height={}, hash={}",
                 pindex->nHeight,
                 pindex->GetBlockHash().ToString().substr(0, 16));
       should_remove = true;
     }
     // Rule 4: Remove if it has children (not a leaf - defensive check)
     else if (blocks_with_children.find(pindex) != blocks_with_children.end()) {
-      LOG_WARN(
+      LOG_CHAIN_TRACE(
           "Pruning candidate (has children, not a leaf!): height={}, hash={}",
           pindex->nHeight, pindex->GetBlockHash().ToString().substr(0, 16));
       should_remove = true;
@@ -207,7 +207,7 @@ void ChainSelector::PruneBlockIndexCandidates(
   }
 
   if (removed > 0) {
-    LOG_DEBUG("Pruned {} stale candidates (remaining: {})", removed,
+    LOG_CHAIN_TRACE("Pruned {} stale candidates (remaining: {})", removed,
               m_candidates.size());
   }
 }

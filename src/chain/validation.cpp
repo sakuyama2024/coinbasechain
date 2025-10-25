@@ -191,7 +191,7 @@ bool CheckHeadersPoW(const std::vector<CBlockHeader> &headers,
   for (const auto &header : headers) {
     if (!consensus::CheckProofOfWork(header, header.nBits, params,
                                      crypto::POWVerifyMode::COMMITMENT_ONLY)) {
-      LOG_DEBUG("Header failed PoW commitment check: {}",
+      LOG_CHAIN_TRACE("Header failed PoW commitment check: {}",
                 header.GetHash().ToString().substr(0, 16));
       return false;
     }
@@ -208,7 +208,7 @@ bool CheckHeadersAreContinuous(const std::vector<CBlockHeader> &headers) {
   // Check each header's prevhash matches the previous header's hash
   for (size_t i = 1; i < headers.size(); i++) {
     if (headers[i].hashPrevBlock != headers[i - 1].GetHash()) {
-      LOG_DEBUG("Headers not continuous at index {}: prevhash={}, expected={}",
+      LOG_CHAIN_TRACE("Headers not continuous at index {}: prevhash={}, expected={}",
                 i, headers[i].hashPrevBlock.ToString().substr(0, 16),
                 headers[i - 1].GetHash().ToString().substr(0, 16));
       return false;

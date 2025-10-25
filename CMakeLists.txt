@@ -211,7 +211,7 @@ add_library(network STATIC
     src/network/message_router.cpp
     src/network/network_manager.cpp
     src/network/real_transport.cpp
-    src/network/simulated_transport.cpp
+    # src/network/simulated_transport.cpp  # Not implemented yet
     src/network/nat_manager.cpp
     src/network/banman.cpp
     # RPC
@@ -275,7 +275,11 @@ set_target_properties(coinbasechain-cli PROPERTIES
 # Enable testing
 enable_testing()
 
-# Create test executable (now includes network tests - all using Catch2)
+# Option to build legacy tests under test/
+option(BUILD_LEGACY_TESTS "Build legacy tests in test/" OFF)
+
+# Create legacy test executable (Catch2) when enabled
+if(BUILD_LEGACY_TESTS)
 add_executable(coinbasechain_tests
     test/catch_amalgamated.cpp
     test/test_logging.cpp
@@ -358,6 +362,7 @@ target_link_libraries(coinbasechain_tests PRIVATE
 
 # Register test with CTest
 add_test(NAME coinbasechain_tests COMMAND coinbasechain_tests)
+endif() # BUILD_LEGACY_TESTS
 
 # Add tools subdirectory
 add_subdirectory(tools/genesis_miner)
@@ -458,3 +463,8 @@ if(ENABLE_FUZZING)
 
     message(STATUS "Fuzz targets will be built in: ${CMAKE_BINARY_DIR}/fuzz")
 endif()
+
+# ============================================================================
+# TESTS: New improved testing framework (moved from test2/ to test/)
+# ============================================================================
+add_subdirectory(test)

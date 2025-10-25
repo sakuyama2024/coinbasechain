@@ -409,7 +409,7 @@ No fields - empty message payload.
 
 ### 6.1 InventoryVector Structure (36 bytes)
 
-Used by INV, GETDATA, and NOTFOUND messages.
+Used by INV messages.
 
 | Field | Size | Type | Description |
 |-------|------|------|-------------|
@@ -564,7 +564,7 @@ Node A                       Node B
 Node A                       Node B
     |                             |
     |<-------INV(MSG_BLOCK)-------|  // Announce new header
-    |--------GETDATA(hash)------->|  // Request header
+|    |--------GETHEADERS--------->|  // Request headers
     |<-------HEADERS--------------|  // Receive header
     |                             |
 ```
