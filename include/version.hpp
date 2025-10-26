@@ -69,39 +69,39 @@ inline std::string GetStartupBanner(const std::string &chain_type) {
   banner +=
       "║                                                               ║\n";
   banner +=
-      "║       ██╗   ██╗███╗   ██╗██╗ ██████╗██╗████████╗██╗   ██╗    ║\n";
+      "║        ██╗   ██╗███╗   ██╗██╗ ██████╗██╗████████╗██╗   ██╗    ║\n";
   banner +=
-      "║       ██║   ██║████╗  ██║██║██╔════╝██║╚══██╔══╝╚██╗ ██╔╝    ║\n";
+      "║        ██║   ██║████╗  ██║██║██╔════╝██║╚══██╔══╝╚██╗ ██╔╝    ║\n";
   banner +=
-      "║       ██║   ██║██╔██╗ ██║██║██║     ██║   ██║    ╚████╔╝     ║\n";
+      "║        ██║   ██║██╔██╗ ██║██║██║     ██║   ██║    ╚████╔╝     ║\n";
+  banner += 
+      "║        ██║   ██║██║╚██╗██║██║██║     ██║   ██║     ╚██╔╝      ║\n";
   banner +=
-      "║       ██║   ██║██║╚██╗██║██║██║     ██║   ██║     ╚██╔╝      ║\n";
+      "║        ╚██████╔╝██║ ╚████║██║╚██████╗██║   ██║      ██║       ║\n";
   banner +=
-      "║       ╚██████╔╝██║ ╚████║██║╚██████╗██║   ██║      ██║       ║\n";
-  banner +=
-      "║        ╚═════╝ ╚═╝  ╚═══╝╚═╝ ╚═════╝╚═╝   ╚═╝      ╚═╝       ║\n";
+      "║         ╚═════╝ ╚═╝  ╚═══╝╚═╝ ╚═════╝╚═╝   ╚═╝      ╚═╝       ║\n";
   banner +=
       "║                                                               ║\n";
   banner +=
-      "║                         Proof of Work                         ║\n";
+      "║                   Proof of Work Consensus Layer               ║\n";
   banner +=
       "║                                                               ║\n";
   banner +=
       "╟───────────────────────────────────────────────────────────────╢\n";
   std::string version_str = GetVersionString();
   banner += "║  Version: " + version_str;
-  // Pad to align with box
-  size_t version_padding = 54 - version_str.length();
+  // Box is 65 display chars. "║  Version: " = 12 display chars, closing "║" = 1
+  size_t version_padding = 52 - version_str.length();
   banner += std::string(version_padding, ' ') + "║\n";
 
   banner += "║  Network: " + chain_type;
-  size_t network_padding = 54 - chain_type.length();
+  size_t network_padding = 52 - chain_type.length();
   banner += std::string(network_padding, ' ') + "║\n";
 
   banner +=
       "╟───────────────────────────────────────────────────────────────╢\n";
   banner += "║  " + GetCopyrightString();
-  size_t copyright_padding = 62 - GetCopyrightString().length();
+  size_t copyright_padding = 61 - GetCopyrightString().length();
   banner += std::string(copyright_padding, ' ') + "║\n";
   banner += "╚═══════════════════════════════════════════════════════════════╝";
   banner += colors::RESET; // Reset color
