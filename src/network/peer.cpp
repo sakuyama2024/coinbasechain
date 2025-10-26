@@ -58,7 +58,7 @@ PeerPtr Peer::create_inbound(boost::asio::io_context &io_context,
                              TransportConnectionPtr connection,
                              uint32_t network_magic,
                              int32_t start_height) {
-  // Bitcoin Core pattern: Store the peer's address (from accepted connection)
+  // Store the peer's address (from accepted connection)
   // For inbound peers, this is the runtime address they connected from
   std::string addr = connection ? connection->remote_address() : "";
   uint16_t port = connection ? connection->remote_port() : 0;

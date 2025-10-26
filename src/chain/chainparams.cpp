@@ -74,7 +74,7 @@ CMainParams::CMainParams() {
       "000fffff00000000000000000000000000000000000000000000000000000000");
   consensus.nPowTargetSpacing = 60 * 60;              // 1 hour
   consensus.nRandomXEpochDuration = 7 * 24 * 60 * 60; // 1 week (168 blocks)
-  consensus.nASERTHalfLife = 12 * 24 * 60 * 60;       // 12 days (288 blocks, matches Bitcoin Cash)
+  consensus.nASERTHalfLife = 2 * 24 * 60 * 60;        // 2 days (48 blocks, same wall-clock time as Bitcoin Cash)
 
   // ASERT anchor: Use block 1 as the anchor
   // This means block 0 (genesis) and block 1 both use powLimit (easy to mine)

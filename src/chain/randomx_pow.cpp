@@ -87,6 +87,8 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   if (cache_it != t_cache_storage.end()) {
     myCache = cache_it->second;
   } else {
+    LOG_CRYPTO_INFO("Creating thread-local RandomX cache for epoch {} (this may take a moment)...", nEpoch);
+
     randomx_cache *pCache = randomx_alloc_cache(flags);
     if (!pCache) {
       throw std::runtime_error("Failed to allocate RandomX cache");
@@ -100,6 +102,8 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
 
   // Create thread-local VM (no lock needed, each thread has its own cache and
   // VM)
+  LOG_CRYPTO_INFO("Creating thread-local RandomX VM for epoch {}...", nEpoch);
+
   randomx_vm *myVM = randomx_create_vm(flags, myCache->cache, nullptr);
   if (!myVM) {
     throw std::runtime_error("Failed to create RandomX VM");

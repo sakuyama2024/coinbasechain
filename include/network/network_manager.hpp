@@ -11,6 +11,7 @@
 #include <atomic>
 #include <boost/asio.hpp>
 #include <chrono>
+#include <mutex>
 #include <thread>
 
 namespace coinbasechain {
@@ -120,6 +121,7 @@ public:
 private:
   Config config_;
   std::atomic<bool> running_{false};
+  mutable std::mutex start_stop_mutex_;  // Protects start/stop from race conditions
 
   // Self-connection prevention: unique nonce for this node
   uint64_t local_nonce_;

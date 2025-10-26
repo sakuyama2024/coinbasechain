@@ -46,6 +46,15 @@ void HeaderSyncManager::CheckInitialSync() {
     return;
   }
 
+  // Protect peer selection with mutex to prevent race conditions
+  // Multiple CheckInitialSync() calls could happen concurrently from timers
+  std::lock_guard<std::mutex> lock(sync_mutex_);
+
+  // Double-check after acquiring lock (another thread may have set sync peer)
+  if (sync_peer_id_.load(std::memory_order_acquire) != 0) {
+    return;
+  }
+
   // Try outbound peers first (preferred for initial sync)
   auto outbound_peers = peer_manager_.get_outbound_peers();
 

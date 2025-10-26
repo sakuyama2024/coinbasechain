@@ -91,6 +91,15 @@ NetworkManager::NetworkManager(
 NetworkManager::~NetworkManager() { stop(); }
 
 bool NetworkManager::start() {
+  // Fast path: check without lock
+  if (running_.load(std::memory_order_acquire)) {
+    return false;
+  }
+
+  // Acquire lock for initialization
+  std::lock_guard<std::mutex> lock(start_stop_mutex_);
+
+  // Double-check after acquiring lock (another thread may have started)
   if (running_.load(std::memory_order_acquire)) {
     return false;
   }
@@ -177,6 +186,15 @@ bool NetworkManager::start() {
 }
 
 void NetworkManager::stop() {
+  // Fast path: check without lock
+  if (!running_.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  // Acquire lock for shutdown
+  std::lock_guard<std::mutex> lock(start_stop_mutex_);
+
+  // Double-check after acquiring lock (another thread may have stopped)
   if (!running_.load(std::memory_order_acquire)) {
     return;
   }
