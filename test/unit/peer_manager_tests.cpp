@@ -13,6 +13,7 @@
 #include "network/peer_manager.hpp"
 #include "network/peer.hpp"
 #include "network/addr_manager.hpp"
+#include "chain/uint.hpp"
 #include <boost/asio.hpp>
 
 using namespace coinbasechain::network;
@@ -536,4 +537,37 @@ TEST_CASE("PeerManager - Multiple Misbehavior Reports", "[network][peer_manager]
         REQUIRE(pm.ShouldDisconnect(id1));
         REQUIRE_FALSE(pm.ShouldDisconnect(id2));
     }
+}
+
+TEST_CASE("PeerManager - Duplicate invalid header tracking is per-peer (no double-penalty when guarded)", "[network][peer_manager][unit][duplicates]") {
+    TestPeerFixture fixture;
+    PeerManager pm(fixture.io_context, fixture.addr_manager);
+
+    auto peerA = fixture.create_test_peer("10.0.0.1", 8333);
+    auto peerB = fixture.create_test_peer("10.0.0.2", 8333);
+    int idA = pm.add_peer(peerA);
+    int idB = pm.add_peer(peerB);
+
+    // Synthetic header hash
+    uint256 h; // default zero; flip a byte to create non-null
+    h.begin()[0] = 0x42;
+
+    // Before noting, HasInvalidHeaderHash should be false for both peers
+    REQUIRE_FALSE(pm.HasInvalidHeaderHash(idA, h));
+    REQUIRE_FALSE(pm.HasInvalidHeaderHash(idB, h));
+
+    // First invalid report for peerA (+100) and record the hash
+    pm.ReportInvalidHeader(idA, "bad-diffbits");
+    pm.NoteInvalidHeaderHash(idA, h);
+    REQUIRE(pm.GetMisbehaviorScore(idA) == MisbehaviorPenalty::INVALID_HEADER);
+
+    // Simulate duplicate from same peer: guard prevents second penalty path
+    // (HeaderSyncManager checks HasInvalidHeaderHash before calling Report...)
+    REQUIRE(pm.HasInvalidHeaderHash(idA, h));
+    int score_before = pm.GetMisbehaviorScore(idA);
+    // No additional ReportInvalidHeader is called due to guard; score remains same
+    REQUIRE(pm.GetMisbehaviorScore(idA) == score_before);
+
+    // Other peer has no record of this hash
+    REQUIRE_FALSE(pm.HasInvalidHeaderHash(idB, h));
 }

@@ -54,11 +54,11 @@ ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,
   if (pindex) {
     // Block header is already known
     if (pindex->nStatus & chain::BLOCK_FAILED_MASK) {
-      LOG_CHAIN_TRACE("Block header {} is marked invalid (duplicate), rejecting silently",
+      LOG_CHAIN_TRACE("Block header {} is marked invalid (duplicate)",
                       hash.ToString().substr(0, 16));
-      // Don't set state.Invalid() - the header might be manually invalidated (InvalidateBlock)
-      // which is a local administrative action. Peers don't know about our local invalidations.
-      // Just silently reject the duplicate without penalty.
+      // Match Bitcoin Core net_processing behavior: surface a duplicate indication
+      // so callers can apply appropriate (single) misbehavior logic.
+      state.Invalid("duplicate", "known invalid header re-announced");
       return nullptr;
     }
     // Already have it and it's valid

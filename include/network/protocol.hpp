@@ -54,7 +54,6 @@ constexpr const char *GETADDR = "getaddr";
 constexpr const char *INV = "inv";
 constexpr const char *GETHEADERS = "getheaders";
 constexpr const char *HEADERS = "headers";
-constexpr const char *SENDHEADERS = "sendheaders"; // Push-based header sync
 
 // Keep-alive
 constexpr const char *PING = "ping";

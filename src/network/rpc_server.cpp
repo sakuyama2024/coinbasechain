@@ -422,7 +422,7 @@ std::string RPCServer::HandleGetInfo(const std::vector<std::string> &params) {
       << (tip ? tip->GetBlockHash().GetHex() : "null") << "\",\n"
       << "  \"difficulty\": " << difficulty << ",\n"
       << "  \"mediantime\": " << (tip ? tip->GetMedianTimePast() : 0) << ",\n"
-      << "  \"connections\": 0\n"
+      << "  \"connections\": " << network_manager_.active_peer_count() << "\n"
       << "}\n";
   return oss.str();
 }

@@ -294,7 +294,7 @@ TEST_CASE("Protocol commands - String constants", "[network][protocol]") {
         CHECK(std::string(commands::INV) == "inv");
         CHECK(std::string(commands::GETHEADERS) == "getheaders");
         CHECK(std::string(commands::HEADERS) == "headers");
-        CHECK(std::string(commands::SENDHEADERS) == "sendheaders");
+// SENDHEADERS not supported in this implementation
         CHECK(std::string(commands::PING) == "ping");
         CHECK(std::string(commands::PONG) == "pong");
     }
@@ -303,6 +303,6 @@ TEST_CASE("Protocol commands - String constants", "[network][protocol]") {
         CHECK(std::strlen(commands::VERSION) <= COMMAND_SIZE);
         CHECK(std::strlen(commands::VERACK) <= COMMAND_SIZE);
         CHECK(std::strlen(commands::GETHEADERS) <= COMMAND_SIZE);
-        CHECK(std::strlen(commands::SENDHEADERS) <= COMMAND_SIZE);
+// SENDHEADERS not supported; no length check
     }
 }

@@ -31,6 +31,7 @@ public:
                          int suspicious_reorg_depth = 100)
         : ChainstateManager(params, suspicious_reorg_depth)
         , bypass_pow_validation_(true)
+        , bypass_contextual_validation_(true)
     {
     }
 
@@ -46,6 +47,16 @@ public:
         printf("[TestChainstateManager %p] SetBypassPOWValidation(%s) - was %d, now %d\n",
                this, bypass ? "true" : "false", bypass_pow_validation_, bypass);
         bypass_pow_validation_ = bypass;
+    }
+
+    /**
+     * Enable or disable contextual validation bypass (difficulty/timestamp)
+     * Default: true (bypass). Set to false to exercise contextual checks in tests.
+     */
+    void SetBypassContextualValidation(bool bypass) {
+        printf("[TestChainstateManager %p] SetBypassContextualValidation(%s) - was %d, now %d\n",
+               this, bypass ? "true" : "false", bypass_contextual_validation_, bypass);
+        bypass_contextual_validation_ = bypass;
     }
 
 protected:
@@ -73,6 +84,7 @@ protected:
 
 private:
     bool bypass_pow_validation_;
+    bool bypass_contextual_validation_;
 
     /**
      * Override CheckBlockHeaderWrapper to conditionally bypass validation
@@ -93,22 +105,20 @@ private:
     }
 
     /**
-     * Override ContextualCheckBlockHeaderWrapper to bypass contextual validation
-     *
-     * This bypasses difficulty and timestamp checks for unit tests.
-     * Note: Timestamps still matter for orphan eviction tests, but those
-     * tests directly manipulate time via EvictOrphanHeaders() calls.
-     * This bypass only affects acceptance validation, not eviction logic.
+     * Override ContextualCheckBlockHeaderWrapper to optionally bypass contextual validation
      */
     bool ContextualCheckBlockHeaderWrapper(const CBlockHeader& header,
                                            const chain::CBlockIndex* pindexPrev,
                                            int64_t adjusted_time,
                                            validation::ValidationState& state) const override
     {
-        // Bypass contextual validation for unit tests
-        // This allows tests to create arbitrary header chains without
-        // worrying about difficulty adjustments or timestamp constraints
-        return true;
+        if (bypass_contextual_validation_) {
+            // Bypass contextual validation for unit tests
+            // This allows tests to create arbitrary header chains without
+            // worrying about difficulty adjustments or timestamp constraints
+            return true;
+        }
+        return ChainstateManager::ContextualCheckBlockHeaderWrapper(header, pindexPrev, adjusted_time, state);
     }
 };
 

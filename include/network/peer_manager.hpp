@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <unordered_set>
 
 namespace coinbasechain {
 namespace network {
@@ -54,6 +55,8 @@ struct PeerMisbehaviorData {
   int num_unconnecting_headers_msgs{0};
   NetPermissionFlags permissions{NetPermissionFlags::None};
   std::string address;
+  // Track duplicates of invalid headers reported by this peer to avoid double-penalty
+  std::unordered_set<std::string> invalid_header_hashes;
 };
 
 /**
@@ -150,6 +153,10 @@ public:
   void ReportLowWorkHeaders(int peer_id);
   void ReportInvalidHeader(int peer_id, const std::string &reason);
   void ReportTooManyOrphans(int peer_id);
+
+  // Duplicate-invalid tracking
+  void NoteInvalidHeaderHash(int peer_id, const uint256& hash);
+  bool HasInvalidHeaderHash(int peer_id, const uint256& hash) const;
 
   // Query misbehavior state (for testing/debugging)
   int GetMisbehaviorScore(int peer_id) const;

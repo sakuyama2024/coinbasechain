@@ -4,6 +4,10 @@
 
 #include "network_test_helpers.hpp"
 #include "chain/chainparams.hpp"
+#include "network/message.hpp"
+#include "test_orchestrator.hpp"
+#include "network/peer_manager.hpp"
+#include <cstring>
 
 using namespace coinbasechain;
 using namespace coinbasechain::test;
@@ -46,6 +50,495 @@ TEST_CASE("NetworkManager HeaderSync - Basic Sync", "[network_header_sync][netwo
         REQUIRE(node2.GetTipHeight() == 10);
         REQUIRE(node2.GetTipHash() == node1.GetTipHash());
     }
+}
+
+TEST_CASE("NetworkManager HeaderSync - IBD flips on recent tip; behavior switches to multi-peer acceptance", "[network_header_sync][network]") {
+    SimulatedNetwork net(50018);
+    SetZeroLatency(net);
+    net.EnableCommandTracking(true);
+
+    // Victim at genesis -> IBD true (genesis timestamp is old)
+    SimulatedNode victim(80, &net);
+    CHECK(victim.GetIsIBD() == true);
+
+    // Two peers
+    SimulatedNode p_sync(81, &net);
+    SimulatedNode p_other(82, &net);
+
+    // Connect victims to both; select p_sync as sync peer
+    victim.ConnectTo(p_sync.GetId());
+    net.AdvanceTime(200);
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    net.AdvanceTime(200);
+    victim.ConnectTo(p_other.GetId());
+    net.AdvanceTime(200);
+
+    auto make_headers = [&](int count){
+        std::vector<CBlockHeader> headers; headers.reserve(count);
+        uint256 prev = victim.GetTipHash();
+        uint32_t nBits = coinbasechain::chain::GlobalChainParams::Get().GenesisBlock().nBits;
+        uint32_t t0 = static_cast<uint32_t>(net.GetCurrentTime() / 1000);
+        for (int i = 0; i < count; ++i) { CBlockHeader h; h.nVersion=1; h.hashPrevBlock=prev; h.nTime=t0+i+1; h.nBits=nBits; h.nNonce=i+1; h.hashRandomX.SetHex("0000000000000000000000000000000000000000000000000000000000000000"); headers.push_back(h); prev=h.GetHash(); }
+        return headers;
+    };
+    auto send_headers = [&](int from_node_id, const std::vector<CBlockHeader>& headers){
+        message::HeadersMessage m; m.headers = headers;
+        auto payload = m.serialize();
+        auto hdr = message::create_header(protocol::magic::REGTEST, protocol::commands::HEADERS, payload);
+        auto hdr_bytes = message::serialize_header(hdr);
+        std::vector<uint8_t> full; full.reserve(hdr_bytes.size()+payload.size());
+        full.insert(full.end(), hdr_bytes.begin(), hdr_bytes.end());
+        full.insert(full.end(), payload.begin(), payload.end());
+        net.SendMessage(from_node_id, victim.GetId(), full);
+    };
+
+    // While IBD: large batch from non-sync should be ignored
+    auto large_other = make_headers(200);
+    send_headers(p_other.GetId(), large_other);
+    for (int i = 0; i < 10; ++i) net.AdvanceTime(net.GetCurrentTime() + 200);
+    CHECK(victim.GetTipHeight() == 0);
+
+    // Make tip recent by sending a set of recent-timestamp headers from p_sync
+    // Also move mock time forward to "now"
+    net.AdvanceTime(std::time(nullptr) * 1000ULL);
+    auto recent_sync = make_headers(5);
+    send_headers(p_sync.GetId(), recent_sync);
+    for (int i = 0; i < 20; ++i) net.AdvanceTime(net.GetCurrentTime() + 200);
+
+    // IBD should flip to false once tip is recent
+    CHECK(victim.GetIsIBD() == false);
+
+    // Now multi-peer acceptance should apply: accept large batches from any peer
+    auto large_sync = make_headers(50);
+    auto large_other2 = make_headers(40);
+    send_headers(p_sync.GetId(), large_sync);
+    send_headers(p_other.GetId(), large_other2);
+
+    for (int i = 0; i < 50; ++i) {
+        net.AdvanceTime(net.GetCurrentTime() + 200);
+        if (victim.GetTipHeight() >= 5 + 50 + 40) break;
+    }
+
+    REQUIRE(victim.GetTipHeight() >= 95); // 5 (recent) + 50 + 40
+}
+
+TEST_CASE("NetworkManager HeaderSync - Bounded processing of many small announcements from non-sync peers", "[network_header_sync][network]") {
+    SimulatedNetwork net(50017);
+    SetZeroLatency(net);
+    net.EnableCommandTracking(true);
+
+    // Sync peer with a longer chain (target)
+    SimulatedNode sync_peer(70, &net);
+    for (int i = 0; i < 80; ++i) sync_peer.MineBlock();
+
+    // Victim
+    SimulatedNode victim(71, &net);
+
+    // Connect victim to sync peer and select as sync peer
+    victim.ConnectTo(sync_peer.GetId());
+    net.AdvanceTime(200);
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    net.AdvanceTime(200);
+
+    // Create many non-sync peers that will send repeated 2-header announcements
+    const int kPeers = 8;
+    std::vector<std::unique_ptr<SimulatedNode>> nonsync;
+    for (int i = 0; i < kPeers; ++i) {
+        nonsync.push_back(std::make_unique<SimulatedNode>(100+i, &net));
+        victim.ConnectTo(nonsync.back()->GetId());
+    }
+    net.AdvanceTime(500);
+
+    auto make_headers = [&](int count){
+        std::vector<CBlockHeader> headers; headers.reserve(count);
+        uint256 prev = victim.GetTipHash();
+        uint32_t nBits = coinbasechain::chain::GlobalChainParams::Get().GenesisBlock().nBits;
+        uint32_t t0 = static_cast<uint32_t>(net.GetCurrentTime() / 1000);
+        for (int i = 0; i < count; ++i) { CBlockHeader h; h.nVersion=1; h.hashPrevBlock=prev; h.nTime=t0+i+1; h.nBits=nBits; h.nNonce=i+1; h.hashRandomX.SetHex("0000000000000000000000000000000000000000000000000000000000000000"); headers.push_back(h); prev=h.GetHash(); }
+        return headers;
+    };
+    auto send_headers = [&](int from_node_id, const std::vector<CBlockHeader>& headers){
+        message::HeadersMessage m; m.headers = headers;
+        auto payload = m.serialize();
+        auto hdr = message::create_header(protocol::magic::REGTEST, protocol::commands::HEADERS, payload);
+        auto hdr_bytes = message::serialize_header(hdr);
+        std::vector<uint8_t> full; full.reserve(hdr_bytes.size()+payload.size());
+        full.insert(full.end(), hdr_bytes.begin(), hdr_bytes.end());
+        full.insert(full.end(), payload.begin(), payload.end());
+        net.SendMessage(from_node_id, victim.GetId(), full);
+    };
+
+    // Repeatedly drip small (2) headers from each non-sync peer
+    for (int round = 0; round < 10; ++round) {
+        for (auto& p : nonsync) {
+            auto two = make_headers(2);
+            send_headers(p->GetId(), two);
+        }
+        net.AdvanceTime(net.GetCurrentTime() + 500);
+    }
+
+    // Meanwhile, allow sync to progress
+    for (int i = 0; i < 100; ++i) {
+        net.AdvanceTime(net.GetCurrentTime() + 200);
+        if (victim.GetTipHeight() == 80) break;
+    }
+
+    // Ensure we reached the target height despite announcement noise
+    REQUIRE(victim.GetTipHeight() == 80);
+
+    // Check no erroneous misbehavior or mass disconnects
+    auto& pm = victim.GetNetworkManager().peer_manager();
+    auto peers = pm.get_all_peers();
+    int connected_count = 0;
+    for (const auto& peer : peers) {
+        if (!peer) continue;
+        if (peer->is_connected()) connected_count++;
+        // Ensure misbehavior scores are not elevated due to small announcements
+        // (They should be 0 unless other violations occurred)
+        int score = 0;
+        try { score = pm.GetMisbehaviorScore(peer->id()); } catch (...) { score = 0; }
+        CHECK(score == 0);
+    }
+    CHECK(connected_count >= 1 + kPeers); // sync peer + non-sync peers
+}
+
+TEST_CASE("NetworkManager HeaderSync - Solicited-only acceptance: sync vs non-sync large batches", "[network_header_sync][network]") {
+    SimulatedNetwork net(50015);
+    SetZeroLatency(net);
+    net.EnableCommandTracking(true);
+
+    // Victim in IBD
+    SimulatedNode victim(50, &net);
+
+    // Two peers
+    SimulatedNode p_sync(51, &net);
+    SimulatedNode p_other(52, &net);
+
+    // Connect to sync peer first and select as sync peer
+    victim.ConnectTo(p_sync.GetId());
+    net.AdvanceTime(200);
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    net.AdvanceTime(200);
+
+    // Now connect to non-sync peer
+    victim.ConnectTo(p_other.GetId());
+    net.AdvanceTime(200);
+
+    auto make_headers = [&](int count){
+        std::vector<CBlockHeader> headers; headers.reserve(count);
+        uint256 prev = victim.GetTipHash();
+        uint32_t nBits = coinbasechain::chain::GlobalChainParams::Get().GenesisBlock().nBits;
+        uint32_t t0 = static_cast<uint32_t>(net.GetCurrentTime() / 1000);
+        for (int i = 0; i < count; ++i) {
+            CBlockHeader h; h.nVersion = 1; h.hashPrevBlock = prev; h.nTime = t0 + i + 1; h.nBits = nBits; h.nNonce = i + 1; h.hashRandomX.SetHex("0000000000000000000000000000000000000000000000000000000000000000");
+            headers.push_back(h); prev = h.GetHash();
+        }
+        return headers;
+    };
+
+    auto send_headers = [&](int from_node_id, const std::vector<CBlockHeader>& headers){
+        message::HeadersMessage m; m.headers = headers;
+        auto payload = m.serialize();
+        auto hdr = message::create_header(protocol::magic::REGTEST, protocol::commands::HEADERS, payload);
+        auto hdr_bytes = message::serialize_header(hdr);
+        std::vector<uint8_t> full; full.reserve(hdr_bytes.size()+payload.size());
+        full.insert(full.end(), hdr_bytes.begin(), hdr_bytes.end());
+        full.insert(full.end(), payload.begin(), payload.end());
+        net.SendMessage(from_node_id, victim.GetId(), full);
+    };
+
+    // 1) Large (2000) from non-sync peer should be ignored
+    auto h_non_sync = make_headers(2000);
+    send_headers(p_other.GetId(), h_non_sync);
+    for (int i = 0; i < 20; ++i) net.AdvanceTime(net.GetCurrentTime() + 200);
+    CHECK(victim.GetTipHeight() == 0);
+
+    // 2) Large (2000) from sync peer should be accepted
+    auto h_sync = make_headers(2000);
+    send_headers(p_sync.GetId(), h_sync);
+    for (int i = 0; i < 50; ++i) {
+        net.AdvanceTime(net.GetCurrentTime() + 200);
+        if (victim.GetTipHeight() == 2000) break;
+    }
+    REQUIRE(victim.GetTipHeight() == 2000);
+}
+
+TEST_CASE("NetworkManager HeaderSync - Unsolicited announcements size threshold during IBD", "[network_header_sync][network]") {
+    SimulatedNetwork net(50016);
+    SetZeroLatency(net);
+    net.EnableCommandTracking(true);
+
+    // Victim in IBD, connect to two peers and select p_sync as sync peer
+    SimulatedNode victim(60, &net);
+    SimulatedNode p_sync(61, &net);
+    SimulatedNode p_other(62, &net);
+
+    victim.ConnectTo(p_sync.GetId());
+    net.AdvanceTime(200);
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    net.AdvanceTime(200);
+    victim.ConnectTo(p_other.GetId());
+    net.AdvanceTime(200);
+
+    auto make_headers = [&](int count){
+        std::vector<CBlockHeader> headers; headers.reserve(count);
+        uint256 prev = victim.GetTipHash();
+        uint32_t nBits = coinbasechain::chain::GlobalChainParams::Get().GenesisBlock().nBits;
+        uint32_t t0 = static_cast<uint32_t>(net.GetCurrentTime() / 1000);
+        for (int i = 0; i < count; ++i) {
+            CBlockHeader h; h.nVersion = 1; h.hashPrevBlock = prev; h.nTime = t0 + i + 1; h.nBits = nBits; h.nNonce = i + 1; h.hashRandomX.SetHex("0000000000000000000000000000000000000000000000000000000000000000");
+            headers.push_back(h); prev = h.GetHash();
+        }
+        return headers;
+    };
+
+    auto send_headers = [&](int from_node_id, const std::vector<CBlockHeader>& headers){
+        message::HeadersMessage m; m.headers = headers;
+        auto payload = m.serialize();
+        auto hdr = message::create_header(protocol::magic::REGTEST, protocol::commands::HEADERS, payload);
+        auto hdr_bytes = message::serialize_header(hdr);
+        std::vector<uint8_t> full; full.reserve(hdr_bytes.size()+payload.size());
+        full.insert(full.end(), hdr_bytes.begin(), hdr_bytes.end());
+        full.insert(full.end(), payload.begin(), payload.end());
+        net.SendMessage(from_node_id, victim.GetId(), full);
+    };
+
+    // 1-header from non-sync should be accepted (announcement)
+    auto one = make_headers(1);
+    send_headers(p_other.GetId(), one);
+    for (int i = 0; i < 10; ++i) net.AdvanceTime(net.GetCurrentTime() + 200);
+    CHECK(victim.GetTipHeight() == 1);
+
+    // 3-headers from non-sync should be ignored (unsolicited over threshold)
+    auto three = make_headers(3);
+    send_headers(p_other.GetId(), three);
+    for (int i = 0; i < 10; ++i) net.AdvanceTime(net.GetCurrentTime() + 200);
+    CHECK(victim.GetTipHeight() == 1);
+}
+
+TEST_CASE("NetworkManager HeaderSync - Empty HEADERS from sync peer triggers switch", "[network_header_sync][network]") {
+    SimulatedNetwork net(50012);
+    SetZeroLatency(net);
+    net.EnableCommandTracking(true);
+
+    // Build two peers: p_sync behind, p_other ahead
+    SimulatedNode p_sync(20, &net);
+    SimulatedNode p_other(21, &net);
+    for (int i = 0; i < 10; ++i) p_sync.MineBlock();
+    for (int i = 0; i < 40; ++i) p_other.MineBlock();
+
+    // Victim connects to both; choose p_sync as initial sync peer
+    SimulatedNode victim(22, &net);
+    victim.ConnectTo(p_sync.GetId());
+    net.AdvanceTime(200);
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    net.AdvanceTime(200);
+    victim.ConnectTo(p_other.GetId());
+    net.AdvanceTime(200);
+
+    // Inject empty HEADERS from current sync peer (p_sync)
+    message::HeadersMessage empty; auto payload = empty.serialize();
+    auto hdr = message::create_header(protocol::magic::REGTEST, protocol::commands::HEADERS, payload);
+    auto hdr_bytes = message::serialize_header(hdr);
+    std::vector<uint8_t> full; full.reserve(hdr_bytes.size()+payload.size());
+    full.insert(full.end(), hdr_bytes.begin(), hdr_bytes.end());
+    full.insert(full.end(), payload.begin(), payload.end());
+    net.SendMessage(p_sync.GetId(), victim.GetId(), full);
+    net.AdvanceTime(net.GetCurrentTime() + 200);
+
+    // After empty batch, selection should be cleared; pick new sync peer (p_other)
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    net.AdvanceTime(500);
+
+    // Verify GETHEADERS was sent to p_other
+    auto payloads = net.GetCommandPayloads(victim.GetId(), p_other.GetId(), protocol::commands::GETHEADERS);
+    REQUIRE_FALSE(payloads.empty());
+
+    // And sync completes to height 40
+    for (int i = 0; i < 50; ++i) {
+        net.AdvanceTime(net.GetCurrentTime() + 200);
+        if (victim.GetTipHeight() == 40) break;
+    }
+    REQUIRE(victim.GetTipHeight() == 40);
+}
+
+TEST_CASE("NetworkManager HeaderSync - Disconnect sync peer mid-sync reselects and resumes", "[network_header_sync][network]") {
+    SimulatedNetwork net(50013);
+    SetZeroLatency(net);
+    net.EnableCommandTracking(true);
+
+    // Two peers with same chain
+    SimulatedNode p1(30, &net);
+    SimulatedNode p2(31, &net);
+    for (int i = 0; i < 50; ++i) p1.MineBlock();
+    p2.ConnectTo(p1.GetId());
+    net.AdvanceTime(500);
+    REQUIRE(p2.GetTipHeight() == 50);
+
+    SimulatedNode victim(32, &net);
+    victim.ConnectTo(p1.GetId());
+    net.AdvanceTime(200);
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    net.AdvanceTime(200);
+    victim.ConnectTo(p2.GetId());
+    net.AdvanceTime(200);
+
+    // Let some progress happen
+    for (int i = 0; i < 5; ++i) net.AdvanceTime(net.GetCurrentTime() + 200);
+    int h_before = victim.GetTipHeight();
+    CHECK(h_before >= 0);
+
+    // Disconnect p1 (the sync peer) mid-sync
+    net.NotifyDisconnect(p1.GetId(), victim.GetId());
+    net.AdvanceTime(net.GetCurrentTime() + 100);
+
+    // Immediately reselect new sync peer (p2) and resume
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    net.AdvanceTime(500);
+
+    // Verify GETHEADERS to p2 and completion
+    auto gh2 = net.GetCommandPayloads(victim.GetId(), p2.GetId(), protocol::commands::GETHEADERS);
+    REQUIRE_FALSE(gh2.empty());
+
+    for (int i = 0; i < 50; ++i) {
+        net.AdvanceTime(net.GetCurrentTime() + 200);
+        if (victim.GetTipHeight() == 50) break;
+    }
+    REQUIRE(victim.GetTipHeight() == 50);
+}
+
+TEST_CASE("NetworkManager HeaderSync - Near-tip allows multi-peer headers", "[network_header_sync][network]") {
+    SimulatedNetwork net(50014);
+    // Set time to current to simulate near-tip recency
+    net.AdvanceTime(std::time(nullptr) * 1000ULL);
+    SetZeroLatency(net);
+
+    // Victim already recent (mine a few recent blocks)
+    SimulatedNode victim(40, &net);
+    for (int i = 0; i < 3; ++i) { victim.MineBlock(); net.AdvanceTime(net.GetCurrentTime() + 1000); }
+    int base_h = victim.GetTipHeight();
+
+    // Two peers send large headers that connect to victim's tip
+    SimulatedNode pA(41, &net);
+    SimulatedNode pB(42, &net);
+
+    victim.ConnectTo(pA.GetId());
+    victim.ConnectTo(pB.GetId());
+    net.AdvanceTime(200);
+
+    // Build 20 headers from pA
+    auto make_headers = [&](int count){
+        std::vector<CBlockHeader> headers; headers.reserve(count);
+        uint256 prev = victim.GetTipHash();
+        uint32_t nBits = coinbasechain::chain::GlobalChainParams::Get().GenesisBlock().nBits;
+        uint32_t t0 = static_cast<uint32_t>(net.GetCurrentTime() / 1000);
+        for (int i = 0; i < count; ++i) { CBlockHeader h; h.nVersion=1; h.hashPrevBlock=prev; h.nTime=t0+i+1; h.nBits=nBits; h.nNonce=i+1; h.hashRandomX.SetHex("0000000000000000000000000000000000000000000000000000000000000000"); headers.push_back(h); prev=h.GetHash(); }
+        return headers;
+    };
+
+    auto send_headers = [&](int from_node_id, const std::vector<CBlockHeader>& headers){
+        message::HeadersMessage m; m.headers = headers;
+        auto payload = m.serialize();
+        auto hdr = message::create_header(protocol::magic::REGTEST, protocol::commands::HEADERS, payload);
+        auto hdr_bytes = message::serialize_header(hdr);
+        std::vector<uint8_t> full; full.reserve(hdr_bytes.size()+payload.size());
+        full.insert(full.end(), hdr_bytes.begin(), hdr_bytes.end());
+        full.insert(full.end(), payload.begin(), payload.end());
+        net.SendMessage(from_node_id, victim.GetId(), full);
+    };
+
+    auto hA = make_headers(20); send_headers(pA.GetId(), hA);
+    auto hB = make_headers(15); send_headers(pB.GetId(), hB);
+
+    for (int i = 0; i < 50; ++i) { net.AdvanceTime(net.GetCurrentTime() + 200); }
+
+    // Near-tip (not IBD), we should have accepted from both peers
+    CHECK(victim.GetTipHeight() >= base_h + 20 + 15);
+}
+
+TEST_CASE("NetworkManager HeaderSync - Reorg during IBD switches to most-work and uses updated locator", "[network_header_sync][network]") {
+    SimulatedNetwork net(50011);
+    SetZeroLatency(net);
+    net.EnableCommandTracking(true);
+
+    // Two independent miners produce different chains
+    SimulatedNode miner_weak(10, &net);    // 30-block chain (weaker)
+    SimulatedNode miner_strong(11, &net);  // 60-block chain (stronger)
+    for (int i = 0; i < 30; ++i) miner_weak.MineBlock();
+    for (int i = 0; i < 60; ++i) miner_strong.MineBlock();
+
+    // Two peers: p_sync follows weaker chain; p_other follows stronger chain
+    SimulatedNode p_sync(12, &net);
+    SimulatedNode p_other(13, &net);
+
+    p_sync.ConnectTo(miner_weak.GetId());
+    p_other.ConnectTo(miner_strong.GetId());
+    net.AdvanceTime(1000);
+    REQUIRE(p_sync.GetTipHeight() == 30);
+    REQUIRE(p_other.GetTipHeight() == 60);
+
+    // Victim connects (chooses p_sync as sync peer), then p_other
+    SimulatedNode victim(14, &net);
+    victim.ConnectTo(p_sync.GetId());
+    net.AdvanceTime(200);
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    net.AdvanceTime(200);
+
+    // Allow some progress from p_sync (e.g., ~10 headers)
+    for (int i = 0; i < 10; ++i) {
+        net.AdvanceTime(net.GetCurrentTime() + 200);
+    }
+    int progress_height = victim.GetTipHeight();
+    CHECK(progress_height > 0);
+
+    // Now connect to stronger peer
+    victim.ConnectTo(p_other.GetId());
+    net.AdvanceTime(200);
+
+    // Stall p_sync -> victim to force switch
+    SimulatedNetwork::NetworkConditions drop; drop.packet_loss_rate = 1.0;
+    net.SetLinkConditions(p_sync.GetId(), victim.GetId(), drop);
+
+    // Record locator expectation (pprev trick) just before switching
+    const chain::CBlockIndex* tip_before_switch = victim.GetTip();
+    REQUIRE(tip_before_switch != nullptr);
+
+    // Trigger timeout processing and reselection
+    for (int i = 0; i < 3; ++i) {
+        net.AdvanceTime(net.GetCurrentTime() + 60*1000);
+        victim.GetNetworkManager().test_hook_header_sync_process_timers();
+    }
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    net.AdvanceTime(500);
+
+    // Fetch last GETHEADERS sent to p_other and validate locator
+    auto payloads = net.GetCommandPayloads(victim.GetId(), p_other.GetId(), protocol::commands::GETHEADERS);
+    REQUIRE_FALSE(payloads.empty());
+    auto& payload = payloads.back();
+
+    message::GetHeadersMessage gh;
+    REQUIRE(gh.deserialize(payload.data(), payload.size()));
+    REQUIRE(gh.block_locator_hashes.size() >= 1);
+
+    // Expected first locator is tip->pprev (pprev trick) if available, else tip
+    uint256 expected_first;
+    if (tip_before_switch->pprev) {
+        expected_first = tip_before_switch->pprev->GetBlockHash();
+    } else {
+        expected_first = tip_before_switch->GetBlockHash();
+    }
+
+    // Compare with first locator
+    uint256 first_loc;
+    std::memcpy(first_loc.data(), gh.block_locator_hashes.front().data(), 32);
+    CHECK(first_loc == expected_first);
+
+    // Ensure we ultimately sync to the stronger chain height (60)
+    for (int i = 0; i < 50; ++i) {
+        net.AdvanceTime(net.GetCurrentTime() + 200);
+        if (victim.GetTipHeight() == 60) break;
+    }
+    REQUIRE(victim.GetTipHeight() == 60);
 }
 
 TEST_CASE("NetworkManager HeaderSync - Ignore non-sync large headers during IBD (BTC parity)", "[network_header_sync][network]") {

@@ -515,7 +515,21 @@ int PeerManager::GetMisbehaviorScore(int peer_id) const {
     return 0;
   }
 
-  return it->second.misbehavior_score;
+return it->second.misbehavior_score;
+}
+
+void PeerManager::NoteInvalidHeaderHash(int peer_id, const uint256& hash) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = peer_misbehavior_.find(peer_id);
+  if (it == peer_misbehavior_.end()) return;
+  it->second.invalid_header_hashes.insert(hash.GetHex());
+}
+
+bool PeerManager::HasInvalidHeaderHash(int peer_id, const uint256& hash) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = peer_misbehavior_.find(peer_id);
+  if (it == peer_misbehavior_.end()) return false;
+  return it->second.invalid_header_hashes.find(hash.GetHex()) != it->second.invalid_header_hashes.end();
 }
 
 void PeerManager::IncrementUnconnectingHeaders(int peer_id) {

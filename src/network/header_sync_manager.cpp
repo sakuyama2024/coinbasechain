@@ -414,24 +414,27 @@ LOG_NET_DEBUG("received headers ({}) peer={}", headers.size(), peer_id);
                       peer_id, header.GetHash().ToString().substr(0, 16),
                       existing ? "yes" : "no", existing ? existing->IsValid() : false, skip_dos_checks);
 
-        // Bitcoin Core approach: If we're skipping DoS checks (last header was on active chain),
-        // don't penalize for any duplicates. This handles manual InvalidateBlock correctly.
+        // Bitcoin Core parity:
+        // - If we're skipping DoS checks (ancestor on active chain), do not penalize duplicates.
         if (skip_dos_checks) {
           LOG_NET_TRACE("Skipping DoS check for duplicate header (batch contains ancestors)");
-          continue;  // Skip this header, process next one (no penalty)
+          continue;
         }
-
+        // - If the duplicate refers to a valid-known header, it's benign; ignore.
         if (existing && existing->IsValid()) {
-          // Header already accepted and valid - not an attack, just redundant
-          LOG_NET_TRACE("Duplicate header is valid, skipping (no penalty)");
-          continue;  // Skip this header, process next one (no penalty)
+          LOG_NET_TRACE("Duplicate header already known valid; ignoring without penalty");
+          continue;
         }
-
-        // If we get here: duplicate invalid header AND not an ancestor
-        // This means peer is sending blocks that failed consensus validation
-        LOG_NET_WARN("Peer {} sent duplicate INVALID header (not an ancestor): {}",
-                     peer_id, header.GetHash().ToString().substr(0, 16));
-        peer_manager_.ReportInvalidHeader(peer_id, reason);
+        // - If the duplicate refers to a known-invalid header, penalize ONCE per unique header per peer.
+        const uint256 h = header.GetHash();
+        if (peer_manager_.HasInvalidHeaderHash(peer_id, h)) {
+          LOG_NET_TRACE("Peer {} re-sent duplicate of known-invalid header {}, suppressing additional penalty",
+                        peer_id, h.ToString().substr(0,16));
+          continue;
+        }
+        LOG_NET_WARN("Peer {} sent duplicate of KNOWN-INVALID header: {}", peer_id, h.ToString().substr(0,16));
+        peer_manager_.ReportInvalidHeader(peer_id, "duplicate-invalid");
+        peer_manager_.NoteInvalidHeaderHash(peer_id, h);
         if (peer_manager_.ShouldDisconnect(peer_id)) {
           if (ban_man_) {
             ban_man_->Discourage(peer->address());
@@ -442,14 +445,21 @@ LOG_NET_DEBUG("received headers ({}) peer={}", headers.size(), peer_id);
         return false;
       }
 
-      // Invalid header - instant disconnect
+      // Invalid header - penalize once per unique header (avoid double-penalty on duplicates)
       if (reason == "high-hash" || reason == "bad-diffbits" ||
           reason == "time-too-old" || reason == "time-too-new" ||
           reason == "bad-version" ||
           reason == "bad-prevblk" || reason == "bad-genesis" ||
           reason == "genesis-via-accept") {
+        const uint256 h = header.GetHash();
+        if (peer_manager_.HasInvalidHeaderHash(peer_id, h)) {
+          LOG_NET_TRACE("peer {} re-sent previously invalid header {}, ignoring duplicate penalty",
+                        peer_id, h.ToString().substr(0,16));
+          continue; // no additional penalty for same invalid header
+        }
         LOG_NET_ERROR("peer={} sent invalid header: {}", peer_id, reason);
         peer_manager_.ReportInvalidHeader(peer_id, reason);
+        peer_manager_.NoteInvalidHeaderHash(peer_id, h);
         if (peer_manager_.ShouldDisconnect(peer_id)) {
           if (ban_man_) {
             ban_man_->Discourage(peer->address());
