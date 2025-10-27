@@ -645,6 +645,11 @@ void NetworkManager::run_maintenance() {
   // Run periodic cleanup
   peer_manager_->process_periodic();
 
+  // Headers sync timeouts and maintenance
+  if (header_sync_manager_) {
+    header_sync_manager_->ProcessTimers();
+  }
+
   // Sweep expired bans
   if (ban_man_) {
     ban_man_->SweepBanned();

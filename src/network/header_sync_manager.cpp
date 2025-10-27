@@ -53,6 +53,29 @@ void HeaderSyncManager::OnPeerDisconnected(uint64_t peer_id) {
   }
 }
 
+void HeaderSyncManager::ProcessTimers() {
+  // Basic headers sync stall detection (loosely based on Bitcoin Core)
+  // If initial sync is running and we haven't received headers for a while,
+  // disconnect the sync peer to allow retrying another peer.
+  const uint64_t sync_id = sync_peer_id_.load(std::memory_order_acquire);
+  if (sync_id == 0) return;
+
+  const int64_t last_us = last_headers_received_.load(std::memory_order_acquire);
+  auto now = std::chrono::steady_clock::now();
+  const int64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+
+  // Conservative timeout (2 minutes). Bitcoin uses a dynamic timeout; we keep it simple.
+  static constexpr int64_t HEADERS_SYNC_TIMEOUT_US = 120 * 1000 * 1000; // 120s
+
+  if (last_us > 0 && (now_us - last_us) > HEADERS_SYNC_TIMEOUT_US) {
+    LOG_NET_INFO("Headers sync stalled for {:.1f}s with peer {}, disconnecting",
+                 (now_us - last_us) / 1e6, sync_id);
+    // Ask PeerManager to drop the peer. This triggers OnPeerDisconnected() which
+    // resets our sync state so CheckInitialSync can pick a new peer.
+    peer_manager_.remove_peer(static_cast<int>(sync_id));
+  }
+}
+
 void HeaderSyncManager::CheckInitialSync() {
   // If we've already started initial sync once, do nothing. Prevents fan-out to multiple peers.
   if (initial_sync_started_.load(std::memory_order_acquire)) {

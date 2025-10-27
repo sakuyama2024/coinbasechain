@@ -48,6 +48,9 @@ public:
   // Sync coordination
   void RequestHeadersFromPeer(PeerPtr peer);
   void CheckInitialSync();
+  
+  // Periodic maintenance (timeouts, retries)
+  void ProcessTimers();
 
   // State queries
   bool IsSynced(int64_t max_age_seconds = 3600) const;
