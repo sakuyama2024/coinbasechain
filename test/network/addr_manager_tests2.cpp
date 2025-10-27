@@ -142,16 +142,13 @@ TEST_CASE("GETADDR empty address manager sends zero addresses", "[network][addr]
 
     auto getaddr = MakeWire(commands::GETADDR, {});
     net.SendMessage(requester.GetId(), victim.GetId(), getaddr);
-    orch.AdvanceTime(std::chrono::milliseconds(200));
+    orch.AdvanceTime(std::chrono::milliseconds(300));
 
     auto payloads = net.GetCommandPayloads(victim.GetId(), requester.GetId(), commands::ADDR);
 
-    if (!payloads.empty()) {
-        message::AddrMessage msg;
-        REQUIRE(msg.deserialize(payloads.front().data(), payloads.front().size()));
-        REQUIRE(msg.addresses.size() == 0);
-    } else {
-        // No ADDR sent is also acceptable when empty
-        SUCCEED();
-    }
+    // Deterministic: expect a single ADDR response with zero addresses when empty
+    REQUIRE(payloads.size() >= 1);
+    message::AddrMessage msg;
+    REQUIRE(msg.deserialize(payloads.front().data(), payloads.front().size()));
+    REQUIRE(msg.addresses.size() == 0);
 }

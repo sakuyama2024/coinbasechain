@@ -92,6 +92,9 @@ public:
   // Test-only hook: trigger initial sync selection (normally run via timers)
   void test_hook_check_initial_sync();
 
+  // Test-only hook: trigger headers sync timeout processing (stall detection)
+  void test_hook_header_sync_process_timers();
+
   // Self-connection prevention
   uint64_t get_local_nonce() const { return local_nonce_; }
 

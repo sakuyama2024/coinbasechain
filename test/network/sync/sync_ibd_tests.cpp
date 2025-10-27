@@ -3,12 +3,78 @@
 #include "catch_amalgamated.hpp"
 #include "infra/simulated_network.hpp"
 #include "infra/simulated_node.hpp"
+#include "network/protocol.hpp"
+#include "test_orchestrator.hpp"
 
 using namespace coinbasechain;
 using namespace coinbasechain::test;
 
 static void SetZeroLatency(SimulatedNetwork& network) {
     SimulatedNetwork::NetworkConditions c; c.latency_min=c.latency_max=std::chrono::milliseconds(0); c.jitter_max=std::chrono::milliseconds(0); network.SetNetworkConditions(c);
+}
+
+TEST_CASE("NetworkSync - SwitchSyncPeerOnStall", "[networksync][network]") {
+    SimulatedNetwork net(24006);
+    SetZeroLatency(net);
+    net.EnableCommandTracking(true);
+
+    // Miner with chain
+    SimulatedNode miner(1, &net);
+    for (int i = 0; i < 50; ++i) { (void)miner.MineBlock(); }
+
+    // Two serving peers
+    SimulatedNode p1(2, &net);
+    SimulatedNode p2(3, &net);
+
+    // New node to sync
+    SimulatedNode n(4, &net);
+
+    // Peers sync from miner so they can serve headers
+    p1.ConnectTo(miner.GetId());
+    p2.ConnectTo(miner.GetId());
+    uint64_t t = 1000; net.AdvanceTime(t);
+    CHECK(p1.GetTipHeight() == 50);
+    CHECK(p2.GetTipHeight() == 50);
+
+    // New node connects to both peers
+    n.ConnectTo(p1.GetId()); n.ConnectTo(p2.GetId());
+    t += 200; net.AdvanceTime(t);
+
+    // Force initial sync to choose a single peer (likely p1)
+    n.GetNetworkManager().test_hook_check_initial_sync();
+    t += 200; net.AdvanceTime(t);
+
+    // Record GETHEADERS to each peer
+    int gh_p1_before = net.CountCommandSent(n.GetId(), p1.GetId(), protocol::commands::GETHEADERS);
+    int gh_p2_before = net.CountCommandSent(n.GetId(), p2.GetId(), protocol::commands::GETHEADERS);
+
+    // Simulate stall: drop all messages from p1 -> n so no HEADERS arrive
+    SimulatedNetwork::NetworkConditions drop_all = {};
+    drop_all.packet_loss_rate = 1.0; // 100% loss from p1 to n
+    net.SetLinkConditions(p1.GetId(), n.GetId(), drop_all);
+
+    // Advance mock time beyond the headers sync timeout (120s) and process timers
+    // Use several steps to let the network do maintenance
+    for (int i = 0; i < 4; ++i) {
+        t += 60 * 1000; // +60s
+        net.AdvanceTime(t);
+        n.GetNetworkManager().test_hook_header_sync_process_timers();
+    }
+
+    // After stall timeout, p1 should be disconnected (or at least no longer sync peer)
+    // Trigger re-selection of sync peer
+    n.GetNetworkManager().test_hook_check_initial_sync();
+    t += 500; net.AdvanceTime(t);
+
+    // Verify n sent GETHEADERS to the other peer (p2)
+    int gh_p1_after = net.CountCommandSent(n.GetId(), p1.GetId(), protocol::commands::GETHEADERS);
+    int gh_p2_after = net.CountCommandSent(n.GetId(), p2.GetId(), protocol::commands::GETHEADERS);
+
+    CHECK(gh_p1_after >= gh_p1_before); // no new GETHEADERS to p1 during stall
+    CHECK(gh_p2_after > gh_p2_before);  // switched to p2
+
+    // And sync completes
+    CHECK(n.GetTipHeight() == 50);
 }
 
 TEST_CASE("NetworkSync - InitialSync", "[networksync][network]") {
@@ -38,8 +104,15 @@ TEST_CASE("NetworkSync - SyncFromMultiplePeers", "[networksync][network]") {
     b.ConnectTo(1); t+=100; network.AdvanceTime(t);
     CHECK(b.GetTipHeight()==50);
 
+    // Track P2P commands
+    network.EnableCommandTracking(true);
+
     n.ConnectTo(1); n.ConnectTo(2); t+=5000; network.AdvanceTime(t);
     CHECK(n.GetTipHeight()==50);
+
+    // During IBD, node n should only send GETHEADERS to a single sync peer
+    int distinct = network.CountDistinctPeersSent(n.GetId(), protocol::commands::GETHEADERS);
+    CHECK(distinct == 1);
 }
 
 TEST_CASE("NetworkSync - CatchUpAfterMining", "[networksync][network]") {

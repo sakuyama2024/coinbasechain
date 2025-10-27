@@ -199,6 +199,23 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   const auto &headers = msg->headers;
   int peer_id = peer->id();
 
+  // Bitcoin Core parity: During IBD, only process large (batch) headers from the
+  // designated sync peer. Allow small unsolicited announcements (1-2 headers)
+  // from any peer. This avoids wasting bandwidth processing full batches from
+  // multiple peers.
+  if (chainstate_manager_.IsInitialBlockDownload()) {
+    constexpr size_t MAX_UNSOLICITED_ANNOUNCEMENT = 2; // accept small announcements
+    uint64_t sync_id = sync_peer_id_.load(std::memory_order_acquire);
+    if (!headers.empty() && headers.size() > MAX_UNSOLICITED_ANNOUNCEMENT &&
+        static_cast<uint64_t>(peer_id) != sync_id) {
+      LOG_NET_TRACE(
+          "Ignoring large headers batch from non-sync peer during IBD: peer={} size={}",
+          peer_id, headers.size());
+      // Do not penalize; just ignore per Core behavior
+      return true;
+    }
+  }
+
   // Bitcoin Core approach: If the last header in this batch is already in our chain
   // and is an ancestor of our best header or tip, skip all DoS checks for this entire batch.
   // This prevents false positives when reconnecting to peers after manual InvalidateBlock.

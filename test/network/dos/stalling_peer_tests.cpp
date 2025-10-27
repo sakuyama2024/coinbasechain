@@ -58,3 +58,59 @@ TEST_CASE("DoS: Stalling peer timeout", "[dos][network]") {
     observer.OnCustomEvent("TEST_END", -1, "PASSED - Victim survived stall attack");
     auto_dump.MarkSuccess();
 }
+
+TEST_CASE("DoS: Stall causes sync peer switch", "[dos][network]") {
+    SimulatedNetwork net(1001);
+    net.EnableCommandTracking(true);
+
+    // Miner with chain
+    SimulatedNode miner(1, &net);
+    for (int i = 0; i < 30; ++i) (void)miner.MineBlock();
+
+    // Two serving peers
+    SimulatedNode p1(2, &net); // will stall (no HEADERS to victim)
+    SimulatedNode p2(3, &net); // healthy peer
+    p1.ConnectTo(miner.GetId());
+    p2.ConnectTo(miner.GetId());
+    uint64_t t = 1000; net.AdvanceTime(t);
+    REQUIRE(p1.GetTipHeight() == 30);
+    REQUIRE(p2.GetTipHeight() == 30);
+
+    // Victim (new node)
+    SimulatedNode victim(4, &net);
+    victim.ConnectTo(p1.GetId());
+    victim.ConnectTo(p2.GetId());
+    t += 200; net.AdvanceTime(t);
+
+    // Start initial sync (single sync peer policy)
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    t += 200; net.AdvanceTime(t);
+
+    // Record initial GETHEADERS counts
+    int gh_p1_before = net.CountCommandSent(victim.GetId(), p1.GetId(), protocol::commands::GETHEADERS);
+    int gh_p2_before = net.CountCommandSent(victim.GetId(), p2.GetId(), protocol::commands::GETHEADERS);
+
+    // Stall p1 -> victim: drop all messages so no HEADERS arrive
+    SimulatedNetwork::NetworkConditions drop; drop.packet_loss_rate = 1.0;
+    net.SetLinkConditions(p1.GetId(), victim.GetId(), drop);
+
+    // Advance beyond stall timeout and process timers
+    for (int i = 0; i < 3; ++i) {
+        t += 60 * 1000;
+        net.AdvanceTime(t);
+        victim.GetNetworkManager().test_hook_header_sync_process_timers();
+    }
+
+    // Re-select sync peer and progress
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    t += 500; net.AdvanceTime(t);
+
+    // Verify new GETHEADERS went to p2 (the healthy peer)
+    int gh_p1_after = net.CountCommandSent(victim.GetId(), p1.GetId(), protocol::commands::GETHEADERS);
+    int gh_p2_after = net.CountCommandSent(victim.GetId(), p2.GetId(), protocol::commands::GETHEADERS);
+    CHECK(gh_p2_after > gh_p2_before);
+    CHECK(gh_p1_after >= gh_p1_before);
+
+    // Sync completes
+    CHECK(victim.GetTipHeight() == 30);
+}

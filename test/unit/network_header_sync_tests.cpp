@@ -48,6 +48,134 @@ TEST_CASE("NetworkManager HeaderSync - Basic Sync", "[network_header_sync][netwo
     }
 }
 
+TEST_CASE("NetworkManager HeaderSync - Ignore non-sync large headers during IBD (BTC parity)", "[network_header_sync][network]") {
+    SimulatedNetwork net(50010);
+    SetZeroLatency(net);
+    net.EnableCommandTracking(true);
+
+    // Victim node in IBD
+    SimulatedNode n(1, &net);
+    n.SetBypassPOWValidation(true);
+
+    // Two peers
+    SimulatedNode p_sync(2, &net);
+    SimulatedNode p_other(3, &net);
+
+    // Connect victim to both peers
+    n.ConnectTo(p_sync.GetId());
+    n.ConnectTo(p_other.GetId());
+    net.AdvanceTime(200);
+
+    // Begin initial sync (selects a single sync peer)
+    n.GetNetworkManager().test_hook_check_initial_sync();
+    net.AdvanceTime(200);
+
+    // Confirm we did not solicit p_other
+    int gh_other_before = net.CountCommandSent(n.GetId(), p_other.GetId(), protocol::commands::GETHEADERS);
+
+    // Craft a large (1201) continuous HEADERS message from non-sync peer that connects to n's tip
+    const int kCount = 1201; // typical large batch seen in the wild
+    std::vector<CBlockHeader> headers;
+    headers.reserve(kCount);
+
+    uint256 prev = n.GetTipHash();
+    uint32_t nBits = coinbasechain::chain::GlobalChainParams::Get().GenesisBlock().nBits;
+    uint32_t base_time = static_cast<uint32_t>(net.GetCurrentTime() / 1000);
+
+    for (int i = 0; i < kCount; ++i) {
+        CBlockHeader h;
+        h.nVersion = 1;
+        h.hashPrevBlock = prev;
+        h.nTime = base_time + i + 1;
+        h.nBits = nBits;
+        h.nNonce = static_cast<uint32_t>(i + 1);
+        h.hashRandomX.SetHex("0000000000000000000000000000000000000000000000000000000000000000");
+        headers.push_back(h);
+        prev = h.GetHash();
+    }
+
+    message::HeadersMessage msg; msg.headers = headers;
+    auto payload = msg.serialize();
+    auto hdr = message::create_header(protocol::magic::REGTEST, protocol::commands::HEADERS, payload);
+    auto hdr_bytes = message::serialize_header(hdr);
+    std::vector<uint8_t> full; full.reserve(hdr_bytes.size() + payload.size());
+    full.insert(full.end(), hdr_bytes.begin(), hdr_bytes.end());
+    full.insert(full.end(), payload.begin(), payload.end());
+
+    // Inject unsolicited large HEADERS from non-sync peer
+    net.SendMessage(p_other.GetId(), n.GetId(), full);
+
+    // Process
+    for (int i = 0; i < 20; ++i) net.AdvanceTime(net.GetCurrentTime() + 200);
+
+    // Assert: we ignored the large batch from non-sync peer during IBD
+    CHECK(n.GetTipHeight() == 0);
+
+    // And we never solicited p_other with GETHEADERS initially
+    int gh_other_after = net.CountCommandSent(n.GetId(), p_other.GetId(), protocol::commands::GETHEADERS);
+    CHECK(gh_other_after == gh_other_before);
+}
+
+TEST_CASE("NetworkManager HeaderSync - Stall triggers sync peer switch", "[network_header_sync][network]") {
+    SimulatedNetwork network(50009);
+    SetZeroLatency(network);
+    network.EnableCommandTracking(true);
+
+    // Miner and two serving peers
+    SimulatedNode miner(1, &network);
+    for (int i = 0; i < 60; ++i) { miner.MineBlock(); }
+
+    SimulatedNode p1(2, &network);
+    SimulatedNode p2(3, &network);
+
+    p1.ConnectTo(miner.GetId());
+    p2.ConnectTo(miner.GetId());
+    network.AdvanceTime(1000);
+    REQUIRE(p1.GetTipHeight() == 60);
+    REQUIRE(p2.GetTipHeight() == 60);
+
+    // New syncing node connects to both
+    SimulatedNode syncing(4, &network);
+    syncing.ConnectTo(p1.GetId());
+    syncing.ConnectTo(p2.GetId());
+    network.AdvanceTime(200);
+
+    // Begin initial sync (single sync peer policy)
+    syncing.GetNetworkManager().test_hook_check_initial_sync();
+    network.AdvanceTime(200);
+
+    int gh_p1_before = network.CountCommandSent(syncing.GetId(), p1.GetId(), protocol::commands::GETHEADERS);
+    int gh_p2_before = network.CountCommandSent(syncing.GetId(), p2.GetId(), protocol::commands::GETHEADERS);
+
+    // Stall p1 -> syncing: drop HEADERS so no progress
+    SimulatedNetwork::NetworkConditions drop; drop.packet_loss_rate = 1.0;
+    network.SetLinkConditions(p1.GetId(), syncing.GetId(), drop);
+
+    // Advance beyond timeout and process timers (120s total)
+    for (int i = 0; i < 3; ++i) {
+        network.AdvanceTime(network.GetCurrentTime() + 60*1000);
+        syncing.GetNetworkManager().test_hook_header_sync_process_timers();
+    }
+
+    // Re-select a new sync peer (should choose p2) and continue
+    syncing.GetNetworkManager().test_hook_check_initial_sync();
+    network.AdvanceTime(500);
+
+    int gh_p1_after = network.CountCommandSent(syncing.GetId(), p1.GetId(), protocol::commands::GETHEADERS);
+    int gh_p2_after = network.CountCommandSent(syncing.GetId(), p2.GetId(), protocol::commands::GETHEADERS);
+
+    CHECK(gh_p2_after > gh_p2_before);  // switched to p2
+    CHECK(gh_p1_after >= gh_p1_before); // no new GETHEADERS to stalled peer
+
+    // Sync must complete
+    // Allow time for HEADERS and activation
+    for (int i = 0; i < 30; ++i) {
+        network.AdvanceTime(network.GetCurrentTime() + 200);
+        if (syncing.GetTipHeight() == 60) break;
+    }
+    REQUIRE(syncing.GetTipHeight() == 60);
+}
+
 TEST_CASE("NetworkManager HeaderSync - Locators", "[network_header_sync][network]") {
     SimulatedNetwork network(50002);
     SetZeroLatency(network);

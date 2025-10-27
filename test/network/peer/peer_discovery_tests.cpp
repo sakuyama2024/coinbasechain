@@ -140,10 +140,16 @@ TEST_CASE("Peer discovery via ADDR messages populates AddressManager", "[network
     REQUIRE(node1.ConnectTo(2)); REQUIRE(orch.WaitForConnection(node1, node2));
     net.EnableCommandTracking(true);
     auto getaddr_wire = MakeWire(commands::GETADDR, {});
+    // node1 -> node2 (request), expect node2 -> node1 (ADDR)
     net.SendMessage(node1.GetId(), node2.GetId(), getaddr_wire);
-    orch.AdvanceTime(std::chrono::milliseconds(200));
-    // We don't assert exact count; only that infrastructure doesn't crash and may respond
-    SUCCEED();
+    orch.AdvanceTime(std::chrono::milliseconds(300));
+
+    auto payloads = net.GetCommandPayloads(node2.GetId(), node1.GetId(), commands::ADDR);
+    REQUIRE_FALSE(payloads.empty());
+
+    message::AddrMessage msg;
+    REQUIRE(msg.deserialize(payloads.front().data(), payloads.front().size()));
+    REQUIRE(msg.addresses.size() <= MAX_ADDR_SIZE);
 }
 
 TEST_CASE("attempt_outbound_connections uses addresses from AddressManager", "[network][peer_discovery][integration]") {

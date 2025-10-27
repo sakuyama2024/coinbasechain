@@ -723,6 +723,13 @@ void NetworkManager::test_hook_check_initial_sync() {
   check_initial_sync();
 }
 
+void NetworkManager::test_hook_header_sync_process_timers() {
+  // Expose header sync stall/timeout processing for tests (io_threads==0)
+  if (header_sync_manager_) {
+    header_sync_manager_->ProcessTimers();
+  }
+}
+
 void NetworkManager::schedule_next_feeler() {
   LOG_NET_TRACE("schedule_next_feeler: ENTER (running={}, has_timer={})",
                 running_.load(std::memory_order_acquire), (feeler_timer_ != nullptr));
