@@ -34,7 +34,9 @@ void HeaderSyncManager::SetSyncPeer(uint64_t peer_id) {
 }
 
 void HeaderSyncManager::ClearSyncPeer() {
+  // Clear current sync peer and allow re-selection on next maintenance
   sync_peer_id_.store(0, std::memory_order_release);
+  initial_sync_started_.store(false, std::memory_order_release);
 }
 
 void HeaderSyncManager::OnPeerDisconnected(uint64_t peer_id) {

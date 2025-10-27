@@ -96,7 +96,13 @@ NetworkManager::NetworkManager(
   });
 }
 
-NetworkManager::~NetworkManager() { stop(); }
+NetworkManager::~NetworkManager() {
+  // Prevent callbacks from firing into partially destroyed objects
+  if (peer_manager_) {
+    peer_manager_->SetPeerDisconnectCallback({});
+  }
+  stop();
+}
 
 bool NetworkManager::start() {
   // Fast path: check without lock
