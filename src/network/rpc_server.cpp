@@ -464,9 +464,19 @@ RPCServer::HandleGetBlockchainInfo(const std::vector<std::string> &params) {
     return static_cast<double>(sum) / static_cast<double>(count);
   };
 
+  // Averages in seconds
   double avg10 = compute_avg(tip, 10);
   double avg20 = compute_avg(tip, 20);
   double avg40 = compute_avg(tip, 40);
+  double avg100 = compute_avg(tip, 100);
+  double avg500 = compute_avg(tip, 500);
+
+  // Convert to minutes for reporting
+  double avg10_min = avg10 / 60.0;
+  double avg20_min = avg20 / 60.0;
+  double avg40_min = avg40 / 60.0;
+  double avg100_min = avg100 / 60.0;
+  double avg500_min = avg500 / 60.0;
 
   const auto &consensus = params_.GetConsensus();
 
@@ -475,6 +485,10 @@ RPCServer::HandleGetBlockchainInfo(const std::vector<std::string> &params) {
   if (tip) {
     log2_chainwork = std::log(tip->nChainWork.getdouble()) / std::log(2.0);
   }
+
+  // Convert consensus parameters for reporting
+  double target_spacing_min = static_cast<double>(consensus.nPowTargetSpacing) / 60.0; // minutes
+  double half_life_hours = static_cast<double>(consensus.nASERTHalfLife) / 3600.0;     // hours
 
   std::ostringstream oss;
   oss << "{\n"
@@ -490,12 +504,14 @@ RPCServer::HandleGetBlockchainInfo(const std::vector<std::string> &params) {
       << "  \"mediantime_str\": \"" << (tip ? util::FormatTime(tip->GetMedianTimePast()) : "null") << "\",\n"
       << "  \"chainwork\": \"" << (tip ? tip->nChainWork.GetHex() : "0") << "\",\n"
       << "  \"log2_chainwork\": " << std::fixed << std::setprecision(6) << log2_chainwork << ",\n"
-      << "  \"avg_block_time_10\": " << avg10 << ",\n"
-      << "  \"avg_block_time_20\": " << avg20 << ",\n"
-      << "  \"avg_block_time_40\": " << avg40 << ",\n"
+      << "  \"avg_block_time_10\": " << avg10_min << ",\n"
+      << "  \"avg_block_time_20\": " << avg20_min << ",\n"
+      << "  \"avg_block_time_40\": " << avg40_min << ",\n"
+      << "  \"avg_block_time_100\": " << avg100_min << ",\n"
+      << "  \"avg_block_time_500\": " << avg500_min << ",\n"
       << "  \"asert\": {\n"
-      << "    \"target_spacing\": " << consensus.nPowTargetSpacing << ",\n"
-      << "    \"half_life\": " << consensus.nASERTHalfLife << ",\n"
+      << "    \"target_spacing\": " << target_spacing_min << ",\n"
+      << "    \"half_life\": " << half_life_hours << ",\n"
       << "    \"anchor_height\": " << consensus.nASERTAnchorHeight << "\n"
       << "  },\n"
       << "  \"initialblockdownload\": " << (chainstate_manager_.IsInitialBlockDownload() ? "true" : "false") << "\n"
