@@ -257,7 +257,7 @@ bool PeerManager::can_accept_inbound() const {
 }
 
 bool PeerManager::evict_inbound_peer() {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::unique_lock<std::mutex> lock(mutex_);
 
   // Collect inbound peers that can be evicted
   // Protection rules (inspired by Bitcoin's SelectNodeToEvict):
@@ -319,19 +319,20 @@ bool PeerManager::evict_inbound_peer() {
 
   if (worst_peer_id >= 0) {
     // Evict this peer
+    PeerPtr peer_to_disconnect;
     auto it = peers_.find(worst_peer_id);
     if (it != peers_.end()) {
-      PeerPtr peer = it->second;
+      peer_to_disconnect = it->second;
       peers_.erase(it);
       peer_misbehavior_.erase(worst_peer_id);
-
-      // Disconnect outside the lock (already have lock, will unlock at end)
-      if (peer) {
-        peer->disconnect();
-      }
-
+    }
+    // Unlock before disconnecting to avoid callbacks under lock
+    lock.unlock();
+    if (peer_to_disconnect) {
+      peer_to_disconnect->disconnect();
       return true;
     }
+    return false;
   }
 
   return false;
@@ -533,31 +534,32 @@ bool PeerManager::HasInvalidHeaderHash(int peer_id, const uint256& hash) const {
 }
 
 void PeerManager::IncrementUnconnectingHeaders(int peer_id) {
-  std::lock_guard<std::mutex> lock(mutex_);
+  bool threshold_exceeded = false;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
 
-  auto it = peer_misbehavior_.find(peer_id);
-  if (it == peer_misbehavior_.end()) {
-    LOG_NET_TRACE("IncrementUnconnectingHeaders: peer {} not found in misbehavior map", peer_id);
-    return;
+    auto it = peer_misbehavior_.find(peer_id);
+    if (it == peer_misbehavior_.end()) {
+      LOG_NET_TRACE("IncrementUnconnectingHeaders: peer {} not found in misbehavior map", peer_id);
+      return;
+    }
+
+    PeerMisbehaviorData &data = it->second;
+    data.num_unconnecting_headers_msgs++;
+
+    LOG_NET_TRACE("IncrementUnconnectingHeaders: peer {} now has {} unconnecting msgs (threshold={})",
+                  peer_id, data.num_unconnecting_headers_msgs, MAX_UNCONNECTING_HEADERS);
+
+    if (data.num_unconnecting_headers_msgs >= MAX_UNCONNECTING_HEADERS) {
+      LOG_NET_TRACE("peer {} ({}) sent too many unconnecting headers ({} >= {})",
+                   peer_id, data.address, data.num_unconnecting_headers_msgs,
+                   MAX_UNCONNECTING_HEADERS);
+      threshold_exceeded = true; // call Misbehaving() after releasing the lock
+    }
   }
-
-  PeerMisbehaviorData &data = it->second;
-  data.num_unconnecting_headers_msgs++;
-
-  LOG_NET_TRACE("IncrementUnconnectingHeaders: peer {} now has {} unconnecting msgs (threshold={})",
-                peer_id, data.num_unconnecting_headers_msgs, MAX_UNCONNECTING_HEADERS);
-
-  if (data.num_unconnecting_headers_msgs >= MAX_UNCONNECTING_HEADERS) {
-    LOG_NET_TRACE("peer {} ({}) sent too many unconnecting headers ({} >= {})",
-                 peer_id, data.address, data.num_unconnecting_headers_msgs,
-                 MAX_UNCONNECTING_HEADERS);
-
-    // Apply penalty - delegate to Misbehaving (must unlock first to avoid deadlock)
-    LOG_NET_TRACE("IncrementUnconnectingHeaders: Threshold exceeded, calling Misbehaving");
-    mutex_.unlock();
+  if (threshold_exceeded) {
     Misbehaving(peer_id, MisbehaviorPenalty::TOO_MANY_UNCONNECTING,
                 "too many unconnecting headers");
-    mutex_.lock();
   }
 }
 
