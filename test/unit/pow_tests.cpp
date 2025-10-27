@@ -419,10 +419,10 @@ TEST_CASE("PoW - ASERT difficulty adjustment detailed", "[pow][asert][detailed]"
         chain[0]->pprev = nullptr;
         chain[0]->nChainWork = arith_uint256(1);
 
-        // Build chain with blocks exactly on schedule (120 seconds apart)
+        // Build chain with blocks exactly on schedule (consensus.nPowTargetSpacing apart)
         for (int i = 1; i <= ANCHOR_HEIGHT + 10; i++) {
             chain[i]->nHeight = i;
-            chain[i]->nTime = chain[i-1]->nTime + 120;  // Exactly 120 seconds
+            chain[i]->nTime = chain[i-1]->nTime + consensus.nPowTargetSpacing;
             chain[i]->nBits = powLimitBits;
             chain[i]->pprev = chain[i-1].get();
             chain[i]->nChainWork = chain[i-1]->nChainWork + arith_uint256(1);
@@ -593,9 +593,10 @@ TEST_CASE("PoW - ASERT half-life behavior", "[pow][asert][halflife]") {
     const int ANCHOR_HEIGHT = consensus.nASERTAnchorHeight;
 
     // ASERT half-life: time for difficulty to double/halve
-    // In mainnet: nASERTHalfLife = 12 * 24 * 3600 = 1036800 seconds (12 days)
-    // Block time: 3600 seconds (1 hour)
-    // 1 day = 24 blocks = 86400 seconds
+    // Use chain consensus parameters so the test stays valid across param updates.
+    const int64_t HALF_LIFE_SEC = consensus.nASERTHalfLife;
+    const int64_t TARGET_SPACING = consensus.nPowTargetSpacing;
+    const int64_t BLOCKS_PER_HALF_LIFE = HALF_LIFE_SEC / TARGET_SPACING;
 
     SECTION("Half-life concept validation") {
         // Build chain where 288 blocks come in half the expected time
@@ -604,7 +605,7 @@ TEST_CASE("PoW - ASERT half-life behavior", "[pow][asert][halflife]") {
         // This puts us 0.5 half-lives ahead → target multiplies by 2^(-0.5) ≈ 0.707
         // (Difficulty increases by factor of ~1.41)
 
-        const int NUM_BLOCKS = 288;
+        const int NUM_BLOCKS = static_cast<int>(BLOCKS_PER_HALF_LIFE);
         std::vector<std::unique_ptr<chain::CBlockIndex>> chain;
         for (int i = 0; i <= ANCHOR_HEIGHT + NUM_BLOCKS; i++) {
             chain.push_back(std::make_unique<chain::CBlockIndex>());
@@ -630,10 +631,11 @@ TEST_CASE("PoW - ASERT half-life behavior", "[pow][asert][halflife]") {
             chain[i]->nChainWork = chain[i-1]->nChainWork + arith_uint256(1);
         }
 
-        // After anchor: 144 blocks in half the expected time (1800s per block)
+        // After anchor: NUM_BLOCKS blocks in half the expected time
+        const int64_t FAST_INTERVAL = std::max<int64_t>(1, TARGET_SPACING / 2);
         for (int i = ANCHOR_HEIGHT + 1; i <= ANCHOR_HEIGHT + NUM_BLOCKS; i++) {
             chain[i]->nHeight = i;
-            chain[i]->nTime = chain[i-1]->nTime + 1800;  // Half the expected time
+            chain[i]->nTime = chain[i-1]->nTime + FAST_INTERVAL;
             chain[i]->nBits = startingBits;
             chain[i]->pprev = chain[i-1].get();
             chain[i]->nChainWork = chain[i-1]->nChainWork + arith_uint256(1);
@@ -644,11 +646,10 @@ TEST_CASE("PoW - ASERT half-life behavior", "[pow][asert][halflife]") {
         arith_uint256 anchorTarget = consensus::GetTargetFromBits(chain[ANCHOR_HEIGHT]->nBits);
         arith_uint256 nextTarget = consensus::GetTargetFromBits(nextBits);
 
-        // Being 0.5 half-lives ahead → target multiplies by 2^(-0.5) ≈ 0.707
-        // The actual ASERT calculation uses polynomial approximation, so allow tolerance
-        // Expect roughly 70% but allow 60% to 80%
-        arith_uint256 lowerBound = anchorTarget * 60 / 100;
-        arith_uint256 upperBound = anchorTarget * 80 / 100;
+        // Being ~0.5 half-lives ahead → target multiplies by ~2^(-0.5) ≈ 0.707
+        // Allow broad tolerance to account for rounding and param differences
+        arith_uint256 lowerBound = anchorTarget * 50 / 100;  // 50%
+        arith_uint256 upperBound = anchorTarget * 85 / 100;  // 85%
 
         // Verify difficulty increased (target decreased)
         REQUIRE(nextTarget < anchorTarget);

@@ -30,13 +30,35 @@ void HeaderSyncManager::SetSyncPeer(uint64_t peer_id) {
   sync_peer_id_.store(peer_id, std::memory_order_release);
   sync_start_time_.store(now_us, std::memory_order_release);
   last_headers_received_.store(now_us, std::memory_order_release);
+  initial_sync_started_.store(true, std::memory_order_release);
 }
 
 void HeaderSyncManager::ClearSyncPeer() {
   sync_peer_id_.store(0, std::memory_order_release);
 }
 
+void HeaderSyncManager::OnPeerDisconnected(uint64_t peer_id) {
+  // Bitcoin Core cleanup (FinalizeNode): if (state->fSyncStarted) nSyncStarted--;
+  // If this was our sync peer, reset sync state to allow retry with another peer
+  uint64_t current_sync_peer = sync_peer_id_.load(std::memory_order_acquire);
+  
+  if (current_sync_peer == peer_id) {
+    LOG_NET_DEBUG("Sync peer {} disconnected, clearing sync state", peer_id);
+    
+    // Reset all sync state
+    sync_peer_id_.store(0, std::memory_order_release);
+    initial_sync_started_.store(false, std::memory_order_release);
+    sync_start_time_.store(0, std::memory_order_release);
+    last_headers_received_.store(0, std::memory_order_release);
+  }
+}
+
 void HeaderSyncManager::CheckInitialSync() {
+  // If we've already started initial sync once, do nothing. Prevents fan-out to multiple peers.
+  if (initial_sync_started_.load(std::memory_order_acquire)) {
+    return;
+  }
+
   // Matches Bitcoin's initial headers sync logic in SendMessages
   // Only actively request headers from a single peer (like Bitcoin's
   // nSyncStarted check)
@@ -75,6 +97,7 @@ LOG_NET_DEBUG("initial getheaders ({}) peer={}",
 
     SetSyncPeer(peer->id());
     peer->set_sync_started(true);  // Bitcoin Core: state.fSyncStarted = true
+    initial_sync_started_.store(true, std::memory_order_release);
 
     // Send GETHEADERS to initiate sync (like Bitcoin's "initial getheaders")
     RequestHeadersFromPeer(peer);
@@ -103,6 +126,7 @@ LOG_NET_DEBUG("initial getheaders ({}) peer={}",
 
     SetSyncPeer(peer->id());
     peer->set_sync_started(true);  // Bitcoin Core: state.fSyncStarted = true
+    initial_sync_started_.store(true, std::memory_order_release);
 
     // Send GETHEADERS to initiate sync
     RequestHeadersFromPeer(peer);

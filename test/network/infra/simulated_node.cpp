@@ -123,10 +123,16 @@ bool SimulatedNode::ConnectTo(int peer_node_id, const std::string& address, uint
         peer_addr = oss.str();
     }
 
-    // Construct NetworkAddress for new API
+// Construct NetworkAddress for new API
     protocol::NetworkAddress net_addr;
     net_addr.services = protocol::ServiceFlags::NODE_NETWORK;
-    net_addr.port = port;
+    // Default to the peer's simulated listen port if caller passed the base regtest port
+    uint16_t connect_port = port;
+    if (connect_port == protocol::ports::REGTEST) {
+        // In simulation, each node listens on REGTEST + node_id
+        connect_port = static_cast<uint16_t>(protocol::ports::REGTEST + peer_node_id);
+    }
+    net_addr.port = connect_port;
 
     // Convert IP string to bytes (IPv4-mapped IPv6)
     boost::system::error_code ec;

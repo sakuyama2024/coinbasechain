@@ -1,5 +1,6 @@
 #include "network/peer_manager.hpp"
 #include "chain/logging.hpp"
+#include "network/protocol.hpp"
 #include <algorithm>
 #include <boost/asio/ip/address.hpp>
 
@@ -87,6 +88,33 @@ void PeerManager::remove_peer(int peer_id) {
     }
 
     peer = it->second;
+
+    // Before erasing, capture misbehavior score for addrman update logic
+    int misbehavior_score = 0;
+    auto mis_it = peer_misbehavior_.find(peer_id);
+    if (mis_it != peer_misbehavior_.end()) {
+      misbehavior_score = mis_it->second.misbehavior_score;
+    }
+
+    // If this was a well-behaved outbound peer that had completed handshake,
+    // update addrman as "good" so we keep it eligible for future reconnects.
+    if (peer && peer->successfully_connected() && misbehavior_score == 0 &&
+        !peer->is_inbound() && !peer->is_feeler()) {
+      const std::string& addr_str = peer->target_address();
+      uint16_t port = peer->target_port();
+      if (!addr_str.empty() && port != 0) {
+        try {
+          auto net_addr = protocol::NetworkAddress::from_string(addr_str, port);
+          addr_manager_.good(net_addr);
+          LOG_NET_TRACE("Updated addrman for disconnected peer {}:{}", addr_str, port);
+        } catch (const std::exception& e) {
+          LOG_NET_WARN("Failed to update addrman for disconnected peer {}:{}: {}",
+                       addr_str, port, e.what());
+        }
+      }
+    }
+
+    // Erase peer from map
     peers_.erase(it);
 
     // Also remove misbehavior tracking data
@@ -95,6 +123,12 @@ void PeerManager::remove_peer(int peer_id) {
     LOG_NET_TRACE("remove_peer({}): peers_.size() AFTER = {}", peer_id, peers_.size());
     LOG_NET_TRACE("remove_peer: erased peer {} from map (map size now: {})",
                  peer_id, peers_.size());
+  }
+  
+  // Notify callback (e.g., HeaderSyncManager) that peer disconnected
+  // Do this after removing from map but before disconnecting
+  if (peer_disconnect_callback_) {
+    peer_disconnect_callback_(peer_id);
   }
 
   // Disconnect outside the lock

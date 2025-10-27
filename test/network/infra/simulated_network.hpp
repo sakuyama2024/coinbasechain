@@ -179,6 +179,9 @@ private:
         std::function<bool(const PendingMessage&, const PendingMessage&)>
     > message_queue_;
 
+    // Per-link last scheduled delivery time (ms) to preserve send order under jitter
+    std::map<std::pair<int,int>, uint64_t> last_delivery_time_;
+
     // Network partition state
     struct Partition {
         std::vector<int> group_a;

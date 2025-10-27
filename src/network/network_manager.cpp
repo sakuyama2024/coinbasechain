@@ -86,6 +86,14 @@ NetworkManager::NetworkManager(
   // Create MessageRouter
   message_router_ = std::make_unique<MessageRouter>(
       addr_manager_.get(), header_sync_manager_.get(), block_relay_manager_.get());
+  
+  // Register callback for peer disconnects (Bitcoin Core FinalizeNode equivalent)
+  // This allows HeaderSyncManager to clear sync state when sync peer disconnects
+  peer_manager_->SetPeerDisconnectCallback([this](int peer_id) {
+    if (header_sync_manager_) {
+      header_sync_manager_->OnPeerDisconnected(static_cast<uint64_t>(peer_id));
+    }
+  });
 }
 
 NetworkManager::~NetworkManager() { stop(); }
@@ -342,10 +350,10 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
             addr_manager_->good(addr);
             peer_ptr->start();
           } else {
-            // Connection failed - record failure and remove the peer
-            LOG_NET_TRACE("Failed to connect to {}:{}, recording failure and removing peer {}", address,
+            // Connection failed - record attempt but keep address for retry (Bitcoin Core pattern)
+            LOG_NET_TRACE("Failed to connect to {}:{}, recording attempt and removing peer {}", address,
                           port, peer_id);
-            addr_manager_->failed(addr);
+            addr_manager_->attempt(addr);
             peer_manager_->remove_peer(peer_id);
           }
         });
@@ -798,10 +806,10 @@ void NetworkManager::attempt_feeler_connection() {
             addr_manager_->good(*addr);
             peer_ptr->start();
           } else {
-            // Connection failed - remove the peer
-            LOG_NET_TRACE("attempt_feeler_connection: Connection FAILED - marking address bad, removing peer {}",
+            // Connection failed - record attempt but keep address for retry
+            LOG_NET_TRACE("attempt_feeler_connection: Connection FAILED - recording attempt and removing peer {}",
                           peer_id);
-            addr_manager_->failed(*addr);
+            addr_manager_->attempt(*addr);
             peer_manager_->remove_peer(peer_id);
           }
         });
@@ -809,7 +817,7 @@ void NetworkManager::attempt_feeler_connection() {
 
   if (!connection) {
     LOG_NET_TRACE("attempt_feeler_connection: Transport connection creation FAILED");
-    addr_manager_->failed(*addr);
+    addr_manager_->attempt(*addr);
     return;
   }
 

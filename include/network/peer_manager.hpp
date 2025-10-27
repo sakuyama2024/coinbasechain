@@ -129,6 +129,11 @@ public:
 
   // Process periodic tasks (cleanup, connection maintenance)
   void process_periodic();
+  
+  // Set callback for peer disconnect events (for sync state cleanup)
+  void SetPeerDisconnectCallback(std::function<void(int)> callback) {
+    peer_disconnect_callback_ = std::move(callback);
+  }
 
   // === Misbehavior Tracking (Public API) ===
   // These are the ONLY methods that external code (like HeaderSync) should call
@@ -168,6 +173,9 @@ private:
   // Get next available peer ID
   int next_peer_id_ = 0;
   int allocate_peer_id();
+  
+  // Callback for peer disconnect events
+  std::function<void(int)> peer_disconnect_callback_;
 };
 
 } // namespace network

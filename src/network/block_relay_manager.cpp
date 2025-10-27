@@ -176,8 +176,20 @@ bool BlockRelayManager::HandleInvMessage(PeerPtr peer,
 
       // Request headers to get this new block
       // Since this is headers-only, we request the header via GETHEADERS
+      // BUT during initial sync, only request from the designated sync peer
       if (header_sync_manager_) {
-        header_sync_manager_->RequestHeadersFromPeer(peer);
+        uint64_t sync_id = header_sync_manager_->GetSyncPeerId();
+        if (sync_id != 0) {
+          if (sync_id == static_cast<uint64_t>(peer->id())) {
+            header_sync_manager_->RequestHeadersFromPeer(peer);
+          } else {
+            // Ignore INV-driven requests from non-sync peers during initial sync
+          }
+        } else {
+          // Initial sync not yet started: select this peer as sync source and request headers
+          header_sync_manager_->SetSyncPeer(peer->id());
+          header_sync_manager_->RequestHeadersFromPeer(peer);
+        }
       }
     }
   }

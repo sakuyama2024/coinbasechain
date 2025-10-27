@@ -68,8 +68,16 @@ void SimulatedNetwork::SendMessage(int from_node, int to_node, const std::vector
         return;
     }
 
-    // Calculate delivery time
+    // Calculate delivery time with jitter
     uint64_t delivery_time = CalculateDeliveryTime(from_node, to_node, data.size());
+
+    // Ensure FIFO per-link even under jitter: never schedule earlier than last
+    auto key = std::make_pair(from_node, to_node);
+    auto it_last = last_delivery_time_.find(key);
+    if (it_last != last_delivery_time_.end() && delivery_time <= it_last->second) {
+        delivery_time = it_last->second + 1; // +1 ms preserves ordering
+    }
+    last_delivery_time_[key] = delivery_time;
 
     // Enqueue message with sequence number for stable ordering
     PendingMessage msg;
