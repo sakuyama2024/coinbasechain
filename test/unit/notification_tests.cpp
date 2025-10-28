@@ -87,7 +87,7 @@ TEST_CASE("Notifications - SuspiciousReorg notification emitted on deep reorg", 
     chain::CBlockIndex* mainTip = nullptr;
 
     for (const auto& header : chainMain) {
-        mainTip = chainstate.AcceptBlockHeader(header, state, 1);
+mainTip = chainstate.AcceptBlockHeader(header, state, /*min_pow_checked=*/true);
         if (mainTip) chainstate.TryAddBlockIndexCandidate(mainTip);
         REQUIRE(mainTip != nullptr);
     }
@@ -101,7 +101,7 @@ TEST_CASE("Notifications - SuspiciousReorg notification emitted on deep reorg", 
     chain::CBlockIndex* forkTip = nullptr;
 
     for (const auto& header : chainFork) {
-        forkTip = chainstate.AcceptBlockHeader(header, state, 1);
+forkTip = chainstate.AcceptBlockHeader(header, state, /*min_pow_checked=*/true);
         if (forkTip) chainstate.TryAddBlockIndexCandidate(forkTip);
         REQUIRE(forkTip != nullptr);
     }

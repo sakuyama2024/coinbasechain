@@ -233,7 +233,7 @@ uint256 SimulatedNode::MineBlock(const std::string& miner_address) {
 
     // Add to chainstate
     validation::ValidationState state;
-    auto* pindex = chainstate_->AcceptBlockHeader(header, state, node_id_);
+auto* pindex = chainstate_->AcceptBlockHeader(header, state, /*min_pow_checked=*/true);
 
     if (pindex) {
         chainstate_->TryAddBlockIndexCandidate(pindex);
