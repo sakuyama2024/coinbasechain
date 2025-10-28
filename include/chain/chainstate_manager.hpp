@@ -43,9 +43,11 @@ public:
   // (cached if fails) ORPHAN HANDLING: Missing parent → cached as orphan (DoS
   // limits), auto-processed when parent arrives Returns nullptr if orphaned
   // (state="orphaned") or failed (state="invalid")
+  // Accept a block header into the block index following Core's ordering.
+  // min_pow_checked gates anti-DoS: caller must ensure header chain has sufficient work.
   chain::CBlockIndex *AcceptBlockHeader(const CBlockHeader &header,
                                         ValidationState &state,
-                                        int peer_id = -1);
+                                        bool min_pow_checked);
 
   // Process header: accept → activate best chain → notify if tip changed
   bool ProcessNewBlockHeader(const CBlockHeader &header,
@@ -82,6 +84,9 @@ public:
 
   size_t GetBlockCount() const;
   int GetChainHeight() const;
+
+  // Add orphan header (network-layer helper) with per-peer limits/DoS checks
+  bool AddOrphanHeader(const CBlockHeader &header, int peer_id);
 
   // Evict old orphan headers (DoS protection)
   size_t EvictOrphanHeaders();

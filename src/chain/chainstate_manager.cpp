@@ -40,14 +40,13 @@ ChainstateManager::ChainstateManager(const chain::ChainParams &params,
 
 chain::CBlockIndex *
 ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,
-                                     ValidationState &state, int peer_id) {
+                                     ValidationState &state, bool min_pow_checked) {
   std::lock_guard<std::recursive_mutex> lock(validation_mutex_);
 
   uint256 hash = header.GetHash();
-  LOG_CHAIN_TRACE("AcceptBlockHeader: hash={} prev={} peer={}",
+  LOG_CHAIN_TRACE("AcceptBlockHeader: hash={} prev={}",
                   hash.ToString().substr(0, 16),
-                  header.hashPrevBlock.ToString().substr(0, 16),
-                  peer_id);
+                  header.hashPrevBlock.ToString().substr(0, 16));
 
   // Step 1: Check for duplicate
   chain::CBlockIndex *pindex = block_manager_.LookupBlockIndex(hash);
@@ -56,144 +55,107 @@ ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,
     if (pindex->nStatus & chain::BLOCK_FAILED_MASK) {
       LOG_CHAIN_TRACE("Block header {} is marked invalid (duplicate)",
                       hash.ToString().substr(0, 16));
-      // Match Bitcoin Core net_processing behavior: surface a duplicate indication
-      // so callers can apply appropriate (single) misbehavior logic.
       state.Invalid("duplicate", "known invalid header re-announced");
       return nullptr;
     }
-    // Already have it and it's valid
     LOG_CHAIN_TRACE("Block header {} already exists and is valid, returning existing",
                     hash.ToString().substr(0, 16));
     return pindex;
   }
 
-  // Step 2: Cheap POW commitment check (anti-DoS)
+  // Step 2: Cheap POW commitment check (anti-DoS prefilter)
   if (!CheckProofOfWork(header, crypto::POWVerifyMode::COMMITMENT_ONLY)) {
     state.Invalid("high-hash", "proof of work commitment failed");
     LOG_CHAIN_ERROR("Block header {} failed POW commitment check",
-              hash.ToString().substr(0, 16));
+                    hash.ToString().substr(0, 16));
     return nullptr;
   }
 
-  // Step 3: Check if this is a genesis block (validate hash matches expected)
+  // Step 3: Check if this is a genesis block (must be initialized separately)
   if (header.hashPrevBlock.IsNull()) {
-    // This claims to be a genesis block
     if (hash != params_.GetConsensus().hashGenesisBlock) {
       state.Invalid("bad-genesis", "genesis block hash mismatch");
       LOG_CHAIN_ERROR("Rejected fake genesis block: {} (expected: {})",
-                hash.ToString(),
-                params_.GetConsensus().hashGenesisBlock.ToString());
+                      hash.ToString(),
+                      params_.GetConsensus().hashGenesisBlock.ToString());
       return nullptr;
     }
-    // Valid genesis, but must be added via Initialize()
-    state.Invalid("genesis-via-accept",
-                  "genesis block must be added via Initialize()");
+    state.Invalid("genesis-via-accept", "genesis block must be added via Initialize()");
     return nullptr;
   }
 
-  // Step 4: Check if parent exists
-  chain::CBlockIndex *pindexPrev =
-      block_manager_.LookupBlockIndex(header.hashPrevBlock);
+  // Step 4: Parent must exist in index
+  chain::CBlockIndex *pindexPrev = block_manager_.LookupBlockIndex(header.hashPrevBlock);
   if (!pindexPrev) {
-    // Parent not found - this is an ORPHAN header
-    LOG_CHAIN_TRACE("Orphan header {}: parent {} not found",
-              hash.ToString().substr(0, 16),
-              header.hashPrevBlock.ToString().substr(0, 16));
-
-    // Try to cache as orphan (Bitcoin Core-style)
-    if (TryAddOrphanHeader(header, peer_id)) {
-      LOG_CHAIN_TRACE("Cached orphan header: hash={}, parent={}, peer={}",
-               hash.ToString().substr(0, 16),
-               header.hashPrevBlock.ToString().substr(0, 16), peer_id);
-      state.Invalid("orphaned", "header cached as orphan (parent not found)");
-    } else {
-      LOG_CHAIN_TRACE("Failed to cache orphan header {} (DoS limit exceeded)",
-               hash.ToString().substr(0, 16));
-      state.Invalid("orphan-limit", "orphan pool full or peer limit exceeded");
-    }
+    LOG_CHAIN_TRACE("Header {} has prev not found: {}",
+                    hash.ToString().substr(0, 16), header.hashPrevBlock.ToString().substr(0, 16));
+    state.Invalid("prev-blk-not-found", "parent block not found");
     return nullptr;
   }
 
-  // Step 5: Check if parent is marked invalid
+  // Step 5: Parent must not be invalid
   if (pindexPrev->nStatus & chain::BLOCK_FAILED_MASK) {
-    LOG_CHAIN_TRACE("Block header {} has prev block invalid: {}",
-              hash.ToString().substr(0, 16),
-              header.hashPrevBlock.ToString().substr(0, 16));
+    LOG_CHAIN_TRACE("Header {} has invalid prev: {}",
+                    hash.ToString().substr(0, 16), header.hashPrevBlock.ToString().substr(0, 16));
     state.Invalid("bad-prevblk", "previous block is invalid");
     return nullptr;
   }
 
-  // Step 6: Check if descends from any known invalid block
+  // Step 6: Descends from any known invalid block? mark BLOCK_FAILED_CHILD along path and fail
   if (!pindexPrev->IsValid(chain::BLOCK_VALID_TREE)) {
-    // Check against failed blocks list
     for (chain::CBlockIndex *failedit : m_failed_blocks) {
       if (pindexPrev->GetAncestor(failedit->nHeight) == failedit) {
-        // This block descends from a known invalid block
-        // Mark all blocks between pindexPrev and failedit as BLOCK_FAILED_CHILD
         chain::CBlockIndex *invalid_walk = pindexPrev;
         while (invalid_walk != failedit) {
           invalid_walk->nStatus |= chain::BLOCK_FAILED_CHILD;
           invalid_walk = invalid_walk->pprev;
         }
-        LOG_CHAIN_TRACE(
-            "Block header {} has prev block that descends from invalid block",
-            hash.ToString().substr(0, 16));
-        state.Invalid("bad-prevblk",
-                      "previous block descends from invalid block");
+        LOG_CHAIN_TRACE("Header {} descends from invalid block", hash.ToString().substr(0, 16));
+        state.Invalid("bad-prevblk", "previous block descends from invalid block");
         return nullptr;
       }
     }
   }
 
-  // Step 7: Add to block index BEFORE expensive validation
-  // This ensures we cache the result of expensive operations (PoW verification)
-  // If block fails validation below, we mark it invalid and never re-validate
+  // Step 7: Contextual checks (timestamp, difficulty) using parent
+  int64_t adjusted_time = GetAdjustedTime();
+  if (!ContextualCheckBlockHeaderWrapper(header, pindexPrev, adjusted_time, state)) {
+    LOG_CHAIN_ERROR("Contextual check failed for {}: {} - {}",
+                    hash.ToString().substr(0, 16), state.GetRejectReason(), state.GetDebugMessage());
+    return nullptr;
+  }
+
+  // Step 8: Full PoW (RandomX) after context to ensure correct epoch
+  if (!CheckBlockHeaderWrapper(header, state)) {
+    LOG_CHAIN_ERROR("Full PoW check failed for {}: {} - {}",
+                    hash.ToString().substr(0, 16), state.GetRejectReason(), state.GetDebugMessage());
+    return nullptr;
+  }
+
+  // Step 9: Anti-DoS gate – require caller to have validated sufficient work
+  if (!min_pow_checked) {
+    LOG_CHAIN_TRACE("Not adding header {}: min_pow_checked=false (anti-DoS)", hash.ToString().substr(0, 16));
+    state.Invalid("too-little-chainwork", "missing anti-DoS work validation");
+    return nullptr;
+  }
+
+  // Step 10: Insert into block index
   pindex = block_manager_.AddToBlockIndex(header);
   if (!pindex) {
     state.Error("failed to add block to index");
     return nullptr;
   }
-
-  // Bitcoin Core: Set nTimeReceived when we first learn about this block
-  // This timestamp is used to determine if blocks should be relayed
-  // Only recent blocks (< 10 seconds) are relayed to peers
   pindex->nTimeReceived = util::GetTime();
 
-  // Step 8: Contextual check
-  int64_t adjusted_time = GetAdjustedTime();
-  if (!ContextualCheckBlockHeaderWrapper(header, pindexPrev, adjusted_time,
-                                         state)) {
-    LOG_CHAIN_ERROR("Contextual check failed for block {}: {} - {}",
-              hash.ToString().substr(0, 16), state.GetRejectReason(),
-              state.GetDebugMessage());
-    // Mark as invalid and track it
-    pindex->nStatus |= chain::BLOCK_FAILED_VALID;
-    m_failed_blocks.insert(pindex);
-    return nullptr;
-  }
-
-  // Step 9: Full POW verification (EXPENSIVE - this is why we cache the result)
-  if (!CheckBlockHeaderWrapper(header, state)) {
-    LOG_CHAIN_ERROR("Block header check failed for block {}: {} - {}",
-              hash.ToString().substr(0, 16), state.GetRejectReason(),
-              state.GetDebugMessage());
-    // Mark as invalid and track it
-    pindex->nStatus |= chain::BLOCK_FAILED_VALID;
-    m_failed_blocks.insert(pindex);
-    return nullptr;
-  }
-
-  // Step 10: Mark as validated to TREE level
+  // Mark validity and update best header
   [[maybe_unused]] bool raised = pindex->RaiseValidity(chain::BLOCK_VALID_TREE);
-
-  // Step 11: Update best header
   chain_selector_.UpdateBestHeader(pindex);
 
   LOG_CHAIN_TRACE("Accepted new block header: hash={}, height={}, log2_work={:.6f}",
-           hash.ToString().substr(0, 16), pindex->nHeight,
-           std::log(pindex->nChainWork.getdouble()) / std::log(2.0));
+                  hash.ToString().substr(0, 16), pindex->nHeight,
+                  std::log(pindex->nChainWork.getdouble()) / std::log(2.0));
 
-  // Step 12: Process any orphan children waiting for this parent
+  // Process orphan children now that parent exists
   ProcessOrphanHeaders(hash);
 
   return pindex;
@@ -216,7 +178,7 @@ bool ChainstateManager::ProcessNewBlockHeader(const CBlockHeader &header,
 
   // Accept header (validates + adds to index)
   // Acquires validation_mutex_ recursively
-  chain::CBlockIndex *pindex = AcceptBlockHeader(header, state);
+  chain::CBlockIndex *pindex = AcceptBlockHeader(header, state, /*min_pow_checked=*/true);
 
   if (!pindex) {
     // Validation failed
@@ -544,6 +506,11 @@ bool ChainstateManager::ConnectTip(chain::CBlockIndex *pindexNew) {
   Notifications().NotifyBlockConnected(header, pindexNew);
 
   return true;
+}
+
+bool ChainstateManager::AddOrphanHeader(const CBlockHeader &header, int peer_id) {
+  std::lock_guard<std::recursive_mutex> lock(validation_mutex_);
+  return TryAddOrphanHeader(header, peer_id);
 }
 
 bool ChainstateManager::DisconnectTip() {

@@ -396,30 +396,30 @@ LOG_NET_DEBUG("received headers ({}) peer={}", headers.size(), peer_id);
   for (const auto &header : headers) {
     validation::ValidationState state;
     chain::CBlockIndex *pindex =
-        chainstate_manager_.AcceptBlockHeader(header, state, peer_id);
+        chainstate_manager_.AcceptBlockHeader(header, state, /*min_pow_checked=*/true);
 
     if (!pindex) {
       const std::string &reason = state.GetRejectReason();
 
-      // Orphaned header - not an error
-      if (reason == "orphaned") {
-        LOG_NET_TRACE("header from peer={} cached as orphan: {}",
-                 peer_id, header.GetHash().ToString().substr(0, 16));
-        continue;
-      }
-
-      // DoS Protection: Orphan limit exceeded
-      if (reason == "orphan-limit") {
-        LOG_NET_TRACE("peer={} exceeded orphan limit", peer_id);
-        peer_manager_.ReportTooManyOrphans(peer_id);
-        if (peer_manager_.ShouldDisconnect(peer_id)) {
-          if (ban_man_) {
-            ban_man_->Discourage(peer->address());
+      // Missing parent: cache as orphan (network-layer decision)
+      if (reason == "prev-blk-not-found") {
+        if (chainstate_manager_.AddOrphanHeader(header, peer_id)) {
+          LOG_NET_TRACE("header from peer={} cached as orphan: {}",
+                        peer_id, header.GetHash().ToString().substr(0, 16));
+          continue;
+        } else {
+          LOG_NET_TRACE("peer={} exceeded orphan limit while caching prev-missing header",
+                        peer_id);
+          peer_manager_.ReportTooManyOrphans(peer_id);
+          if (peer_manager_.ShouldDisconnect(peer_id)) {
+            if (ban_man_) {
+              ban_man_->Discourage(peer->address());
+            }
+            peer_manager_.remove_peer(peer_id);
           }
-          peer_manager_.remove_peer(peer_id);
+          ClearSyncPeer();
+          return false;
         }
-        ClearSyncPeer();
-        return false;
       }
 
       // Duplicate header - Bitcoin Core approach: only penalize if it's a duplicate of an INVALID header

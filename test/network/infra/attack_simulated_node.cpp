@@ -206,7 +206,7 @@ uint256 AttackSimulatedNode::MineBlockPrivate(const std::string& miner_address) 
     // Add to chainstate
     validation::ValidationState state;
     auto& chainstate = GetChainstate();
-    auto* pindex = chainstate.AcceptBlockHeader(header, state, GetId());
+    auto* pindex = chainstate.AcceptBlockHeader(header, state, /*min_pow_checked=*/true);
 
     if (pindex) {
         chainstate.TryAddBlockIndexCandidate(pindex);

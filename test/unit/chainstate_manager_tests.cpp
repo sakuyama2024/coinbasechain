@@ -156,7 +156,7 @@ TEST_CASE("ChainstateManager - AcceptBlockHeader Basic", "[chain][chainstate_man
         CBlockHeader block1 = CreateChildHeader(genesis.GetHash(), 1234567900);
         ValidationState state;
 
-        CBlockIndex* pindex = csm.AcceptBlockHeader(block1, state);
+CBlockIndex* pindex = csm.AcceptBlockHeader(block1, state, /*min_pow_checked=*/true);
         REQUIRE(pindex != nullptr);
         REQUIRE(pindex->GetBlockHash() == block1.GetHash());
         REQUIRE(pindex->nHeight == 1);
@@ -167,12 +167,12 @@ TEST_CASE("ChainstateManager - AcceptBlockHeader Basic", "[chain][chainstate_man
         CBlockHeader block1 = CreateChildHeader(genesis.GetHash(), 1234567900);
         ValidationState state1;
 
-        CBlockIndex* pindex1 = csm.AcceptBlockHeader(block1, state1);
+CBlockIndex* pindex1 = csm.AcceptBlockHeader(block1, state1, /*min_pow_checked=*/true);
         REQUIRE(pindex1 != nullptr);
 
         // Try to accept same block again
         ValidationState state2;
-        CBlockIndex* pindex2 = csm.AcceptBlockHeader(block1, state2);
+CBlockIndex* pindex2 = csm.AcceptBlockHeader(block1, state2, /*min_pow_checked=*/true);
         REQUIRE(pindex2 == pindex1);  // Returns existing index
     }
 
@@ -181,7 +181,7 @@ TEST_CASE("ChainstateManager - AcceptBlockHeader Basic", "[chain][chainstate_man
         CBlockHeader fake_genesis = CreateTestHeader(9999999);
         ValidationState state;
 
-        CBlockIndex* pindex = csm.AcceptBlockHeader(fake_genesis, state);
+CBlockIndex* pindex = csm.AcceptBlockHeader(fake_genesis, state, /*min_pow_checked=*/true);
         REQUIRE(pindex == nullptr);
         REQUIRE_FALSE(state.IsValid());
         // Should fail with bad-genesis because hash doesn't match expected genesis
@@ -194,7 +194,7 @@ TEST_CASE("ChainstateManager - AcceptBlockHeader Basic", "[chain][chainstate_man
         CBlockHeader block1 = CreateChildHeader(genesis.GetHash(), 1234567900);
         ValidationState state;
 
-        CBlockIndex* pindex = csm.AcceptBlockHeader(block1, state);
+CBlockIndex* pindex = csm.AcceptBlockHeader(block1, state, /*min_pow_checked=*/true);
         REQUIRE(pindex == nullptr);
         REQUIRE_FALSE(state.IsValid());
         REQUIRE(state.GetRejectReason() == "high-hash");
@@ -206,7 +206,7 @@ TEST_CASE("ChainstateManager - AcceptBlockHeader Basic", "[chain][chainstate_man
         CBlockHeader block1 = CreateChildHeader(genesis.GetHash(), 1234567900);
         ValidationState state;
 
-        CBlockIndex* pindex = csm.AcceptBlockHeader(block1, state);
+CBlockIndex* pindex = csm.AcceptBlockHeader(block1, state, /*min_pow_checked=*/true);
         REQUIRE(pindex == nullptr);
         REQUIRE_FALSE(state.IsValid());
         REQUIRE(state.GetRejectReason() == "test-failure");
@@ -218,7 +218,7 @@ TEST_CASE("ChainstateManager - AcceptBlockHeader Basic", "[chain][chainstate_man
         CBlockHeader block1 = CreateChildHeader(genesis.GetHash(), 1234567900);
         ValidationState state;
 
-        CBlockIndex* pindex = csm.AcceptBlockHeader(block1, state);
+CBlockIndex* pindex = csm.AcceptBlockHeader(block1, state, /*min_pow_checked=*/true);
         REQUIRE(pindex == nullptr);
         REQUIRE_FALSE(state.IsValid());
         REQUIRE(state.GetRejectReason() == "test-failure");
@@ -241,11 +241,12 @@ TEST_CASE("ChainstateManager - Orphan Headers", "[chain][chainstate_manager][uni
         CBlockHeader block2 = CreateChildHeader(missing_parent, 1234567900);
         ValidationState state;
 
-        CBlockIndex* pindex = csm.AcceptBlockHeader(block2, state, 1);
-        REQUIRE(pindex == nullptr);
-        REQUIRE_FALSE(state.IsValid());
-        REQUIRE(state.GetRejectReason() == "orphaned");
-        REQUIRE(csm.GetOrphanHeaderCount() == 1);
+CBlockIndex* pindex = csm.AcceptBlockHeader(block2, state, /*min_pow_checked=*/true);
+REQUIRE(pindex == nullptr);
+REQUIRE_FALSE(state.IsValid());
+REQUIRE(state.GetRejectReason() == "prev-blk-not-found");
+REQUIRE(csm.AddOrphanHeader(block2, 1));
+REQUIRE(csm.GetOrphanHeaderCount() == 1);
     }
 
     SECTION("Orphan processed when parent arrives") {
@@ -254,13 +255,12 @@ TEST_CASE("ChainstateManager - Orphan Headers", "[chain][chainstate_manager][uni
         CBlockHeader block2 = CreateChildHeader(block1.GetHash(), 1234567910);
 
         ValidationState state1;
-        CBlockIndex* pindex2 = csm.AcceptBlockHeader(block2, state1, 1);
-        REQUIRE(pindex2 == nullptr);
-        REQUIRE(csm.GetOrphanHeaderCount() == 1);
+REQUIRE(csm.AddOrphanHeader(block2, 1));
+REQUIRE(csm.GetOrphanHeaderCount() == 1);
 
-        // Now add parent
-        ValidationState state2;
-        CBlockIndex* pindex1 = csm.AcceptBlockHeader(block1, state2, 1);
+// Now add parent
+ValidationState state2;
+CBlockIndex* pindex1 = csm.AcceptBlockHeader(block1, state2, /*min_pow_checked=*/true);
         REQUIRE(pindex1 != nullptr);
 
         // Orphan should be processed automatically
@@ -278,7 +278,7 @@ TEST_CASE("ChainstateManager - Orphan Headers", "[chain][chainstate_manager][uni
             CBlockHeader orphan = CreateChildHeader(missing_parent, 1234567900 + i);
             ValidationState state;
 
-            csm.AcceptBlockHeader(orphan, state, 1);
+(void)csm.AddOrphanHeader(orphan, 1);
         }
 
         // Should have exactly 50 orphans (per-peer limit)
@@ -294,7 +294,7 @@ TEST_CASE("ChainstateManager - Orphan Headers", "[chain][chainstate_manager][uni
         CBlockHeader orphan = CreateChildHeader(missing_parent, 1234567900);
         ValidationState state;
 
-        csm.AcceptBlockHeader(orphan, state, 1);
+        (void)csm.AddOrphanHeader(orphan, 1);
         REQUIRE(csm.GetOrphanHeaderCount() == 1);
 
         // Sleep to allow time to pass (orphan expire time is 600 seconds in real code,

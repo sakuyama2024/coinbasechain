@@ -83,7 +83,7 @@ TEST_CASE("ChainstateManager thread safety", "[validation][threading]") {
 
                     // Accept header (thread-safe with mutex)
                     validation::ValidationState state;
-                    chain::CBlockIndex* pindex = chainstate.AcceptBlockHeader(header, state);
+chain::CBlockIndex* pindex = chainstate.AcceptBlockHeader(header, state, /*min_pow_checked=*/true);
 
                     if (pindex) {
                         successful_accepts++;
@@ -161,7 +161,7 @@ TEST_CASE("ChainstateManager thread safety", "[validation][threading]") {
 
                 // Accept
                 validation::ValidationState state;
-                chain::CBlockIndex* pindex = chainstate.AcceptBlockHeader(header, state);
+chain::CBlockIndex* pindex = chainstate.AcceptBlockHeader(header, state, /*min_pow_checked=*/true);
                 if (pindex) {
                     chainstate.TryAddBlockIndexCandidate(pindex);
                     chainstate.ActivateBestChain(nullptr);
@@ -210,7 +210,7 @@ TEST_CASE("ChainstateManager thread safety", "[validation][threading]") {
             headers.push_back(header);
 
             validation::ValidationState state;
-            auto* pindex = chainstate.AcceptBlockHeader(header, state);
+auto* pindex = chainstate.AcceptBlockHeader(header, state, /*min_pow_checked=*/true);
             REQUIRE(pindex != nullptr);
             chainstate.TryAddBlockIndexCandidate(pindex);
             current_tip = pindex;
