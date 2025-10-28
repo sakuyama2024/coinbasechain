@@ -41,6 +41,8 @@ add_executable(coinbasechain_tests
     network/dos/getheaders_oversize_tests.cpp
     network/dos/per_peer_buffer_tests.cpp
     network/dos/flood_buffer_overflow_tests.cpp
+    network/dos/inv_storm_throttling_tests.cpp
+    network/dos/addr_valid_flood_tests.cpp
     network/block_announcement/basic_tests.cpp
     network/block_announcement/edge_case_tests.cpp
     network/block_announcement/peer_states_tests.cpp
@@ -62,6 +64,7 @@ add_executable(coinbasechain_tests
     network/peer/peer_discovery_tests.cpp
     network/banman_adversarial_tests.cpp
     network/manager/header_sync_adversarial_tests.cpp
+    network/manager/header_sync_ibd_gating_tests.cpp
     chain/orphan_dos_tests.cpp
     chain/orphan_edge_case_tests.cpp
     chain/orphan_integration_tests.cpp
