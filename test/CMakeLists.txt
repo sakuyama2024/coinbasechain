@@ -43,6 +43,9 @@ add_executable(coinbasechain_tests
     network/dos/flood_buffer_overflow_tests.cpp
     network/dos/inv_storm_throttling_tests.cpp
     network/dos/addr_valid_flood_tests.cpp
+    network/dos/ping_pong_tests.cpp
+    network/dos/connect_churn_tests.cpp
+    network/dos/reannounce_ttl_tests.cpp
     network/block_announcement/basic_tests.cpp
     network/block_announcement/edge_case_tests.cpp
     network/block_announcement/peer_states_tests.cpp
