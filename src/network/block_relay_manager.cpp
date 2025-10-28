@@ -6,6 +6,7 @@
 #include "network/protocol.hpp"
 #include <algorithm>
 #include <cstring>
+#include <chrono>
 
 namespace coinbasechain {
 namespace network {
@@ -34,14 +35,30 @@ void BlockRelayManager::AnnounceTipToAllPeers() {
 
   last_announced_tip_ = current_tip_hash;
 
-  // Add to all ready peers' announcement queues with per-peer deduplication
-  // (Bitcoin per-peer approach: don't send same hash twice to same peer)
+  // Time now (steady clock, microseconds)
+  const int64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                             std::chrono::steady_clock::now().time_since_epoch())
+                             .count();
+  // Re-announce interval (10 minutes)
+  static constexpr int64_t REANNOUNCE_INTERVAL_US = 10LL * 60 * 1000 * 1000;
+
+  // Add to all ready peers' announcement queues with per-peer deduplication + TTL
   auto all_peers = peer_manager_.get_all_peers();
   for (const auto &peer : all_peers) {
     if (peer && peer->is_connected() && peer->state() == PeerState::READY) {
-      // Skip if we've already announced this tip to this peer
-      auto it = last_announced_to_peer_.find(peer->id());
-      if (it != last_announced_to_peer_.end() && it->second == current_tip_hash) {
+      bool should_enqueue = true;
+      {
+        std::lock_guard<std::mutex> guard(announce_mutex_);
+        auto it_hash = last_announced_to_peer_.find(peer->id());
+        auto it_time = last_announce_time_us_.find(peer->id());
+        const bool same_tip = (it_hash != last_announced_to_peer_.end() && it_hash->second == current_tip_hash);
+        const bool have_time = (it_time != last_announce_time_us_.end());
+        const bool within_ttl = have_time && (now_us - it_time->second < REANNOUNCE_INTERVAL_US);
+        if (same_tip && within_ttl) {
+          should_enqueue = false; // Skip frequent re-announcements of same tip
+        }
+      }
+      if (!should_enqueue) {
         continue;
       }
 
@@ -51,7 +68,10 @@ void BlockRelayManager::AnnounceTipToAllPeers() {
       auto& queue = peer->blocks_for_inv_relay_;
       if (std::find(queue.begin(), queue.end(), current_tip_hash) == queue.end()) {
         queue.push_back(current_tip_hash);
+        // Record last announcement (hash + time)
+        std::lock_guard<std::mutex> guard(announce_mutex_);
         last_announced_to_peer_[peer->id()] = current_tip_hash;
+        last_announce_time_us_[peer->id()] = now_us;
       }
     }
   }
@@ -75,10 +95,23 @@ void BlockRelayManager::AnnounceTipToPeer(Peer* peer) {
   LOG_NET_DEBUG("Adding tip to peer {} announcement queue (height={}, hash={})",
                 peer->id(), tip->nHeight, current_tip_hash.GetHex().substr(0, 16));
 
-  // Avoid re-announcing the same tip to the same peer repeatedly
-  auto it_last = last_announced_to_peer_.find(peer->id());
-  if (it_last != last_announced_to_peer_.end() && it_last->second == current_tip_hash) {
-    return; // Already announced this tip to this peer
+  // Time now (steady clock, microseconds)
+  const int64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                             std::chrono::steady_clock::now().time_since_epoch())
+                             .count();
+  static constexpr int64_t REANNOUNCE_INTERVAL_US = 10LL * 60 * 1000 * 1000;
+
+  // Avoid re-announcing the same tip to the same peer repeatedly (respect TTL)
+  {
+    std::lock_guard<std::mutex> guard(announce_mutex_);
+    auto it_hash = last_announced_to_peer_.find(peer->id());
+    auto it_time = last_announce_time_us_.find(peer->id());
+    const bool same_tip = (it_hash != last_announced_to_peer_.end() && it_hash->second == current_tip_hash);
+    const bool have_time = (it_time != last_announce_time_us_.end());
+    const bool within_ttl = have_time && (now_us - it_time->second < REANNOUNCE_INTERVAL_US);
+    if (same_tip && within_ttl) {
+      return; // Already announced recently
+    }
   }
 
   // Add to peer's announcement queue (like Bitcoin's m_blocks_for_inv_relay)
@@ -88,7 +121,9 @@ void BlockRelayManager::AnnounceTipToPeer(Peer* peer) {
   auto& queue = peer->blocks_for_inv_relay_;
   if (std::find(queue.begin(), queue.end(), current_tip_hash) == queue.end()) {
     queue.push_back(current_tip_hash);
+    std::lock_guard<std::mutex> guard(announce_mutex_);
     last_announced_to_peer_[peer->id()] = current_tip_hash;
+    last_announce_time_us_[peer->id()] = now_us;
   }
 }
 
@@ -216,6 +251,12 @@ bool BlockRelayManager::HandleInvMessage(PeerPtr peer,
   }
 
   return true;
+}
+
+void BlockRelayManager::OnPeerDisconnected(int peer_id) {
+  std::lock_guard<std::mutex> guard(announce_mutex_);
+  last_announced_to_peer_.erase(peer_id);
+  last_announce_time_us_.erase(peer_id);
 }
 
 } // namespace network

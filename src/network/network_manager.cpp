@@ -93,6 +93,9 @@ NetworkManager::NetworkManager(
     if (header_sync_manager_) {
       header_sync_manager_->OnPeerDisconnected(static_cast<uint64_t>(peer_id));
     }
+    if (block_relay_manager_) {
+      block_relay_manager_->OnPeerDisconnected(peer_id);
+    }
   });
 }
 

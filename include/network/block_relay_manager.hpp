@@ -7,6 +7,7 @@
 #include "chain/uint.hpp"
 #include <memory>
 #include <unordered_map>
+#include <mutex>
 
 namespace coinbasechain {
 
@@ -44,6 +45,9 @@ public:
   // Handle incoming INV message from a peer
   bool HandleInvMessage(PeerPtr peer, message::InvMessage* msg);
 
+  // Cleanup hook: called when a peer disconnects
+  void OnPeerDisconnected(int peer_id);
+
 private:
   validation::ChainstateManager& chainstate_manager_;
   PeerManager& peer_manager_;
@@ -53,6 +57,10 @@ private:
   uint256 last_announced_tip_;
   // Per-peer last announced block to avoid re-announcing the same tip in tight loops
   std::unordered_map<int, uint256> last_announced_to_peer_;
+  // Per-peer last announcement time (microseconds, steady clock)
+  std::unordered_map<int, int64_t> last_announce_time_us_;
+  // Mutex to guard per-peer announcement tracking
+  mutable std::mutex announce_mutex_;
 };
 
 } // namespace network
