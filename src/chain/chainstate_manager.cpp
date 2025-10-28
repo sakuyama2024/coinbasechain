@@ -598,6 +598,12 @@ bool ChainstateManager::IsInitialBlockDownload() const {
     return true;
   }
 
+  // Genesis (height 0) is considered IBD regardless of time skew or min chain work.
+  // This matches Core behavior better in simulated environments with mocked time.
+  if (tip->nHeight == 0) {
+    return true;
+  }
+
   // Tip too old - still syncing (1 hour for 2-minute blocks)
   int64_t now = util::GetTime();
   if (tip->nTime < now - 3600) {

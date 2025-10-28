@@ -145,7 +145,7 @@ PeerPtr PeerManager::get_peer(int peer_id) {
 }
 
 int PeerManager::find_peer_by_address(const std::string &address,
-                                      uint16_t /*port*/) {
+                                      uint16_t port) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   // Normalize input address (convert IPv4-mapped IPv6 to IPv4 dotted-quad)
@@ -164,14 +164,18 @@ int PeerManager::find_peer_by_address(const std::string &address,
     }
   };
 
-  const std::string needle = normalize(address);
+  const std::string needle_addr = normalize(address);
 
-  // Compare normalized addresses only (ignore port)
   for (const auto &[id, peer] : peers_) {
     if (!peer) continue;
-    if (normalize(peer->address()) == needle) {
-      return id;
+    const std::string peer_addr = normalize(peer->address());
+    if (peer_addr != needle_addr) continue;
+    if (port != 0) {
+      if (peer->port() == port) return id;
+      continue;
     }
+    // No port specified: return the first matching address
+    return id;
   }
   return -1; // Not found
 }

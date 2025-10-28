@@ -35,7 +35,7 @@ void HeaderSyncManager::SetSyncPeer(uint64_t peer_id) {
 
 void HeaderSyncManager::ClearSyncPeer() {
   // Clear current sync peer and allow re-selection on next maintenance
-  sync_peer_id_.store(0, std::memory_order_release);
+  sync_peer_id_.store(NO_SYNC_PEER, std::memory_order_release);
   initial_sync_started_.store(false, std::memory_order_release);
 }
 
@@ -44,11 +44,11 @@ void HeaderSyncManager::OnPeerDisconnected(uint64_t peer_id) {
   // If this was our sync peer, reset sync state to allow retry with another peer
   uint64_t current_sync_peer = sync_peer_id_.load(std::memory_order_acquire);
   
-  if (current_sync_peer == peer_id) {
+  if (current_sync_peer == static_cast<uint64_t>(peer_id)) {
     LOG_NET_DEBUG("Sync peer {} disconnected, clearing sync state", peer_id);
     
     // Reset all sync state
-    sync_peer_id_.store(0, std::memory_order_release);
+    sync_peer_id_.store(NO_SYNC_PEER, std::memory_order_release);
     initial_sync_started_.store(false, std::memory_order_release);
     sync_start_time_.store(0, std::memory_order_release);
     last_headers_received_.store(0, std::memory_order_release);
@@ -60,7 +60,7 @@ void HeaderSyncManager::ProcessTimers() {
   // If initial sync is running and we haven't received headers for a while,
   // disconnect the sync peer to allow retrying another peer.
   const uint64_t sync_id = sync_peer_id_.load(std::memory_order_acquire);
-  if (sync_id == 0) return;
+  if (sync_id == NO_SYNC_PEER) return;
 
   const int64_t last_us = last_headers_received_.load(std::memory_order_acquire);
   auto now = std::chrono::steady_clock::now();
@@ -84,21 +84,23 @@ void HeaderSyncManager::CheckInitialSync() {
     return;
   }
 
-  // Matches Bitcoin's initial headers sync logic in SendMessages
-  // Only actively request headers from a single peer (like Bitcoin's
-  // nSyncStarted check)
+  // Only run initial sync when in IBD (Bitcoin Core behavior)
+  if (!chainstate_manager_.IsInitialBlockDownload()) {
+    return;
+  }
+
+  // Only actively request headers from a single peer (Bitcoin Core nSyncStarted logic)
 
   // If we already have a sync peer, nothing to do (atomic load)
-  if (sync_peer_id_.load(std::memory_order_acquire) != 0) {
+  if (sync_peer_id_.load(std::memory_order_acquire) != NO_SYNC_PEER) {
     return;
   }
 
   // Protect peer selection with mutex to prevent race conditions
-  // Multiple CheckInitialSync() calls could happen concurrently from timers
   std::lock_guard<std::mutex> lock(sync_mutex_);
 
   // Double-check after acquiring lock (another thread may have set sync peer)
-  if (sync_peer_id_.load(std::memory_order_acquire) != 0) {
+  if (sync_peer_id_.load(std::memory_order_acquire) != NO_SYNC_PEER) {
     return;
   }
 
@@ -131,7 +133,6 @@ LOG_NET_DEBUG("initial getheaders ({}) peer={}",
   }
 
   // Fallback: If no outbound peers available, try inbound peers
-  // (Bitcoin allows inbound peers if m_num_preferred_download_peers == 0)
   auto inbound_peers = peer_manager_.get_inbound_peers();
 
   for (const auto &peer : inbound_peers) {
@@ -139,7 +140,6 @@ LOG_NET_DEBUG("initial getheaders ({}) peer={}",
       continue; // Skip peers that haven't completed handshake
     }
 
-    // Bitcoin Core: Check !state.fSyncStarted to avoid re-requesting from same peer
     if (peer->sync_started()) {
       continue; // Already started sync with this peer
     }
@@ -203,13 +203,14 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   // designated sync peer. Allow small unsolicited announcements (1-2 headers)
   // from any peer. This avoids wasting bandwidth processing full batches from
   // multiple peers.
+  // Gate large batches to the designated sync peer ONLY during IBD (Bitcoin Core behavior).
   if (chainstate_manager_.IsInitialBlockDownload()) {
     constexpr size_t MAX_UNSOLICITED_ANNOUNCEMENT = 2; // accept small announcements
     uint64_t sync_id = sync_peer_id_.load(std::memory_order_acquire);
     if (!headers.empty() && headers.size() > MAX_UNSOLICITED_ANNOUNCEMENT &&
-        static_cast<uint64_t>(peer_id) != sync_id) {
+        (sync_id == NO_SYNC_PEER || static_cast<uint64_t>(peer_id) != sync_id)) {
       LOG_NET_TRACE(
-          "Ignoring large headers batch from non-sync peer during IBD: peer={} size={}",
+          "Ignoring unsolicited large headers batch from non-sync peer during IBD: peer={} size={}",
           peer_id, headers.size());
       // Do not penalize; just ignore per Core behavior
       return true;
@@ -245,9 +246,8 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
 
   // Process headers (logic moved from HeaderSync::ProcessHeaders)
   if (headers.empty()) {
-    // Bitcoin Core (line 2896): "Nothing interesting. Stop asking this peers for more headers."
-    // Empty headers means peer has reached the end of their chain - they have no more to give us.
-    // This could happen if peer reorged to our chain, or we've synced to their tip.
+    // Bitcoin Core: "Nothing interesting. Stop asking this peer for more headers."
+    // Clear current sync peer and allow reselection on next CheckInitialSync() call.
 LOG_NET_DEBUG("received headers (0) peer={}", peer_id);
     ClearSyncPeer();
     return true;
@@ -510,9 +510,9 @@ LOG_NET_DEBUG("received headers ({}) peer={}", headers.size(), peer_id);
   if (ShouldRequestMore()) {
     RequestHeadersFromPeer(peer);
   } else {
-    // No more headers to request from this peer - clear sync peer
-    // so we can try another peer if needed
-    ClearSyncPeer();
+    // Do not clear sync peer here. Keep the current sync peer so that future
+    // INV announcements from this peer can trigger additional GETHEADERS,
+    // matching Bitcoin Core behavior where fSyncStarted remains until timeout.
   }
 
   return true;

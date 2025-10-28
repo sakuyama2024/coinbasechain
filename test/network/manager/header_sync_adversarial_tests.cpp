@@ -74,7 +74,15 @@ TEST_CASE("HeaderSync - Switch sync peer on stall", "[network][network_header_sy
     SimulatedNode p2(12, &net);
     p1.ConnectTo(miner.GetId());
     p2.ConnectTo(miner.GetId());
+    // Explicitly trigger initial sync selection for serving peers
+    p1.GetNetworkManager().test_hook_check_initial_sync();
+    p2.GetNetworkManager().test_hook_check_initial_sync();
     uint64_t t = 1000; net.AdvanceTime(t);
+    // Allow additional processing rounds if handshake completed after first check
+    for (int i = 0; i < 10 && p1.GetTipHeight() < 40; ++i) {
+        net.AdvanceTime(t += 200);
+        p1.GetNetworkManager().test_hook_check_initial_sync();
+    }
     REQUIRE(p1.GetTipHeight() == 40);
     REQUIRE(p2.GetTipHeight() == 40);
 

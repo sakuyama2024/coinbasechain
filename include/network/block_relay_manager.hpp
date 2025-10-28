@@ -6,6 +6,7 @@
 #include "network/message.hpp"
 #include "chain/uint.hpp"
 #include <memory>
+#include <unordered_map>
 
 namespace coinbasechain {
 
@@ -48,8 +49,10 @@ private:
   PeerManager& peer_manager_;
   HeaderSyncManager* header_sync_manager_; // Optional - for INV->GETHEADERS coordination
 
-  // Last announced tip (for tracking, not for deduplication)
+  // Last announced tip (for tracking)
   uint256 last_announced_tip_;
+  // Per-peer last announced block to avoid re-announcing the same tip in tight loops
+  std::unordered_map<int, uint256> last_announced_to_peer_;
 };
 
 } // namespace network

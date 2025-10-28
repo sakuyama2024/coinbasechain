@@ -1,6 +1,8 @@
 #include "simulated_network.hpp"
 #include "network_bridged_transport.hpp"
 #include "chain/time.hpp"
+#include "chain/logging.hpp"
+#include "network/message.hpp"
 #include <algorithm>
 
 namespace coinbasechain {
@@ -37,6 +39,14 @@ void SimulatedNetwork::SetLinkConditions(int from_node, int to_node, const Netwo
 }
 
 void SimulatedNetwork::SendMessage(int from_node, int to_node, const std::vector<uint8_t>& data) {
+    // Log command being enqueued
+    protocol::MessageHeader hdr;
+    std::string cmd = "<invalid>";
+    if (data.size() >= protocol::MESSAGE_HEADER_SIZE && message::deserialize_header(data.data(), data.size(), hdr)) {
+        cmd = hdr.get_command();
+    }
+    LOG_NET_INFO("simnet: enqueue from={} to={} cmd={} size={}", from_node, to_node, cmd, data.size());
+
     // Track command type for testing if enabled
     if (track_commands_ && data.size() >= protocol::MESSAGE_HEADER_SIZE) {
         protocol::MessageHeader hdr;
@@ -74,7 +84,7 @@ void SimulatedNetwork::SendMessage(int from_node, int to_node, const std::vector
     // Ensure FIFO per-link even under jitter: never schedule earlier than last
     auto key = std::make_pair(from_node, to_node);
     auto it_last = last_delivery_time_.find(key);
-    if (it_last != last_delivery_time_.end() && delivery_time <= it_last->second) {
+    if (it_last != last_delivery_time_.end() && delivery_time < it_last->second) {
         delivery_time = it_last->second + 1; // +1 ms preserves ordering
     }
     last_delivery_time_[key] = delivery_time;

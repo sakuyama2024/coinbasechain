@@ -39,12 +39,19 @@ void BlockRelayManager::AnnounceTipToAllPeers() {
   auto all_peers = peer_manager_.get_all_peers();
   for (const auto &peer : all_peers) {
     if (peer && peer->is_connected() && peer->state() == PeerState::READY) {
+      // Skip if we've already announced this tip to this peer
+      auto it = last_announced_to_peer_.find(peer->id());
+      if (it != last_announced_to_peer_.end() && it->second == current_tip_hash) {
+        continue;
+      }
+
       std::lock_guard<std::mutex> lock(peer->block_inv_mutex_);
 
       // Only add if not already in this peer's queue (per-peer deduplication)
       auto& queue = peer->blocks_for_inv_relay_;
       if (std::find(queue.begin(), queue.end(), current_tip_hash) == queue.end()) {
         queue.push_back(current_tip_hash);
+        last_announced_to_peer_[peer->id()] = current_tip_hash;
       }
     }
   }
@@ -68,6 +75,12 @@ void BlockRelayManager::AnnounceTipToPeer(Peer* peer) {
   LOG_NET_DEBUG("Adding tip to peer {} announcement queue (height={}, hash={})",
                 peer->id(), tip->nHeight, current_tip_hash.GetHex().substr(0, 16));
 
+  // Avoid re-announcing the same tip to the same peer repeatedly
+  auto it_last = last_announced_to_peer_.find(peer->id());
+  if (it_last != last_announced_to_peer_.end() && it_last->second == current_tip_hash) {
+    return; // Already announced this tip to this peer
+  }
+
   // Add to peer's announcement queue (like Bitcoin's m_blocks_for_inv_relay)
   std::lock_guard<std::mutex> lock(peer->block_inv_mutex_);
 
@@ -75,6 +88,7 @@ void BlockRelayManager::AnnounceTipToPeer(Peer* peer) {
   auto& queue = peer->blocks_for_inv_relay_;
   if (std::find(queue.begin(), queue.end(), current_tip_hash) == queue.end()) {
     queue.push_back(current_tip_hash);
+    last_announced_to_peer_[peer->id()] = current_tip_hash;
   }
 }
 
@@ -179,16 +193,23 @@ bool BlockRelayManager::HandleInvMessage(PeerPtr peer,
       // BUT during initial sync, only request from the designated sync peer
       if (header_sync_manager_) {
         uint64_t sync_id = header_sync_manager_->GetSyncPeerId();
-        if (sync_id != 0) {
+        if (header_sync_manager_->HasSyncPeer()) {
           if (sync_id == static_cast<uint64_t>(peer->id())) {
             header_sync_manager_->RequestHeadersFromPeer(peer);
           } else {
             // Ignore INV-driven requests from non-sync peers during initial sync
           }
         } else {
-          // Initial sync not yet started: select this peer as sync source and request headers
-          header_sync_manager_->SetSyncPeer(peer->id());
-          header_sync_manager_->RequestHeadersFromPeer(peer);
+          // Initial sync not yet started: only adopt during IBD (Core behavior)
+          if (chainstate_manager_.IsInitialBlockDownload()) {
+            LOG_NET_DEBUG("HandleInv: (IBD) adopting peer={} and requesting headers", peer->id());
+            header_sync_manager_->SetSyncPeer(peer->id());
+            // Mark sync started to avoid repeated adoption on subsequent INVs
+            peer->set_sync_started(true);
+            header_sync_manager_->RequestHeadersFromPeer(peer);
+          } else {
+            LOG_NET_TRACE("HandleInv: ignoring INV-driven adoption (not IBD)");
+          }
         }
       }
     }
