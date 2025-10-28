@@ -243,7 +243,10 @@ bool BlockRelayManager::HandleInvMessage(PeerPtr peer,
             peer->set_sync_started(true);
             header_sync_manager_->RequestHeadersFromPeer(peer);
           } else {
-            LOG_NET_TRACE("HandleInv: ignoring INV-driven adoption (not IBD)");
+            // POST-IBD: We still need to fetch headers when peers announce new blocks.
+            // Do NOT adopt a sync peer; simply request headers from the announcing peer.
+            LOG_NET_DEBUG("HandleInv: (post-IBD) requesting headers on INV from peer={}", peer->id());
+            header_sync_manager_->RequestHeadersFromPeer(peer);
           }
         }
       }
