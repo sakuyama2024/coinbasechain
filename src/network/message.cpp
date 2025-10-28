@@ -123,14 +123,16 @@ void MessageSerializer::write_bytes(const std::vector<uint8_t> &data) {
 void MessageSerializer::write_network_address(
     const protocol::NetworkAddress &addr, bool include_timestamp) {
   if (include_timestamp) {
-    // Timestamp would be written by caller
+    // Timestamp should be written by caller before calling this function
   }
+  // Services (LE)
   write_uint64(addr.services);
+  // IP (16 bytes)
   write_bytes(addr.ip.data(), addr.ip.size());
-  endian::WriteBE16(buffer_.data() + buffer_.size() - 2,
-                    0); // Make space for port
-  buffer_.resize(buffer_.size() + 2);
-  endian::WriteBE16(buffer_.data() + buffer_.size() - 2, addr.port);
+  // Port (BE)
+  size_t pos = buffer_.size();
+  buffer_.resize(pos + 2);
+  endian::WriteBE16(buffer_.data() + pos, addr.port);
 }
 
 void MessageSerializer::write_inventory_vector(

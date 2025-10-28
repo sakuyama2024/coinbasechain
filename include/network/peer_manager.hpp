@@ -122,6 +122,12 @@ public:
 
   // Check if we can accept more inbound connections
   bool can_accept_inbound() const;
+  
+  // Check if we can accept more inbound connections from a specific IP address
+  bool can_accept_inbound_from(const std::string& address) const;
+  
+  // Per-IP inbound limit (policy)
+  static constexpr int MAX_INBOUND_PER_IP = 2;
 
   // Try to evict a peer to make room for a new inbound connection
   // Returns true if a peer was evicted

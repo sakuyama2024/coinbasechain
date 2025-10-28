@@ -96,6 +96,9 @@ NetworkManager::NetworkManager(
     if (block_relay_manager_) {
       block_relay_manager_->OnPeerDisconnected(peer_id);
     }
+    if (message_router_) {
+      message_router_->OnPeerDisconnected(peer_id);
+    }
   });
 }
 
@@ -617,9 +620,9 @@ void NetworkManager::handle_inbound_connection(
     return;
   }
 
-  // Check if we can accept more inbound connections
-  if (!peer_manager_->can_accept_inbound()) {
-    LOG_NET_TRACE("Rejecting inbound connection from {} (at capacity)",
+  // Check if we can accept more inbound connections (global and per-IP)
+  if (!peer_manager_->can_accept_inbound_from(remote_address)) {
+    LOG_NET_TRACE("Rejecting inbound connection from {} (inbound limit reached)",
                   remote_address);
     connection->close();
     return;

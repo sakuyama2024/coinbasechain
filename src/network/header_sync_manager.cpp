@@ -22,7 +22,8 @@ HeaderSyncManager::HeaderSyncManager(validation::ChainstateManager& chainstate,
       ban_man_(ban_man) {}
 
 void HeaderSyncManager::SetSyncPeer(uint64_t peer_id) {
-  auto now = std::chrono::steady_clock::now();
+  // Use mockable steady time so tests that advance simulated time work correctly
+  auto now = util::GetSteadyTime();
   int64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(
                        now.time_since_epoch())
                        .count();
@@ -63,7 +64,8 @@ void HeaderSyncManager::ProcessTimers() {
   if (sync_id == NO_SYNC_PEER) return;
 
   const int64_t last_us = last_headers_received_.load(std::memory_order_acquire);
-  auto now = std::chrono::steady_clock::now();
+  // Use mockable steady time for determinism in tests
+  auto now = util::GetSteadyTime();
   const int64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
 
   // Conservative timeout (2 minutes). Bitcoin uses a dynamic timeout; we keep it simple.
@@ -75,6 +77,11 @@ void HeaderSyncManager::ProcessTimers() {
     // Ask PeerManager to drop the peer. This triggers OnPeerDisconnected() which
     // resets our sync state so CheckInitialSync can pick a new peer.
     peer_manager_.remove_peer(static_cast<int>(sync_id));
+
+    // Immediately attempt to select a new sync peer (even post-IBD) so that
+    // we send a fresh GETHEADERS to another peer. This is harmless if fully
+    // synced (peer will respond with empty HEADERS).
+    CheckInitialSync();
   }
 }
 
@@ -84,9 +91,17 @@ void HeaderSyncManager::CheckInitialSync() {
     return;
   }
 
-  // Only run initial sync when in IBD (Bitcoin Core behavior)
-  if (!chainstate_manager_.IsInitialBlockDownload()) {
-    return;
+  // Prefer to run initial sync when in IBD (Bitcoin Core behavior).
+  // However, if we lost our sync peer due to stall (sync_peer_id_ cleared),
+  // allow selecting a new peer even post-IBD to re-establish header sync.
+  const bool in_ibd = chainstate_manager_.IsInitialBlockDownload();
+  if (!in_ibd) {
+    if (sync_peer_id_.load(std::memory_order_acquire) == NO_SYNC_PEER) {
+      // Proceed to choose a peer even post-IBD (will result in a benign
+      // GETHEADERS that returns an empty response if fully synced).
+    } else {
+      return;
+    }
   }
 
   // Only actively request headers from a single peer (Bitcoin Core nSyncStarted logic)
@@ -238,7 +253,7 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
                 headers.size(), peer_id, skip_dos_checks);
 
   // Update last headers received timestamp (atomic store)
-  auto now_tp = std::chrono::steady_clock::now();
+  auto now_tp = util::GetSteadyTime();
   int64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(
                        now_tp.time_since_epoch())
                        .count();

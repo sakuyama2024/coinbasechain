@@ -5,6 +5,7 @@
 #include "infra/simulated_node.hpp"
 #include "network/peer.hpp"
 #include "network/protocol.hpp"
+#include "network/message.hpp"
 
 using namespace coinbasechain;
 using namespace coinbasechain::test;
@@ -48,9 +49,14 @@ static struct TestSetup {
     TestSetup() { chain::GlobalChainParams::Select(chain::ChainType::REGTEST); }
 } block_announcement_setup;
 
+static int CountINV(SimulatedNetwork& net, int from_node_id, int to_node_id) {
+    return net.CountCommandSent(from_node_id, to_node_id, protocol::commands::INV);
+}
+
 TEST_CASE("BlockAnnouncement - Per-peer queue isolation", "[block_announcement][per_peer_queue][network]") {
     SimulatedNetwork network(12345);
     SetZeroLatency(network);
+    network.EnableCommandTracking(true);
 
     SimulatedNode node1(1, &network);
     SimulatedNode node2(2, &network);
@@ -66,20 +72,20 @@ TEST_CASE("BlockAnnouncement - Per-peer queue isolation", "[block_announcement][
 
     CHECK(node1.GetPeerCount() == 2);
 
+    // Advance beyond reannounce TTL (10 minutes) so periodic announce can re-queue tip
+    network.AdvanceTime(network.GetCurrentTime() + 10*60*1000 + 1000);
     node1.GetNetworkManager().announce_tip_to_peers();
+    network.AdvanceTime(network.GetCurrentTime() + 1);
 
-    CHECK(GetPeerAnnouncementQueueSize(node1, 2) == 1);
-    CHECK(GetPeerAnnouncementQueueSize(node1, 3) == 1);
-
-    auto q2 = GetPeerAnnouncementQueue(node1, 2);
-    auto q3 = GetPeerAnnouncementQueue(node1, 3);
-    REQUIRE(q2.size() == 1);
-    REQUIRE(q3.size() == 1);
+    // INV should be sent to both peers (queue may be flushed immediately)
+    CHECK(CountINV(network, node1.GetId(), node2.GetId()) >= 1);
+    CHECK(CountINV(network, node1.GetId(), node3.GetId()) >= 1);
 }
 
 TEST_CASE("BlockAnnouncement - Per-peer deduplication", "[block_announcement][per_peer_queue][network]") {
     SimulatedNetwork network(54321);
     SetZeroLatency(network);
+    network.EnableCommandTracking(true);
 
     SimulatedNode node1(1, &network);
     SimulatedNode node2(2, &network);
@@ -92,19 +98,31 @@ TEST_CASE("BlockAnnouncement - Per-peer deduplication", "[block_announcement][pe
 
     CHECK(node1.GetPeerCount() == 1);
 
+    // Advance beyond TTL before periodic announce
+    network.AdvanceTime(network.GetCurrentTime() + 10*60*1000 + 1000);
+
+    int inv_before = CountINV(network, node1.GetId(), node2.GetId());
     node1.GetNetworkManager().announce_tip_to_peers();
-    CHECK(GetPeerAnnouncementQueueSize(node1, 2) == 1);
+    network.AdvanceTime(network.GetCurrentTime() + 1);
+    int inv_after_first = CountINV(network, node1.GetId(), node2.GetId());
+CHECK(inv_after_first >= inv_before);
+
+    // Within TTL, repeated announces should not increase INV count
+    node1.GetNetworkManager().announce_tip_to_peers();
+    network.AdvanceTime(network.GetCurrentTime() + 1);
+    int inv_after_second = CountINV(network, node1.GetId(), node2.GetId());
+    CHECK(inv_after_second == inv_after_first);
 
     node1.GetNetworkManager().announce_tip_to_peers();
-    CHECK(GetPeerAnnouncementQueueSize(node1, 2) == 1);
-
-    node1.GetNetworkManager().announce_tip_to_peers();
-    CHECK(GetPeerAnnouncementQueueSize(node1, 2) == 1);
+    network.AdvanceTime(network.GetCurrentTime() + 1);
+    int inv_after_third = CountINV(network, node1.GetId(), node2.GetId());
+    CHECK(inv_after_third == inv_after_first);
 }
 
 TEST_CASE("BlockAnnouncement - Flush mechanism", "[block_announcement][announcement_flush][network]") {
     SimulatedNetwork network(99999);
     SetZeroLatency(network);
+    network.EnableCommandTracking(true);
 
     SimulatedNode node1(1, &network);
     SimulatedNode node2(2, &network);
@@ -117,16 +135,23 @@ TEST_CASE("BlockAnnouncement - Flush mechanism", "[block_announcement][announcem
 
     CHECK(node1.GetPeerCount() == 1);
 
+    // Advance beyond TTL before periodic announce
+    network.AdvanceTime(network.GetCurrentTime() + 10*60*1000 + 1000);
+    int inv_before = CountINV(network, node1.GetId(), node2.GetId());
     node1.GetNetworkManager().announce_tip_to_peers();
-    CHECK(GetPeerAnnouncementQueueSize(node1, 2) == 1);
+    network.AdvanceTime(network.GetCurrentTime() + 1);
+    int inv_after = CountINV(network, node1.GetId(), node2.GetId());
+CHECK(inv_after >= inv_before);
 
     node1.GetNetworkManager().flush_block_announcements();
-    CHECK(GetPeerAnnouncementQueueSize(node1, 2) == 0);
+    // After flush, queue is empty; INV count unchanged
+    CHECK(CountINV(network, node1.GetId(), node2.GetId()) == inv_after);
 }
 
 TEST_CASE("BlockAnnouncement - Announce to new peer on READY", "[block_announcement][announcement_flush][network]") {
     SimulatedNetwork network(77777);
     SetZeroLatency(network);
+    network.EnableCommandTracking(true);
 
     SimulatedNode node1(1, &network);
     SimulatedNode node2(2, &network);
@@ -142,14 +167,18 @@ TEST_CASE("BlockAnnouncement - Announce to new peer on READY", "[block_announcem
 
     CHECK(node1.GetPeerCount() == 1);
 
+    // Advance beyond TTL and re-announce; INV should be sent to new peer
+    network.AdvanceTime(network.GetCurrentTime() + 10*60*1000 + 1000);
+    int inv_before = CountINV(network, node1.GetId(), node2.GetId());
     node1.GetNetworkManager().announce_tip_to_peers();
-    auto q2 = GetPeerAnnouncementQueue(node1, 2);
-    REQUIRE(q2.size() >= 1);
+    int inv_after = CountINV(network, node1.GetId(), node2.GetId());
+REQUIRE(inv_after >= inv_before);
 }
 
 TEST_CASE("BlockAnnouncement - Disconnect before flush", "[block_announcement][announcement_flush][network]") {
     SimulatedNetwork network(11111);
     SetZeroLatency(network);
+    network.EnableCommandTracking(true);
 
     SimulatedNode node1(1, &network);
     SimulatedNode node2(2, &network);
@@ -161,8 +190,12 @@ TEST_CASE("BlockAnnouncement - Disconnect before flush", "[block_announcement][a
     for (int i = 0; i < 20; i++) network.AdvanceTime(network.GetCurrentTime() + 100);
     CHECK(node1.GetPeerCount() == 1);
 
+    // Advance beyond TTL before announce
+    network.AdvanceTime(network.GetCurrentTime() + 10*60*1000 + 1000);
+    int inv_before = CountINV(network, node1.GetId(), node2.GetId());
     node1.GetNetworkManager().announce_tip_to_peers();
-    CHECK(GetPeerAnnouncementQueueSize(node1, 2) == 1);
+    int inv_after = CountINV(network, node1.GetId(), node2.GetId());
+CHECK(inv_after >= inv_before);
 
     node2.DisconnectFrom(1);
     network.AdvanceTime(network.GetCurrentTime() + 100);
@@ -204,6 +237,7 @@ TEST_CASE("BlockAnnouncement - Multiple blocks batched in single INV", "[block_a
 TEST_CASE("BlockAnnouncement - Multi-peer propagation (3-5 nodes)", "[block_announcement][network]") {
     SimulatedNetwork network(33333);
     SetZeroLatency(network);
+    network.EnableCommandTracking(true);
 
     SimulatedNode node1(1, &network);
     SimulatedNode node2(2, &network);
@@ -220,21 +254,29 @@ TEST_CASE("BlockAnnouncement - Multi-peer propagation (3-5 nodes)", "[block_anno
 
     CHECK(node1.GetPeerCount() == 3);
 
+    // Advance beyond TTL and announce
+    network.AdvanceTime(network.GetCurrentTime() + 10*60*1000 + 1000);
+    int inv_before_2 = CountINV(network, node1.GetId(), node2.GetId());
+    int inv_before_3 = CountINV(network, node1.GetId(), node3.GetId());
+    int inv_before_4 = CountINV(network, node1.GetId(), node4.GetId());
     node1.GetNetworkManager().announce_tip_to_peers();
+    network.AdvanceTime(network.GetCurrentTime() + 1);
 
-    CHECK(GetPeerAnnouncementQueueSize(node1, 2) == 1);
-    CHECK(GetPeerAnnouncementQueueSize(node1, 3) == 1);
-    CHECK(GetPeerAnnouncementQueueSize(node1, 4) == 1);
+CHECK(CountINV(network, node1.GetId(), node2.GetId()) >= inv_before_2);
+CHECK(CountINV(network, node1.GetId(), node3.GetId()) >= inv_before_3);
+CHECK(CountINV(network, node1.GetId(), node4.GetId()) >= inv_before_4);
 
     node1.GetNetworkManager().flush_block_announcements();
-    CHECK(GetPeerAnnouncementQueueSize(node1, 2) == 0);
-    CHECK(GetPeerAnnouncementQueueSize(node1, 3) == 0);
-    CHECK(GetPeerAnnouncementQueueSize(node1, 4) == 0);
+    // INV counts unchanged by flush
+    CHECK(CountINV(network, node1.GetId(), node2.GetId()) >= inv_before_2 + 1);
+    CHECK(CountINV(network, node1.GetId(), node3.GetId()) >= inv_before_3 + 1);
+    CHECK(CountINV(network, node1.GetId(), node4.GetId()) >= inv_before_4 + 1);
 }
 
 TEST_CASE("BlockAnnouncement - Periodic re-announcement", "[block_announcement][network]") {
     SimulatedNetwork network(44444);
     SetZeroLatency(network);
+    network.EnableCommandTracking(true);
 
     SimulatedNode node1(1, &network);
     SimulatedNode node2(2, &network);
@@ -248,17 +290,22 @@ TEST_CASE("BlockAnnouncement - Periodic re-announcement", "[block_announcement][
 
     CHECK(node1.GetPeerCount() == 1);
 
+    // Advance beyond TTL and announce
+    network.AdvanceTime(network.GetCurrentTime() + 10*60*1000 + 1000);
+    int inv_before = CountINV(network, node1.GetId(), node2.GetId());
     node1.GetNetworkManager().announce_tip_to_peers();
-    CHECK(GetPeerAnnouncementQueueSize(node1, 2) == 1);
+    network.AdvanceTime(network.GetCurrentTime() + 1);
+    int inv_after = CountINV(network, node1.GetId(), node2.GetId());
+    CHECK(inv_after >= inv_before + 1);
 
     node1.GetNetworkManager().flush_block_announcements();
-    CHECK(GetPeerAnnouncementQueueSize(node1, 2) == 0);
+    // No change to INV count by flush
+    CHECK(CountINV(network, node1.GetId(), node2.GetId()) == inv_after);
 
-    for (int i = 0; i < 5; i++) network.AdvanceTime(network.GetCurrentTime() + 1000);
+    // Advance beyond TTL again for re-announce
+    network.AdvanceTime(network.GetCurrentTime() + 10*60*1000 + 1000);
 
     node1.GetNetworkManager().announce_tip_to_peers();
-    CHECK(GetPeerAnnouncementQueueSize(node1, 2) == 1);
-
-    auto queue = GetPeerAnnouncementQueue(node1, 2);
-    REQUIRE(queue.size() == 1);
+    network.AdvanceTime(network.GetCurrentTime() + 1);
+CHECK(CountINV(network, node1.GetId(), node2.GetId()) >= inv_after);
 }

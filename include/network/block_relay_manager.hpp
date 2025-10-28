@@ -57,8 +57,8 @@ private:
   uint256 last_announced_tip_;
   // Per-peer last announced block to avoid re-announcing the same tip in tight loops
   std::unordered_map<int, uint256> last_announced_to_peer_;
-  // Per-peer last announcement time (microseconds, steady clock)
-  std::unordered_map<int, int64_t> last_announce_time_us_;
+  // Per-peer last announcement time (unix seconds via util::GetTime)
+  std::unordered_map<int, int64_t> last_announce_time_s_;
   // Mutex to guard per-peer announcement tracking
   mutable std::mutex announce_mutex_;
 };

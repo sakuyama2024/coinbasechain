@@ -54,6 +54,35 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
     // Successfully evicted a peer, continue with adding new peer
   }
 
+  // Enforce per-IP inbound limit before adding
+  if (is_inbound) {
+    // Normalize address
+    auto normalize = [](const std::string& s) -> std::string {
+      try {
+        boost::system::error_code ec;
+        auto ip = boost::asio::ip::make_address(s, ec);
+        if (ec) return s;
+        if (ip.is_v6() && ip.to_v6().is_v4_mapped()) {
+          auto v4 = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, ip.to_v6());
+          return v4.to_string();
+        }
+        return ip.to_string();
+      } catch (...) {
+        return s;
+      }
+    };
+    const std::string new_addr = normalize(peer->address());
+    int same_ip_inbound = 0;
+    for (const auto& [id, p] : peers_) {
+      if (p->is_inbound() && normalize(p->address()) == new_addr) {
+        same_ip_inbound++;
+        if (same_ip_inbound >= MAX_INBOUND_PER_IP) {
+          return -1; // Reject new inbound from same IP
+        }
+      }
+    }
+  }
+
   // Allocate ID and add peer
   int peer_id = allocate_peer_id();
   peer->set_id(peer_id);  // Set the ID on the peer object
@@ -258,6 +287,42 @@ bool PeerManager::needs_more_outbound() const {
 
 bool PeerManager::can_accept_inbound() const {
   return inbound_count() < config_.max_inbound_peers;
+}
+
+bool PeerManager::can_accept_inbound_from(const std::string& address) const {
+  // Enforce global inbound limit AND per-IP limit
+  if (!can_accept_inbound()) return false;
+
+  // Normalize address (map IPv4-mapped IPv6 to IPv4 dotted-quad)
+  auto normalize = [](const std::string& s) -> std::string {
+    try {
+      boost::system::error_code ec;
+      auto ip = boost::asio::ip::make_address(s, ec);
+      if (ec) return s;
+      if (ip.is_v6() && ip.to_v6().is_v4_mapped()) {
+        auto v4 = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, ip.to_v6());
+        return v4.to_string();
+      }
+      return ip.to_string();
+    } catch (...) {
+      return s;
+    }
+  };
+
+  const std::string needle = normalize(address);
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  int same_ip_inbound = 0;
+  for (const auto& [id, peer] : peers_) {
+    if (!peer || !peer->is_inbound()) continue;
+    if (normalize(peer->address()) == needle) {
+      same_ip_inbound++;
+      if (same_ip_inbound >= MAX_INBOUND_PER_IP) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 bool PeerManager::evict_inbound_peer() {

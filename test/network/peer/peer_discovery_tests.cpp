@@ -34,6 +34,66 @@ static NetworkAddress MakeIPv4Address(const std::string& ip_str, uint16_t port) 
     return addr;
 }
 
+TEST_CASE("GETADDR replies only to inbound peers (ignore outbound)", "[network][peer_discovery][getaddr]") {
+    SimulatedNetwork net(2710);
+    TestOrchestrator orch(&net);
+    net.EnableCommandTracking(true);
+
+    SimulatedNode nodeA(1, &net); // will receive GETADDR (from its perspective, peer is inbound)
+    SimulatedNode nodeB(2, &net);
+
+    REQUIRE(nodeB.ConnectTo(nodeA.GetId()));
+    REQUIRE(orch.WaitForConnection(nodeA, nodeB));
+
+    // Force a GETADDR from A -> B; B sees A as outbound, so should IGNORE
+    auto hdr = message::create_header(protocol::magic::REGTEST, protocol::commands::GETADDR, {});
+    auto hdr_bytes = message::serialize_header(hdr);
+    net.SendMessage(nodeA.GetId(), nodeB.GetId(), hdr_bytes);
+
+    orch.AdvanceTime(std::chrono::milliseconds(200));
+
+    int addr_count = net.CountCommandSent(nodeB.GetId(), nodeA.GetId(), protocol::commands::ADDR);
+    REQUIRE(addr_count == 0);
+}
+
+TEST_CASE("GETADDR per-peer rate limiting (cooldown before next ADDR)", "[network][peer_discovery][getaddr][ratelimit]") {
+    SimulatedNetwork net(2711);
+    TestOrchestrator orch(&net);
+    net.EnableCommandTracking(true);
+
+    SimulatedNode server(1, &net);   // Will respond to GETADDR (peer is inbound)
+    SimulatedNode client(2, &net);   // Will send GETADDR requests
+
+    REQUIRE(client.ConnectTo(server.GetId()));
+    REQUIRE(orch.WaitForConnection(server, client));
+
+    // First GETADDR: client -> server, expect one ADDR
+    auto hdr1 = message::create_header(protocol::magic::REGTEST, protocol::commands::GETADDR, {});
+    auto hdr1_bytes = message::serialize_header(hdr1);
+    net.SendMessage(client.GetId(), server.GetId(), hdr1_bytes);
+    orch.AdvanceTime(std::chrono::milliseconds(200));
+    REQUIRE(net.CountCommandSent(server.GetId(), client.GetId(), protocol::commands::ADDR) == 1);
+
+    // Second GETADDR within cooldown window: should be ignored
+    auto hdr2 = message::create_header(protocol::magic::REGTEST, protocol::commands::GETADDR, {});
+    auto hdr2_bytes = message::serialize_header(hdr2);
+    net.SendMessage(client.GetId(), server.GetId(), hdr2_bytes);
+    orch.AdvanceTime(std::chrono::milliseconds(200));
+    REQUIRE(net.CountCommandSent(server.GetId(), client.GetId(), protocol::commands::ADDR) == 1);
+
+    // Advance time beyond cooldown (60s) gradually and try again
+    for (int i = 0; i < 310; ++i) { // 310 * 200ms = 62s
+        orch.AdvanceTime(std::chrono::milliseconds(200));
+    }
+
+    auto hdr3 = message::create_header(protocol::magic::REGTEST, protocol::commands::GETADDR, {});
+    auto hdr3_bytes = message::serialize_header(hdr3);
+    net.SendMessage(client.GetId(), server.GetId(), hdr3_bytes);
+    orch.AdvanceTime(std::chrono::milliseconds(300));
+
+    REQUIRE(net.CountCommandSent(server.GetId(), client.GetId(), protocol::commands::ADDR) == 2);
+}
+
 static NetworkAddress MakeIPv6Address(const std::string& ipv6_hex, uint16_t port) {
     NetworkAddress addr;
     addr.services = NODE_NETWORK;
