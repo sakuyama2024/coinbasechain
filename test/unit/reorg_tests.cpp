@@ -146,7 +146,8 @@ TEST_CASE("Reorg - Deep reorg protection (suspicious_reorg_depth)", "[reorg]") {
 
     auto params = ChainParams::CreateRegTest();
     // Set suspicious_reorg_depth=7 (allow up to depth 6, reject depth 7+)
-    TestChainstateManager chainstate(*params, 7);
+    params->SetSuspiciousReorgDepth(7);
+    TestChainstateManager chainstate(*params);
     chainstate.Initialize(params->GenesisBlock());
 
     const auto& genesis = params->GenesisBlock();
@@ -769,7 +770,8 @@ TEST_CASE("Reorg - Persistence after failed reorg attempt", "[reorg][persistence
     // Phase 1: Build chains and trigger rejected reorg
     {
         // Set suspicious_reorg_depth=7 to reject depth-7 reorg
-        TestChainstateManager chainstate(*params, 7);
+        params->SetSuspiciousReorgDepth(7);
+        TestChainstateManager chainstate(*params);
         chainstate.Initialize(params->GenesisBlock());
 
         const auto& genesis = params->GenesisBlock();
@@ -809,7 +811,8 @@ TEST_CASE("Reorg - Persistence after failed reorg attempt", "[reorg][persistence
 
     // Phase 2: Load and verify we're still on original chain
     {
-        TestChainstateManager chainstate2(*params, 7);
+        params->SetSuspiciousReorgDepth(7);
+        TestChainstateManager chainstate2(*params);
         REQUIRE(chainstate2.Load(test_file));
 
         // Verify tip is still the original 7-block chain

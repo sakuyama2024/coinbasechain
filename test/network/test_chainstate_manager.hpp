@@ -27,9 +27,8 @@ public:
     /**
      * Constructor - same as ChainstateManager
      */
-    TestChainstateManager(const chain::ChainParams& params,
-                         int suspicious_reorg_depth = 100)
-        : ChainstateManager(params, suspicious_reorg_depth)
+    explicit TestChainstateManager(const chain::ChainParams& params)
+        : ChainstateManager(params)
         , bypass_pow_validation_(true)
         , bypass_contextual_validation_(true)
     {

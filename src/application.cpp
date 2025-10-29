@@ -313,12 +313,14 @@ bool Application::init_chain() {
   }
 
   // Create chainstate manager (which owns BlockManager)
-  // Use command-line override if provided, otherwise use chain params default
-  int suspicious_reorg_depth = config_.suspicious_reorg_depth > 0
-      ? config_.suspicious_reorg_depth
-      : chain_params_->GetConsensus().nSuspiciousReorgDepth;
-  chainstate_manager_ = std::make_unique<validation::ChainstateManager>(
-      *chain_params_, suspicious_reorg_depth);
+  // Apply command-line override to chain params if provided
+  if (config_.suspicious_reorg_depth > 0) {
+    LOG_INFO("Overriding suspicious reorg depth: {} (default was {})",
+             config_.suspicious_reorg_depth,
+             chain_params_->GetConsensus().nSuspiciousReorgDepth);
+    chain_params_->SetSuspiciousReorgDepth(config_.suspicious_reorg_depth);
+  }
+  chainstate_manager_ = std::make_unique<validation::ChainstateManager>(*chain_params_);
 
   // Try to load headers from disk
   std::string headers_file = (config_.datadir / "headers.json").string();

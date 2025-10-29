@@ -81,6 +81,9 @@ public:
   std::string GetChainTypeString() const;
   const std::vector<std::string> &FixedSeeds() const { return vFixedSeeds; }
 
+  // Mutators (for CLI overrides)
+  void SetSuspiciousReorgDepth(int32_t depth) { consensus.nSuspiciousReorgDepth = depth; }
+
   // Factory methods
   static std::unique_ptr<ChainParams> CreateMainNet();
   static std::unique_ptr<ChainParams> CreateTestNet();

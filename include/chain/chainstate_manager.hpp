@@ -36,8 +36,7 @@ namespace validation {
 class ChainstateManager {
 public:
   // LIFETIME: ChainParams reference must outlive this ChainstateManager
-  explicit ChainstateManager(const chain::ChainParams &params,
-                             int suspicious_reorg_depth = 100);
+  explicit ChainstateManager(const chain::ChainParams &params);
 
   // CRITICAL ANTI-DOS: Cheap commitment PoW check BEFORE index, full PoW AFTER
   // (cached if fails) ORPHAN HANDLING: Missing parent → cached as orphan (DoS

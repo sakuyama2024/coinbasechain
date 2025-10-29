@@ -27,7 +27,7 @@ public:
         header.hashRandomX=rx; ValidationState st; REQUIRE(chainstate.ProcessNewBlockHeader(header, st)); return header.GetHash();
     }
     const CBlockIndex* Get(const uint256& h){ return chainstate.LookupBlockIndex(h); }
-    std::unique_ptr<ChainParams> params; ChainstateManager chainstate{*params, 100}; uint256 genesis_hash;
+    std::unique_ptr<ChainParams> params; ChainstateManager chainstate{*params}; uint256 genesis_hash;
 };
 
 TEST_CASE("InvalidateBlock (chain) - Basic invalidation", "[invalidateblock][chain]") {

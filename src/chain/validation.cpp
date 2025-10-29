@@ -74,8 +74,8 @@ bool ContextualCheckBlockHeader(const CBlockHeader &header,
     int32_t currentHeight = pindexPrev ? pindexPrev->nHeight + 1 : 0;
     int32_t expirationHeight = consensus.nNetworkExpirationInterval;
 
-    // Reject blocks beyond expiration height
-    if (currentHeight > expirationHeight) {
+    // Reject blocks at or beyond expiration height
+    if (currentHeight >= expirationHeight) {
       return state.Invalid("network-expired",
         "Network expired at block " + std::to_string(expirationHeight) +
         ". This version is outdated. Please update to the latest version to continue.");

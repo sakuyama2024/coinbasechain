@@ -34,8 +34,11 @@ public:
     explicit TestNode(int id, int suspicious_reorg_depth = 100)
         : node_id(id)
         , params(ChainParams::CreateRegTest())
-        , chainstate(std::make_unique<TestChainstateManager>(*params, suspicious_reorg_depth))
     {
+        if (suspicious_reorg_depth != 100) {
+            params->SetSuspiciousReorgDepth(suspicious_reorg_depth);
+        }
+        chainstate = std::make_unique<TestChainstateManager>(*params);
         chainstate->Initialize(params->GenesisBlock());
     }
 

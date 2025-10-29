@@ -33,10 +33,9 @@ static std::string FormatDateTimeUTC(int64_t t) {
   return std::string(buf);
 }
 
-ChainstateManager::ChainstateManager(const chain::ChainParams &params,
-                                     int suspicious_reorg_depth)
+ChainstateManager::ChainstateManager(const chain::ChainParams &params)
     : block_manager_(), params_(params),
-      suspicious_reorg_depth_(suspicious_reorg_depth) {}
+      suspicious_reorg_depth_(params.GetConsensus().nSuspiciousReorgDepth) {}
 
 chain::CBlockIndex *
 ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,

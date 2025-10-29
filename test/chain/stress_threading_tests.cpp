@@ -13,7 +13,7 @@ using namespace coinbasechain;
 
 TEST_CASE("Stress test: High concurrency validation", "[stress][threading]") {
     auto params = chain::ChainParams::CreateRegTest();
-    validation::ChainstateManager chainstate(*params, 100);
+    validation::ChainstateManager chainstate(*params);
     CBlockHeader genesis = params->GenesisBlock();
     REQUIRE(chainstate.Initialize(genesis));
 

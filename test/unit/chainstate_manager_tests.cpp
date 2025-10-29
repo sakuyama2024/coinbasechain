@@ -26,8 +26,8 @@ using namespace coinbasechain::chain;
 // Test subclass that bypasses expensive PoW validation
 class TestChainstateManager : public ChainstateManager {
 public:
-    explicit TestChainstateManager(const ChainParams& params, int suspicious_reorg_depth = 100)
-        : ChainstateManager(params, suspicious_reorg_depth), bypass_pow_validation_(true) {}
+    explicit TestChainstateManager(const ChainParams& params)
+        : ChainstateManager(params), bypass_pow_validation_(true) {}
 
     // Control whether PoW checks pass
     void SetBypassPoW(bool bypass) { bypass_pow_validation_ = bypass; }
@@ -406,7 +406,9 @@ TEST_CASE("ChainstateManager - Reorg", "[chain][chainstate_manager][unit]") {
 
     SECTION("Deep reorg rejected") {
         // Set suspicious reorg depth to 2
-        TestChainstateManager csm_limited(*params, 2);
+        auto params_limited = ChainParams::CreateRegTest();
+        params_limited->SetSuspiciousReorgDepth(2);
+        TestChainstateManager csm_limited(*params_limited);
         csm_limited.Initialize(genesis);
 
         // Build chain A: genesis -> A1 -> A2

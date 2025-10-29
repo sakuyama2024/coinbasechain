@@ -63,7 +63,8 @@ TEST_CASE("Notifications - SuspiciousReorg notification emitted on deep reorg", 
 
     auto params = ChainParams::CreateRegTest();
     // Set suspicious_reorg_depth=7 (allow up to depth 6, reject depth 7+)
-    TestChainstateManager chainstate(*params, 7);
+    params->SetSuspiciousReorgDepth(7);
+    TestChainstateManager chainstate(*params);
     chainstate.Initialize(params->GenesisBlock());
 
     const auto& genesis = params->GenesisBlock();
@@ -124,7 +125,8 @@ TEST_CASE("Notifications - SuspiciousReorg not emitted on allowed reorg", "[noti
 
     auto params = ChainParams::CreateRegTest();
     // Set suspicious_reorg_depth=7 (allow up to depth 6, reject depth 7+)
-    TestChainstateManager chainstate(*params, 7);
+    params->SetSuspiciousReorgDepth(7);
+    TestChainstateManager chainstate(*params);
     chainstate.Initialize(params->GenesisBlock());
 
     const auto& genesis = params->GenesisBlock();
@@ -177,7 +179,8 @@ TEST_CASE("Notifications - Multiple subscribers receive SuspiciousReorg notifica
     // This ensures the notification system properly broadcasts to all listeners
 
     auto params = ChainParams::CreateRegTest();
-    TestChainstateManager chainstate(*params, 5);
+    params->SetSuspiciousReorgDepth(5);
+    TestChainstateManager chainstate(*params);
     chainstate.Initialize(params->GenesisBlock());
 
     const auto& genesis = params->GenesisBlock();
@@ -373,7 +376,8 @@ TEST_CASE("Notifications - Subscription RAII cleanup", "[notifications]") {
     // This ensures no memory leaks or dangling callbacks
 
     auto params = ChainParams::CreateRegTest();
-    TestChainstateManager chainstate(*params, 5);
+    params->SetSuspiciousReorgDepth(5);
+    TestChainstateManager chainstate(*params);
     chainstate.Initialize(params->GenesisBlock());
 
     const auto& genesis = params->GenesisBlock();
@@ -406,7 +410,8 @@ TEST_CASE("Notifications - Subscription RAII cleanup", "[notifications]") {
     }
 
     // Create new chainstate for second test
-    TestChainstateManager chainstate2(*params, 5);
+    params->SetSuspiciousReorgDepth(5);
+    TestChainstateManager chainstate2(*params);
     chainstate2.Initialize(params->GenesisBlock());
 
     // Build chain that would trigger notification again

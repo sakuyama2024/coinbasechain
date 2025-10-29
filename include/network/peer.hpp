@@ -199,11 +199,19 @@ private:
   uint64_t last_ping_nonce_ = 0;
   std::chrono::steady_clock::time_point ping_sent_time_;
 
-public:
   // Block announcement queue (like Bitcoin's m_blocks_for_inv_relay)
   // Blocks to announce to this peer via INV messages
   std::vector<uint256> blocks_for_inv_relay_;
-  std::mutex block_inv_mutex_;  // Protects blocks_for_inv_relay_
+  mutable std::mutex block_inv_mutex_;  // Protects blocks_for_inv_relay_
+
+public:
+  // Thread-safe accessor for block announcement queue
+  // Usage: peer->with_block_inv_queue([](auto& queue) { queue.push_back(hash); });
+  template<typename F>
+  void with_block_inv_queue(F&& func) {
+    std::lock_guard<std::mutex> lock(block_inv_mutex_);
+    func(blocks_for_inv_relay_);
+  }
 };
 
 } // namespace network

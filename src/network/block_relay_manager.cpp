@@ -61,17 +61,17 @@ void BlockRelayManager::AnnounceTipToAllPeers() {
         continue;
       }
 
-      std::lock_guard<std::mutex> lock(peer->block_inv_mutex_);
-
-      // Only add if not already in this peer's queue (per-peer deduplication)
-      auto& queue = peer->blocks_for_inv_relay_;
-      if (std::find(queue.begin(), queue.end(), current_tip_hash) == queue.end()) {
-        queue.push_back(current_tip_hash);
-        // Record last announcement (hash + time)
-        std::lock_guard<std::mutex> guard(announce_mutex_);
-        last_announced_to_peer_[peer->id()] = current_tip_hash;
-        last_announce_time_s_[peer->id()] = now_s;
-      }
+      // Thread-safe access to block announcement queue
+      peer->with_block_inv_queue([&](auto& queue) {
+        // Only add if not already in this peer's queue (per-peer deduplication)
+        if (std::find(queue.begin(), queue.end(), current_tip_hash) == queue.end()) {
+          queue.push_back(current_tip_hash);
+          // Record last announcement (hash + time)
+          std::lock_guard<std::mutex> guard(announce_mutex_);
+          last_announced_to_peer_[peer->id()] = current_tip_hash;
+          last_announce_time_s_[peer->id()] = now_s;
+        }
+      });
     }
   }
 }
@@ -99,19 +99,19 @@ void BlockRelayManager::AnnounceTipToPeer(Peer* peer) {
   static constexpr int64_t REANNOUNCE_INTERVAL_SEC = 10LL * 60;
 
   // Add to peer's announcement queue (like Bitcoin's m_blocks_for_inv_relay)
-  std::lock_guard<std::mutex> lock(peer->block_inv_mutex_);
+  // Thread-safe access to block announcement queue
+  peer->with_block_inv_queue([&](auto& queue) {
+    // Only add if not already in this peer's queue (per-peer deduplication)
+    const bool already_queued = (std::find(queue.begin(), queue.end(), current_tip_hash) != queue.end());
 
-  // Only add if not already in this peer's queue (per-peer deduplication)
-  auto& queue = peer->blocks_for_inv_relay_;
-  const bool already_queued = (std::find(queue.begin(), queue.end(), current_tip_hash) != queue.end());
-
-  // For per-peer READY event, ignore TTL and ensure the current tip is queued once
-  if (!already_queued) {
-    queue.push_back(current_tip_hash);
-    std::lock_guard<std::mutex> guard(announce_mutex_);
-    last_announced_to_peer_[peer->id()] = current_tip_hash;
-    last_announce_time_s_[peer->id()] = now_s;
-  }
+    // For per-peer READY event, ignore TTL and ensure the current tip is queued once
+    if (!already_queued) {
+      queue.push_back(current_tip_hash);
+      std::lock_guard<std::mutex> guard(announce_mutex_);
+      last_announced_to_peer_[peer->id()] = current_tip_hash;
+      last_announce_time_s_[peer->id()] = now_s;
+    }
+  });
 }
 
 void BlockRelayManager::FlushBlockAnnouncements() {
@@ -128,13 +128,16 @@ void BlockRelayManager::FlushBlockAnnouncements() {
 
     // Get and clear this peer's pending blocks
     std::vector<uint256> blocks_to_announce;
-    {
-      std::lock_guard<std::mutex> lock(peer->block_inv_mutex_);
-      if (peer->blocks_for_inv_relay_.empty()) {
-        continue;
+    peer->with_block_inv_queue([&](auto& queue) {
+      if (!queue.empty()) {
+        blocks_to_announce = std::move(queue);
+        queue.clear();
       }
-      blocks_to_announce = std::move(peer->blocks_for_inv_relay_);
-      peer->blocks_for_inv_relay_.clear();
+    });
+
+    // Skip if no blocks to announce
+    if (blocks_to_announce.empty()) {
+      continue;
     }
 
     // Create and send INV message with pending blocks

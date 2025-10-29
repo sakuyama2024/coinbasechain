@@ -21,7 +21,7 @@ TEST_CASE("ChainstateManager thread safety", "[validation][threading]") {
 
     // Create test environment
     auto params = chain::ChainParams::CreateRegTest();
-    validation::ChainstateManager chainstate(*params, 100);
+    validation::ChainstateManager chainstate(*params);
 
     // Initialize with genesis
     CBlockHeader genesis = params->GenesisBlock();
