@@ -51,13 +51,11 @@ TEST_CASE("Orphan Headers - Basic Detection", "[orphan][basic]") {
         uint256 unknownParent = RandomHash();
         CBlockHeader orphan = CreateTestHeader(unknownParent, 1234567890);
 
-        ValidationState state;
-        chain::CBlockIndex* result = chainstate.AcceptBlockHeader(orphan, state, /*peer_id=*/1);
-
-        // Should return nullptr and cache as orphan
-        REQUIRE(result == nullptr);
-        REQUIRE(state.GetRejectReason() == "orphaned");
+        // Add as orphan via orphan pool API (no Accept on missing parent)
+        bool added = chainstate.AddOrphanHeader(orphan, /*peer_id=*/1);
+        REQUIRE(added);
         REQUIRE(chainstate.GetOrphanHeaderCount() == 1);
+        REQUIRE(chainstate.LookupBlockIndex(orphan.GetHash()) == nullptr);
     }
 
     SECTION("Accept non-orphan when parent exists") {
@@ -68,7 +66,7 @@ TEST_CASE("Orphan Headers - Basic Detection", "[orphan][basic]") {
         CBlockHeader valid = CreateTestHeader(genesis.GetHash(), genesis.nTime + 120);
 
         ValidationState state;
-        chain::CBlockIndex* result = chainstate.AcceptBlockHeader(valid, state, /*peer_id=*/1);
+        chain::CBlockIndex* result = chainstate.AcceptBlockHeader(valid, state, /*min_pow_checked=*/true);
 
         // Should succeed
         REQUIRE(result != nullptr);
@@ -83,8 +81,9 @@ TEST_CASE("Orphan Headers - Basic Detection", "[orphan][basic]") {
         CBlockHeader orphan = CreateTestHeader(unknownParent, 1234567890);
         uint256 orphanHash = orphan.GetHash();
 
-        ValidationState state;
-        chainstate.AcceptBlockHeader(orphan, state, /*peer_id=*/1);
+        // Add to orphan pool (not block index)
+        bool added = chainstate.AddOrphanHeader(orphan, /*peer_id=*/1);
+        REQUIRE(added);
 
         // Orphan should be in orphan pool, NOT in block index
         REQUIRE(chainstate.LookupBlockIndex(orphanHash) == nullptr);
@@ -97,7 +96,7 @@ TEST_CASE("Orphan Headers - Basic Detection", "[orphan][basic]") {
 
         // Try to re-add genesis
         ValidationState state;
-        chain::CBlockIndex* result = chainstate.AcceptBlockHeader(genesis, state, /*peer_id=*/1);
+        chain::CBlockIndex* result = chainstate.AcceptBlockHeader(genesis, state, /*min_pow_checked=*/true);
 
         // Should return existing genesis (duplicate detection at line 48 of chainstate_manager.cpp)
         // and NOT be cached as orphan
@@ -122,14 +121,14 @@ TEST_CASE("Orphan Headers - Orphan Processing", "[orphan][basic]") {
         CBlockHeader childHeader = CreateTestHeader(parentHash, genesis.nTime + 240, 1001);
 
         // Send child first (becomes orphan)
-        ValidationState childState;
-        chainstate.AcceptBlockHeader(childHeader, childState, /*peer_id=*/1);
+        ValidationState childState; // unused now
+        bool added = chainstate.AddOrphanHeader(childHeader, /*peer_id=*/1);
+        REQUIRE(added);
         REQUIRE(chainstate.GetOrphanHeaderCount() == 1);
-        REQUIRE(childState.GetRejectReason() == "orphaned");
 
         // Step 2: Send parent (should trigger child processing)
         ValidationState parentState;
-        chain::CBlockIndex* parentResult = chainstate.AcceptBlockHeader(parentHeader, parentState, /*peer_id=*/1);
+        chain::CBlockIndex* parentResult = chainstate.AcceptBlockHeader(parentHeader, parentState, /*min_pow_checked=*/true);
 
         // Parent accepted
         REQUIRE(parentResult != nullptr);
@@ -159,15 +158,15 @@ TEST_CASE("Orphan Headers - Orphan Processing", "[orphan][basic]") {
         ValidationState state;
 
         // Send C (orphan - parent B missing)
-        chainstate.AcceptBlockHeader(headerC, state, /*peer_id=*/1);
+        REQUIRE(chainstate.AddOrphanHeader(headerC, /*peer_id=*/1));
         REQUIRE(chainstate.GetOrphanHeaderCount() == 1);
 
         // Send B (orphan - parent A missing)
-        chainstate.AcceptBlockHeader(headerB, state, /*peer_id=*/1);
+        REQUIRE(chainstate.AddOrphanHeader(headerB, /*peer_id=*/1));
         REQUIRE(chainstate.GetOrphanHeaderCount() == 2);
 
         // Send A (parent = genesis, exists!)
-        chainstate.AcceptBlockHeader(headerA, state, /*peer_id=*/1);
+        chainstate.AcceptBlockHeader(headerA, state, /*min_pow_checked=*/true);
 
         // All orphans should cascade: A accepted -> triggers B -> B triggers C
         REQUIRE(chainstate.GetOrphanHeaderCount() == 0);
@@ -194,13 +193,13 @@ TEST_CASE("Orphan Headers - Orphan Processing", "[orphan][basic]") {
         ValidationState state;
 
         // Send B, C, D (all orphaned - parent A missing)
-        chainstate.AcceptBlockHeader(headerB, state, /*peer_id=*/1);
-        chainstate.AcceptBlockHeader(headerC, state, /*peer_id=*/1);
-        chainstate.AcceptBlockHeader(headerD, state, /*peer_id=*/1);
+        REQUIRE(chainstate.AddOrphanHeader(headerB, /*peer_id=*/1));
+        REQUIRE(chainstate.AddOrphanHeader(headerC, /*peer_id=*/1));
+        REQUIRE(chainstate.AddOrphanHeader(headerD, /*peer_id=*/1));
         REQUIRE(chainstate.GetOrphanHeaderCount() == 3);
 
         // Send parent A (should trigger all 3 children)
-        chainstate.AcceptBlockHeader(headerA, state, /*peer_id=*/1);
+        chainstate.AcceptBlockHeader(headerA, state, /*min_pow_checked=*/true);
 
         // All 3 children should be processed
         REQUIRE(chainstate.GetOrphanHeaderCount() == 0);
@@ -230,13 +229,13 @@ TEST_CASE("Orphan Headers - Orphan Processing", "[orphan][basic]") {
 
         // Send in REVERSE order (all become orphans)
         for (int i = DEPTH - 1; i >= 1; i--) {
-            chainstate.AcceptBlockHeader(headers[i], state, /*peer_id=*/1);
+            REQUIRE(chainstate.AddOrphanHeader(headers[i], /*peer_id=*/1));
         }
         REQUIRE(chainstate.GetOrphanHeaderCount() == DEPTH - 1);
 
         // Send the first header (extends genesis)
         // Should trigger cascade processing of all orphans
-        chainstate.AcceptBlockHeader(headers[0], state, /*peer_id=*/1);
+        chainstate.AcceptBlockHeader(headers[0], state, /*min_pow_checked=*/true);
 
         REQUIRE(chainstate.GetOrphanHeaderCount() == 0);
 
@@ -260,11 +259,11 @@ TEST_CASE("Orphan Headers - Duplicate Detection", "[orphan][basic]") {
         ValidationState state1, state2;
 
         // Send once
-        chainstate.AcceptBlockHeader(orphan, state1, /*peer_id=*/1);
+        REQUIRE(chainstate.AddOrphanHeader(orphan, /*peer_id=*/1));
         REQUIRE(chainstate.GetOrphanHeaderCount() == 1);
 
         // Send again (duplicate)
-        chainstate.AcceptBlockHeader(orphan, state2, /*peer_id=*/1);
+        REQUIRE(chainstate.AddOrphanHeader(orphan, /*peer_id=*/1));
 
         // Should not add duplicate
         REQUIRE(chainstate.GetOrphanHeaderCount() == 1);
@@ -279,11 +278,11 @@ TEST_CASE("Orphan Headers - Duplicate Detection", "[orphan][basic]") {
         ValidationState state1, state2;
 
         // Peer 1 sends it
-        chainstate.AcceptBlockHeader(orphan, state1, /*peer_id=*/1);
+        REQUIRE(chainstate.AddOrphanHeader(orphan, /*peer_id=*/1));
         REQUIRE(chainstate.GetOrphanHeaderCount() == 1);
 
         // Peer 2 sends same header
-        chainstate.AcceptBlockHeader(orphan, state2, /*peer_id=*/2);
+        REQUIRE(chainstate.AddOrphanHeader(orphan, /*peer_id=*/2));
 
         // Only stored once
         REQUIRE(chainstate.GetOrphanHeaderCount() == 1);
@@ -302,16 +301,16 @@ TEST_CASE("Orphan Headers - Duplicate Detection", "[orphan][basic]") {
         ValidationState state;
 
         // Add as orphan
-        chainstate.AcceptBlockHeader(child, state, /*peer_id=*/1);
+        REQUIRE(chainstate.AddOrphanHeader(child, /*peer_id=*/1));
         REQUIRE(chainstate.GetOrphanHeaderCount() == 1);
 
         // Parent arrives, child processed
-        chainstate.AcceptBlockHeader(parent, state, /*peer_id=*/1);
+        chainstate.AcceptBlockHeader(parent, state, /*min_pow_checked=*/true);
         REQUIRE(chainstate.GetOrphanHeaderCount() == 0);
         REQUIRE(chainstate.LookupBlockIndex(child.GetHash()) != nullptr);
 
-        // Try to add same header again
-        chainstate.AcceptBlockHeader(child, state, /*peer_id=*/1);
+        // Try to add same header again via Accept (should be duplicate and not re-add)
+        chainstate.AcceptBlockHeader(child, state, /*min_pow_checked=*/true);
 
         // Should recognize as duplicate, NOT re-add to orphan pool
         REQUIRE(chainstate.GetOrphanHeaderCount() == 0);
@@ -336,7 +335,7 @@ TEST_CASE("Orphan Headers - Empty State", "[orphan][basic]") {
         for (int i = 0; i < 5; i++) {
             uint256 unknownParent = RandomHash();
             CBlockHeader orphan = CreateTestHeader(unknownParent, 1234567890 + i, 1000 + i);
-            chainstate.AcceptBlockHeader(orphan, state, /*peer_id=*/1);
+            REQUIRE(chainstate.AddOrphanHeader(orphan, /*peer_id=*/1));
         }
 
         REQUIRE(chainstate.GetOrphanHeaderCount() == 5);

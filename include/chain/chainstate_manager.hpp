@@ -109,10 +109,33 @@ protected:
       int64_t adjusted_time, ValidationState &state) const;
 
 private:
-  // Connect/disconnect blocks (headers-only: just updates chain state and
-  // notifications) Assumes validation_mutex_ held by caller
-  bool ConnectTip(chain::CBlockIndex *pindexNew);
-  bool DisconnectTip();
+  // Activation step result classification (Core-alike control flow)
+  enum class ActivateResult {
+    OK,                // activation complete or nothing to do
+    CONSENSUS_INVALID, // candidate (or its chain) is consensus-invalid
+    POLICY_REFUSED,    // refused by local policy (e.g., suspicious reorg)
+    SYSTEM_ERROR       // unexpected failure (I/O/corruption)
+  };
+
+  // Deferred notification events (dispatched after releasing validation lock)
+  enum class NotifyType { BlockConnected, BlockDisconnected, ChainTip };
+  struct PendingNotification {
+    NotifyType type;
+    CBlockHeader header; // for block connect/disconnect
+    chain::CBlockIndex *pindex{nullptr};
+    int height{0}; // for ChainTip
+  };
+
+  // One activation attempt for a specific candidate; does not loop.
+  // Assumes validation_mutex_ is held by caller. Appends events on success only.
+  ActivateResult ActivateBestChainStep(chain::CBlockIndex *pindexMostWork,
+                                       std::vector<PendingNotification> &events);
+
+  // Connect/disconnect blocks (headers-only: just updates chain state and queues
+  // notifications). Assumes validation_mutex_ held by caller
+  bool ConnectTip(chain::CBlockIndex *pindexNew,
+                  std::vector<PendingNotification> &events);
+  bool DisconnectTip(std::vector<PendingNotification> &events);
 
   // Process orphan headers waiting for parent (recursive)
   // Assumes validation_mutex_ held by caller

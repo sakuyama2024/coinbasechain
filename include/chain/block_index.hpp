@@ -90,6 +90,10 @@ public:
   // Old blocks (from disk/reorgs) are not relayed (peers already know them)
   int64_t nTimeReceived{0};
 
+  // Monotonic maximum of nTime up to and including this block (Core: nTimeMax)
+  // Ensures time is non-decreasing along the chain for binary searches.
+  int64_t nTimeMax{0};
+
   // Constructor
   CBlockIndex() = default;
 

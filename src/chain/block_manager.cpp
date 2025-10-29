@@ -103,12 +103,15 @@ CBlockIndex *BlockManager::AddToBlockIndex(const CBlockHeader &header) {
     // Not genesis - calculate height and chain work
     pindex->nHeight = pindex->pprev->nHeight + 1;
     pindex->nChainWork = pindex->pprev->nChainWork + GetBlockProof(*pindex);
+    // Maintain monotonic time for searches
+    pindex->nTimeMax = std::max<int64_t>(pindex->pprev->nTimeMax, pindex->GetBlockTime());
     LOG_CHAIN_TRACE("AddToBlockIndex: Created new block index height={} log2_work={:.6f}",
                     pindex->nHeight, std::log(pindex->nChainWork.getdouble()) / std::log(2.0));
   } else {
     // Genesis block
     pindex->nHeight = 0;
     pindex->nChainWork = GetBlockProof(*pindex);
+    pindex->nTimeMax = pindex->GetBlockTime();
     LOG_CHAIN_TRACE("AddToBlockIndex: Created GENESIS block index log2_work={:.6f}",
                     std::log(pindex->nChainWork.getdouble()) / std::log(2.0));
   }
@@ -300,6 +303,23 @@ bool BlockManager::Load(const std::string &filepath,
         }
       } else {
         pindex->pprev = nullptr; // Genesis
+      }
+    }
+
+    // Third pass: Compute nTimeMax in height order to ensure monotonicity
+    std::vector<CBlockIndex*> by_height;
+    by_height.reserve(m_block_index.size());
+    for (auto &kv : m_block_index) {
+      by_height.push_back(&kv.second);
+    }
+    std::sort(by_height.begin(), by_height.end(), [](const CBlockIndex* a, const CBlockIndex* b){
+      return a->nHeight < b->nHeight;
+    });
+    for (CBlockIndex* pindex : by_height) {
+      if (pindex->pprev) {
+        pindex->nTimeMax = std::max<int64_t>(pindex->pprev->nTimeMax, pindex->GetBlockTime());
+      } else {
+        pindex->nTimeMax = pindex->GetBlockTime();
       }
     }
 

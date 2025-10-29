@@ -111,10 +111,8 @@ CBlockIndex *CChain::FindEarliestAtLeast(int64_t nTime, int height) const {
   std::vector<CBlockIndex *>::const_iterator lower = std::lower_bound(
       vChain.begin(), vChain.end(), blockparams,
       [](CBlockIndex *pBlock, const std::pair<int64_t, int> &params) -> bool {
-        // We need nTimeMax, but we don't cache it
-        // For now, just use block time (good enough for headers-only)
-        return pBlock->GetBlockTime() < params.first ||
-               pBlock->nHeight < params.second;
+        // Core semantics: compare monotonic nTimeMax first, then height
+        return pBlock->nTimeMax < params.first || pBlock->nHeight < params.second;
       });
 
   return (lower == vChain.end() ? nullptr : *lower);

@@ -26,29 +26,19 @@ bool CBlockIndexWorkComparator::operator()(const chain::CBlockIndex *pa,
 }
 
 chain::CBlockIndex *ChainSelector::FindMostWorkChain() {
-  if (m_candidates.empty()) {
-    return nullptr;
-  }
-
-  // The set is sorted by chain work (descending), so iterate to find
-  // the first VALID candidate with most work
-  for (auto it = m_candidates.begin(); it != m_candidates.end(); ++it) {
+  // Remove invalid/top-skipped entries while scanning front-to-back
+  while (!m_candidates.empty()) {
+    auto it = m_candidates.begin();
     chain::CBlockIndex *pindexCandidate = *it;
 
-    // CRITICAL: Check if this candidate is actually valid
-    // Skip blocks with failure flags (BLOCK_FAILED_VALID, BLOCK_FAILED_CHILD,
-    // etc.) Also skip blocks not validated to at least BLOCK_VALID_TREE level
-    //
-    // NOTE: IsValid() currently checks BLOCK_FAILED_MASK internally, but we
-    // check it explicitly here for defensive programming and clarity. If
-    // IsValid() is refactored to only check validity levels, this prevents
-    // silent bugs.
+    // Drop FAILED or insufficiently validated entries eagerly
     if ((pindexCandidate->nStatus & chain::BLOCK_FAILED_MASK) ||
         !pindexCandidate->IsValid(chain::BLOCK_VALID_TREE)) {
-      LOG_CHAIN_TRACE("Skipping invalid candidate: height={}, hash={}, status=0x{:x}",
-                pindexCandidate->nHeight,
-                pindexCandidate->GetBlockHash().ToString().substr(0, 16),
-                pindexCandidate->nStatus);
+      LOG_CHAIN_TRACE("Erasing invalid candidate: height={}, hash={}, status=0x{:x}",
+                      pindexCandidate->nHeight,
+                      pindexCandidate->GetBlockHash().ToString().substr(0, 16),
+                      pindexCandidate->nStatus);
+      m_candidates.erase(it);
       continue;
     }
 
@@ -56,7 +46,6 @@ chain::CBlockIndex *ChainSelector::FindMostWorkChain() {
     return pindexCandidate;
   }
 
-  // No valid candidates found
   LOG_CHAIN_TRACE("No valid candidates in set (size={})", m_candidates.size());
   return nullptr;
 }
@@ -87,6 +76,7 @@ void ChainSelector::TryAddBlockIndexCandidate(
               pindex->GetBlockHash().ToString().substr(0, 16));
     return;
   }
+
 
   // CRITICAL SAFETY CHECK: Verify this block has no children
   // A block can only be a candidate if it's a leaf node (no descendants)
@@ -138,7 +128,7 @@ void ChainSelector::TryAddBlockIndexCandidate(
 void ChainSelector::PruneBlockIndexCandidates(
     const chain::BlockManager &block_manager) {
   // Remove all candidates that should no longer be considered as tips:
-  // 1. Blocks with less chainwork than current tip (lost competition)
+  // 1. Blocks with less or equal chainwork than current tip (lost competition or tie)
   // 2. The current tip itself (no longer competing)
   // 3. Any ancestor of the tip (interior of active chain)
   // 4. Any block with children (not a leaf - defensive check)
@@ -166,10 +156,9 @@ void ChainSelector::PruneBlockIndexCandidates(
     chain::CBlockIndex *pindex = *it;
     bool should_remove = false;
 
-    // Rule 1: Remove if less work than tip
+    // Rule 1: Remove if less work than tip (Core semantics keep equal-work ties)
     if (pindex->nChainWork < pindexTip->nChainWork) {
-      LOG_CHAIN_TRACE("Pruning candidate (less work): height={}, hash={}, log2_work={:.6f} < "
-                "tip_log2_work={:.6f}",
+      LOG_CHAIN_TRACE("Pruning candidate (< tip work): height={}, hash={}, log2_work={:.6f} < tip_log2_work={:.6f}",
                 pindex->nHeight,
                 pindex->GetBlockHash().ToString().substr(0, 16),
                 std::log(pindex->nChainWork.getdouble()) / std::log(2.0),
@@ -195,6 +184,15 @@ void ChainSelector::PruneBlockIndexCandidates(
       LOG_CHAIN_TRACE(
           "Pruning candidate (has children, not a leaf!): height={}, hash={}",
           pindex->nHeight, pindex->GetBlockHash().ToString().substr(0, 16));
+      should_remove = true;
+    }
+    // Rule 5: Remove if failed or insufficiently validated
+    else if ((pindex->nStatus & chain::BLOCK_FAILED_MASK) ||
+             !pindex->IsValid(chain::BLOCK_VALID_TREE)) {
+      LOG_CHAIN_TRACE(
+          "Pruning candidate (failed/invalid): height={}, hash={}, status=0x{:x}",
+          pindex->nHeight, pindex->GetBlockHash().ToString().substr(0, 16),
+          pindex->nStatus);
       should_remove = true;
     }
 

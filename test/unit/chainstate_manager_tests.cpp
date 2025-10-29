@@ -791,8 +791,10 @@ TEST_CASE("ChainstateManager - Edge Cases", "[chain][chainstate_manager][unit]")
 
         ValidationState state1, state2;
 
-        csm.AcceptBlockHeader(orphan1, state1, 1);
-        csm.AcceptBlockHeader(orphan2, state2, 2);
+        csm.AcceptBlockHeader(orphan1, state1, /*min_pow_checked=*/true);
+        REQUIRE(csm.AddOrphanHeader(orphan1, /*peer_id=*/1));
+        csm.AcceptBlockHeader(orphan2, state2, /*min_pow_checked=*/true);
+        REQUIRE(csm.AddOrphanHeader(orphan2, /*peer_id=*/2));
 
         REQUIRE(csm.GetOrphanHeaderCount() == 2);
     }
@@ -805,7 +807,8 @@ TEST_CASE("ChainstateManager - Edge Cases", "[chain][chainstate_manager][unit]")
 
         CBlockHeader orphan = CreateChildHeader(missing, 1000);
         ValidationState state;
-        csm.AcceptBlockHeader(orphan, state, 1);
+        csm.AcceptBlockHeader(orphan, state, /*min_pow_checked=*/true);
+        REQUIRE(csm.AddOrphanHeader(orphan, /*peer_id=*/1));
 
         REQUIRE(csm.GetOrphanHeaderCount() == 1);
 

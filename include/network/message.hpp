@@ -59,8 +59,7 @@ public:
   void write_bytes(const std::vector<uint8_t> &data);
 
   // Write protocol structures
-  void write_network_address(const protocol::NetworkAddress &addr,
-                             bool include_timestamp = false);
+  void write_network_address(const protocol::NetworkAddress &addr, bool include_timestamp = false);
   void write_inventory_vector(const protocol::InventoryVector &inv);
 
   // Get serialized data
@@ -136,7 +135,7 @@ public:
  * VERSION message - First message sent to establish connection
  */
 
-/// TOOD what is relay doing 
+
 class VersionMessage : public Message {
 public:
   int32_t version;
@@ -224,7 +223,7 @@ public:
 };
 
 /**
- * INV message - Announce inventory (blocks/transactions)
+ * INV message - Announce inventory (blocks)
  */
 class InvMessage : public Message {
 public:

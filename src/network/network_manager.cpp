@@ -77,7 +77,7 @@ NetworkManager::NetworkManager(
 
   // Create HeaderSyncManager
   header_sync_manager_ = std::make_unique<HeaderSyncManager>(
-      chainstate_manager, *peer_manager_, ban_man_.get());
+      chainstate_manager, *peer_manager_, *ban_man_);
 
   // Create BlockRelayManager
   block_relay_manager_ = std::make_unique<BlockRelayManager>(

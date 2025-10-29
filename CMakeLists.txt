@@ -360,8 +360,13 @@ target_link_libraries(coinbasechain_tests PRIVATE
     Boost::system
 )
 
+# Place legacy test binary alongside other executables
+set_target_properties(coinbasechain_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
+
 # Register test with CTest
-add_test(NAME coinbasechain_tests COMMAND coinbasechain_tests)
+add_test(NAME coinbasechain_tests COMMAND $<TARGET_FILE:coinbasechain_tests>)
 endif() # BUILD_LEGACY_TESTS
 
 # Add tools subdirectory

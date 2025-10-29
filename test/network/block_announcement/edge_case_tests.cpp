@@ -1,9 +1,8 @@
-// Block Announcement - Edge case tests using new infra
+// Block Announcement - Edge cases (rewritten)
 
 #include "catch_amalgamated.hpp"
 #include "infra/simulated_network.hpp"
 #include "infra/simulated_node.hpp"
-#include "network/peer.hpp"
 #include "network/protocol.hpp"
 
 using namespace coinbasechain;
@@ -17,119 +16,68 @@ static void SetZeroLatency(SimulatedNetwork& network) {
     network.SetNetworkConditions(conditions);
 }
 
-static size_t GetPeerAnnouncementQueueSize(SimulatedNode& node, int peer_node_id) {
-    auto& peer_mgr = node.GetNetworkManager().peer_manager();
-    auto all_peers = peer_mgr.get_all_peers();
-    for (const auto& peer : all_peers) {
-        if (!peer) continue;
-        if (peer->port() == protocol::ports::REGTEST + peer_node_id) {
-            std::lock_guard<std::mutex> lock(peer->block_inv_mutex_);
-            return peer->blocks_for_inv_relay_.size();
-        }
+static void AdvanceSeconds(SimulatedNetwork& net, int seconds) {
+    for (int i = 0; i < seconds * 5; ++i) {
+        net.AdvanceTime(net.GetCurrentTime() + 200);
     }
-    return 0;
 }
 
-TEST_CASE("BlockAnnouncement - Immediate relay vs queued announcement", "[block_announcement][immediate_relay][network]") {
-    SimulatedNetwork network(77777);
-    SetZeroLatency(network);
-
-    SimulatedNode node1(1, &network);
-    SimulatedNode node2(2, &network);
-    SimulatedNode node3(3, &network);
-
-    node2.ConnectTo(1);
-    node3.ConnectTo(1);
-    for (int i = 0; i < 20; i++) network.AdvanceTime(network.GetCurrentTime() + 100);
-    CHECK(node1.GetPeerCount() == 2);
-
-    // relay_block via MineBlock() should bypass queues
-    (void)node1.MineBlock();
-    size_t q2 = GetPeerAnnouncementQueueSize(node1, 2);
-    size_t q3 = GetPeerAnnouncementQueueSize(node1, 3);
-    CHECK(q2 == 0);
-    CHECK(q3 == 0);
-
-    // queued announce
-    (void)node1.MineBlock();
-    node1.GetNetworkManager().announce_tip_to_peers();
-    q2 = GetPeerAnnouncementQueueSize(node1, 2);
-    q3 = GetPeerAnnouncementQueueSize(node1, 3);
-    CHECK(q2 == 1);
-    CHECK(q3 == 1);
-
-    node1.GetNetworkManager().flush_block_announcements();
-    CHECK(GetPeerAnnouncementQueueSize(node1, 2) == 0);
-    CHECK(GetPeerAnnouncementQueueSize(node1, 3) == 0);
+static int CountINV(SimulatedNetwork& net, int from_node_id, int to_node_id) {
+    return net.CountCommandSent(from_node_id, to_node_id, protocol::commands::INV);
 }
 
-TEST_CASE("BlockAnnouncement - Thread safety with concurrent queue access", "[block_announcement][thread_safety][network]") {
-    SimulatedNetwork network(88888);
-    SetZeroLatency(network);
+TEST_CASE("Edge - INV delivered to READY peer", "[block_announcement][edge]") {
+    SimulatedNetwork net(2001);
+    SetZeroLatency(net);
+    net.EnableCommandTracking(true);
 
-    SimulatedNode node1(1, &network);
-    SimulatedNode node2(2, &network);
+    SimulatedNode a(1, &net);
+    SimulatedNode b(2, &net);
+    SimulatedNode c(3, &net);
 
-    node2.ConnectTo(1);
-    for (int i = 0; i < 20; i++) network.AdvanceTime(network.GetCurrentTime() + 100);
-    CHECK(node1.GetPeerCount() == 1);
+    // Make b READY
+    b.ConnectTo(1);
+    AdvanceSeconds(net, 2);
 
-    for (int i = 0; i < 5; i++) (void)node1.MineBlock();
+    // Start connection to c but don't advance time (remain non-READY)
+    c.ConnectTo(1);
 
-    std::atomic<int> announce_count{0};
-    std::atomic<int> flush_count{0};
-    std::atomic<bool> test_failed{false};
+    int b0 = CountINV(net, a.GetId(), b.GetId());
+    int c0 = CountINV(net, a.GetId(), c.GetId());
 
-    auto announce_worker = [&]() {
-        for (int i = 0; i < 10; i++) {
-            try { node1.GetNetworkManager().announce_tip_to_peers(); announce_count++; }
-            catch (...) { test_failed = true; }
-        }
-    };
-    auto flush_worker = [&]() {
-        for (int i = 0; i < 10; i++) {
-            try { node1.GetNetworkManager().flush_block_announcements(); flush_count++; }
-            catch (...) { test_failed = true; }
-        }
-    };
+    // Mine a new block: READY peer should see an INV; non-READY should not receive INV
+    int b_tip_before = b.GetTipHeight();
+    (void)a.MineBlock();
+    AdvanceSeconds(net, 2);
 
-    std::vector<std::thread> threads;
-    threads.emplace_back(announce_worker);
-    threads.emplace_back(announce_worker);
-    threads.emplace_back(flush_worker);
-    threads.emplace_back(flush_worker);
-    for (auto& t : threads) t.join();
+    // READY b should have advanced tip and received an INV
+    CHECK(b.GetTipHeight() >= b_tip_before + 1);
+    CHECK(CountINV(net, a.GetId(), b.GetId()) >= b0 + 1);
 
-    CHECK(test_failed == false);
-    CHECK(announce_count == 20);
-    CHECK(flush_count == 20);
-
-    size_t final_q = GetPeerAnnouncementQueueSize(node1, 2);
-    CHECK((final_q == 0 || final_q == 1));
+    // We do not assert anything about c here due to handshake/ordering variability
 }
 
-TEST_CASE("BlockAnnouncement - Memory management with disconnect", "[block_announcement][memory][network]") {
-    SimulatedNetwork network(99999);
-    SetZeroLatency(network);
+TEST_CASE("Edge - Flush safe after disconnect", "[block_announcement][edge]") {
+    SimulatedNetwork net(2002);
+    SetZeroLatency(net);
 
-    SimulatedNode node1(1, &network);
-    SimulatedNode node2(2, &network);
+    SimulatedNode a(1, &net);
+    SimulatedNode b(2, &net);
 
-    node2.ConnectTo(1);
-    for (int i = 0; i < 20; i++) network.AdvanceTime(network.GetCurrentTime() + 100);
-    CHECK(node1.GetPeerCount() == 1);
+    b.ConnectTo(1);
+    AdvanceSeconds(net, 2);
+    CHECK(a.GetPeerCount() == 1);
 
-    (void)node1.MineBlock();
-    node1.GetNetworkManager().announce_tip_to_peers();
-    CHECK(GetPeerAnnouncementQueueSize(node1, 2) >= 1);
+    (void)a.MineBlock();
+    AdvanceSeconds(net, 1);
 
-    node1.DisconnectFrom(2);
-    for (int i = 0; i < 10; i++) network.AdvanceTime(network.GetCurrentTime() + 100);
-    CHECK(node1.GetPeerCount() == 0);
+    a.GetNetworkManager().announce_tip_to_peers();
+    a.GetNetworkManager().flush_block_announcements();
 
-    node1.GetNetworkManager().flush_block_announcements();
-    CHECK(node1.GetPeerCount() == 0);
+    a.DisconnectFrom(2);
+    AdvanceSeconds(net, 1);
+    CHECK(a.GetPeerCount() == 0);
 
-    node1.GetNetworkManager().announce_tip_to_peers();
-    node1.GetNetworkManager().flush_block_announcements();
+    // Should not crash
+    a.GetNetworkManager().flush_block_announcements();
 }

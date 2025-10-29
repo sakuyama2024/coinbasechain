@@ -15,10 +15,12 @@ TEST_CASE("MisbehaviorTest - InvalidPoWPenalty", "[misbehaviortest][network]") {
     SimulatedNetwork network(12345); SetZeroLatency(network);
     SimulatedNode victim(1,&network); AttackSimulatedNode attacker(2,&network);
     for(int i=0;i<5;i++) victim.MineBlock();
-    victim.SetBypassPOWValidation(false);
+    // Connect first with PoW validation bypassed (default)
 attacker.ConnectTo(1);
     TestOrchestrator orch(&network);
     REQUIRE(orch.WaitForConnection(victim, attacker));
+    // Now enable strict PoW validation before sending invalid headers
+    victim.SetBypassPOWValidation(false);
     attacker.SendInvalidPoWHeaders(1, victim.GetTipHash(), 10);
     REQUIRE(orch.WaitForPeerCount(victim, 0, std::chrono::seconds(3)));
 }
@@ -49,10 +51,12 @@ TEST_CASE("MisbehaviorTest - TooManyOrphansPenalty", "[misbehaviortest][network]
     SimulatedNetwork network(12348); SetZeroLatency(network);
     SimulatedNode victim(50,&network); AttackSimulatedNode attacker(60,&network);
     for(int i=0;i<5;i++) victim.MineBlock();
-    victim.SetBypassPOWValidation(false);
+    // Connect first with PoW validation bypassed (default)
 attacker.ConnectTo(50);
     TestOrchestrator orch(&network);
     REQUIRE(orch.WaitForConnection(victim, attacker));
+    // Now enable strict PoW validation before flooding orphans
+    victim.SetBypassPOWValidation(false);
     attacker.SendOrphanHeaders(50,1000);
     REQUIRE(orch.WaitForPeerCount(victim, 0, std::chrono::seconds(5)));
 }

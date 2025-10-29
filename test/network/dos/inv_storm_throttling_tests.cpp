@@ -38,16 +38,20 @@ TEST_CASE("DoS: INV storm bounded GETHEADERS post-IBD", "[dos][inv][throttle]") 
     for (auto& p: peers) REQUIRE(V.ConnectTo(p->GetId()));
     t+=200; net.AdvanceTime(t);
 
+    // Baseline GETHEADERS counts before wave #1
+    int gh_before_w1 = 0;
+    for (auto& p: peers) gh_before_w1 += net.CountCommandSent(V.GetId(), p->GetId(), commands::GETHEADERS);
+
     // Wave #1: Miner mines one block; peers will learn it and INV to V
     (void)miner.MineBlock();
     for (int i=0;i<10;i++){ t+=50; net.AdvanceTime(t);} // allow propagation and INV flush
 
-    // Count GETHEADERS V->each peer; should be <= K (one per peer)
-    int total_gh = 0;
+    // Count GETHEADERS delta V->each peer; should be <= K (one per peer)
+    int gh_after_w1 = 0;
     for (auto& p: peers) {
-        total_gh += net.CountCommandSent(V.GetId(), p->GetId(), commands::GETHEADERS);
+        gh_after_w1 += net.CountCommandSent(V.GetId(), p->GetId(), commands::GETHEADERS);
     }
-    REQUIRE(total_gh <= K);
+    REQUIRE(gh_after_w1 - gh_before_w1 <= K);
 
     // Let V catch up to peers
     for (int i=0;i<20;i++){ t+=50; net.AdvanceTime(t);} 

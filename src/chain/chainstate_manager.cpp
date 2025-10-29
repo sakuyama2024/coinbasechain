@@ -195,210 +195,231 @@ bool ChainstateManager::ProcessNewBlockHeader(const CBlockHeader &header,
 }
 
 bool ChainstateManager::ActivateBestChain(chain::CBlockIndex *pindexMostWork) {
-  std::lock_guard<std::recursive_mutex> lock(validation_mutex_);
+  std::unique_lock<std::recursive_mutex> lock(validation_mutex_);
+  std::vector<PendingNotification> pending_events;
 
   LOG_CHAIN_TRACE("ActivateBestChain: called with pindexMostWork={}",
                   pindexMostWork ? pindexMostWork->GetBlockHash().ToString().substr(0, 16) : "null");
 
-  // Find block with most work if not provided
-  if (!pindexMostWork) {
-    pindexMostWork = chain_selector_.FindMostWorkChain();
-    LOG_CHAIN_TRACE("ActivateBestChain: Found most work chain: {}",
-                    pindexMostWork ? pindexMostWork->GetBlockHash().ToString().substr(0, 16) : "null");
+  // Loop like Core: keep trying next-best candidates until activation succeeds
+  bool success = false;
+  for (;;) {
+    // Resolve candidate if not provided or if previous was consumed
+    if (!pindexMostWork) {
+      pindexMostWork = chain_selector_.FindMostWorkChain();
+      LOG_CHAIN_TRACE("ActivateBestChain: Found most work chain: {}",
+                      pindexMostWork ? pindexMostWork->GetBlockHash().ToString().substr(0, 16) : "null");
+    }
+
+    if (!pindexMostWork) {
+      LOG_CHAIN_TRACE("ActivateBestChain: No candidates found (no competing forks)");
+      success = true;
+      break;
+    }
+
+    // If candidate equals current tip, nothing to do
+    if (block_manager_.GetTip() == pindexMostWork) {
+      success = true;
+      break;
+    }
+
+    // Run one activation attempt
+    ActivateResult res = ActivateBestChainStep(pindexMostWork, pending_events);
+
+    if (res == ActivateResult::OK) {
+      success = true;
+      break;
+    }
+
+    if (res == ActivateResult::POLICY_REFUSED) {
+      // Demote this candidate and try the next
+      chain_selector_.RemoveCandidate(pindexMostWork);
+      pindexMostWork = nullptr;
+      continue;
+    }
+
+    if (res == ActivateResult::CONSENSUS_INVALID) {
+      // Mark the candidate invalid and try the next
+      pindexMostWork->nStatus |= chain::BLOCK_FAILED_VALID;
+      m_failed_blocks.insert(pindexMostWork);
+      chain_selector_.RemoveCandidate(pindexMostWork);
+      pindexMostWork = nullptr;
+      continue;
+    }
+
+    // SYSTEM_ERROR - give up
+    success = false;
+    break;
   }
 
+  // Release lock and dispatch notifications
+  lock.unlock();
+  for (const auto &ev : pending_events) {
+    switch (ev.type) {
+    case NotifyType::BlockConnected:
+      Notifications().NotifyBlockConnected(ev.header, ev.pindex);
+      break;
+    case NotifyType::BlockDisconnected:
+      Notifications().NotifyBlockDisconnected(ev.header, ev.pindex);
+      break;
+    case NotifyType::ChainTip:
+      Notifications().NotifyChainTip(ev.pindex, ev.height);
+      break;
+    }
+  }
+  return success;
+}
+
+ChainstateManager::ActivateResult ChainstateManager::ActivateBestChainStep(chain::CBlockIndex *pindexMostWork,
+                                                                          std::vector<PendingNotification> &events) {
+  // PRE: validation_mutex_ is held by caller
   if (!pindexMostWork) {
-    // No candidates - this is normal when there are no competing forks
-    // Current tip is still the best chain
-    LOG_CHAIN_TRACE("ActivateBestChain: No candidates found (no competing forks)");
-    return true; // Success - current chain is best
+    return ActivateResult::OK;
   }
 
   // Get current tip
   chain::CBlockIndex *pindexOldTip = block_manager_.GetTip();
 
-  LOG_CHAIN_TRACE("ActivateBestChain: pindexOldTip={} (height={}), pindexMostWork={} "
-            "(height={})",
-            pindexOldTip ? pindexOldTip->GetBlockHash().ToString().substr(0, 16)
-                         : "null",
-            pindexOldTip ? pindexOldTip->nHeight : -1,
-            pindexMostWork->GetBlockHash().ToString().substr(0, 16),
-            pindexMostWork->nHeight);
+  LOG_CHAIN_TRACE("ActivateBestChainStep: pindexOldTip={} (height={}), pindexMostWork={} (height={})",
+                  pindexOldTip ? pindexOldTip->GetBlockHash().ToString().substr(0, 16) : "null",
+                  pindexOldTip ? pindexOldTip->nHeight : -1,
+                  pindexMostWork->GetBlockHash().ToString().substr(0, 16),
+                  pindexMostWork->nHeight);
 
-  // Check if this is actually a new tip
+  // Already at best tip?
   if (pindexOldTip == pindexMostWork) {
-    // Already at best tip
-    return true;
+    return ActivateResult::OK;
   }
 
-  // Check if new chain has more work
+  // Require strictly more work to switch
   if (pindexOldTip && pindexMostWork->nChainWork <= pindexOldTip->nChainWork) {
-    // Not enough work to switch
-    LOG_CHAIN_TRACE("Block accepted but not activated (insufficient work). Height: "
-              "{}, Hash: {}",
-              pindexMostWork->nHeight,
-              pindexMostWork->GetBlockHash().ToString().substr(0, 16));
-    return true;
+    LOG_CHAIN_TRACE("Candidate has insufficient work; keeping current tip. Height: {}, Hash: {}",
+                    pindexMostWork->nHeight,
+                    pindexMostWork->GetBlockHash().ToString().substr(0, 16));
+    return ActivateResult::OK;
   }
 
-  // Find the fork point between old and new chains
-  const chain::CBlockIndex *pindexFork =
-      chain::LastCommonAncestor(pindexOldTip, pindexMostWork);
-
-  LOG_CHAIN_TRACE("ActivateBestChain: fork_point={} (height={})",
+  // Find LCA
+  const chain::CBlockIndex *pindexFork = chain::LastCommonAncestor(pindexOldTip, pindexMostWork);
+  LOG_CHAIN_TRACE("ActivateBestChainStep: fork_point={} (height={})",
                   pindexFork ? pindexFork->GetBlockHash().ToString().substr(0, 16) : "null",
                   pindexFork ? pindexFork->nHeight : -1);
 
-  // Handle the case where no fork point exists (chains have no common ancestor)
   if (!pindexFork) {
-    LOG_CHAIN_ERROR("ActivateBestChain: No common ancestor found between old tip and "
-              "new chain");
-    LOG_CHAIN_ERROR("  Old tip: height={}, hash={}",
-              pindexOldTip ? pindexOldTip->nHeight : -1,
-              pindexOldTip
-                  ? pindexOldTip->GetBlockHash().ToString().substr(0, 16)
-                  : "null");
-    LOG_CHAIN_ERROR("  New tip: height={}, hash={}", pindexMostWork->nHeight,
-              pindexMostWork->GetBlockHash().ToString().substr(0, 16));
-    return false;
-  }
-
-  // INVARIANT: If we reach here, pindexOldTip is non-null.
-  // Reason: LastCommonAncestor(a, b) returns nullptr if either a or b is
-  // nullptr. Since pindexFork is non-null (we just checked), both inputs must
-  // have been non-null. pindexMostWork is guaranteed non-null (checked at line
-  // 189). Therefore, pindexOldTip must also be non-null.
-  assert(pindexOldTip &&
-         "pindexOldTip must be non-null if pindexFork is non-null");
-
-  // Calculate reorg depth (how many blocks will be disconnected)
-  // Use height difference
-  int reorg_depth = pindexOldTip->nHeight - pindexFork->nHeight;
-
-  LOG_CHAIN_TRACE("ActivateBestChain: reorg_depth={}, suspicious_reorg_depth_={}",
-            reorg_depth, suspicious_reorg_depth_);
-
-  // Deep reorg protection
-  // If suspiciousreorgdepth=N, reject reorgs >= N (allow up to N-1)
-  if (suspicious_reorg_depth_ > 0 && reorg_depth >= suspicious_reorg_depth_) {
-    LOG_CHAIN_ERROR("CRITICAL: Detected suspicious reorg of {} blocks, local policy "
-              "allows {} blocks. "
-              "This may indicate a severe network issue or attack. Refusing to "
-              "reorganize.",
-              reorg_depth, suspicious_reorg_depth_ - 1);
-    LOG_CHAIN_ERROR("* current tip @ height {} ({})", pindexOldTip->nHeight,
-              pindexOldTip->GetBlockHash().ToString());
-    LOG_CHAIN_ERROR("*   reorg tip @ height {} ({})", pindexMostWork->nHeight,
-              pindexMostWork->GetBlockHash().ToString());
-    LOG_CHAIN_ERROR("*  fork point @ height {} ({})", pindexFork->nHeight,
-              pindexFork->GetBlockHash().ToString());
-
-    // Notify subscribers (e.g., Application for graceful shutdown)
-    Notifications().NotifySuspiciousReorg(reorg_depth,
-                                           suspicious_reorg_depth_ - 1);
-
-    return false;
-  }
-
-  // Disconnect blocks from old tip back to fork point
-  LOG_CHAIN_TRACE("ActivateBestChain: Disconnecting {} blocks back to fork",
-                  pindexOldTip->nHeight - pindexFork->nHeight);
-  std::vector<chain::CBlockIndex *> disconnected_blocks; // Store as mutable
-  chain::CBlockIndex *pindexWalk = pindexOldTip;
-  while (pindexWalk && pindexWalk != pindexFork) {
-    disconnected_blocks.push_back(pindexWalk);
-    LOG_CHAIN_TRACE("ActivateBestChain: Disconnecting block height={} hash={}",
-                    pindexWalk->nHeight, pindexWalk->GetBlockHash().ToString().substr(0, 16));
-    if (!DisconnectTip()) {
-      LOG_CHAIN_ERROR("Failed to disconnect block during reorg");
-      return false;
+    if (!pindexOldTip) {
+      LOG_CHAIN_TRACE("ActivateBestChainStep: No fork point and no old tip (initial activation). Proceeding.");
+    } else {
+      LOG_CHAIN_ERROR("ActivateBestChainStep: No common ancestor between old tip and candidate");
+      return ActivateResult::CONSENSUS_INVALID;
     }
-    pindexWalk = block_manager_.GetTip();
   }
 
-  // Connect blocks from fork point to new tip
+  // Policy guard: suspicious reorg depth
+  int reorg_depth = 0;
+  if (pindexOldTip && pindexFork) {
+    reorg_depth = pindexOldTip->nHeight - pindexFork->nHeight;
+    LOG_CHAIN_TRACE("ActivateBestChainStep: reorg_depth={}, suspicious_reorg_depth_={}",
+                    reorg_depth, suspicious_reorg_depth_);
+    if (suspicious_reorg_depth_ > 0 && reorg_depth >= suspicious_reorg_depth_) {
+      LOG_CHAIN_ERROR("CRITICAL: Suspicious reorg of {} blocks (policy max {}). Refusing.",
+                      reorg_depth, suspicious_reorg_depth_ - 1);
+      LOG_CHAIN_ERROR("* current tip @ height {} ({})", pindexOldTip->nHeight,
+                      pindexOldTip->GetBlockHash().ToString());
+      LOG_CHAIN_ERROR("*   reorg tip @ height {} ({})", pindexMostWork->nHeight,
+                      pindexMostWork->GetBlockHash().ToString());
+      LOG_CHAIN_ERROR("*  fork point @ height {} ({})", pindexFork ? pindexFork->nHeight : -1,
+                      pindexFork ? pindexFork->GetBlockHash().ToString() : std::string("null"));
+      Notifications().NotifySuspiciousReorg(reorg_depth, suspicious_reorg_depth_ - 1);
+      return ActivateResult::POLICY_REFUSED;
+    }
+  }
+
+  // Disconnect back to fork
+  std::vector<chain::CBlockIndex *> disconnected_blocks;
+  // Local event buffer; only appended to 'events' on success
+  std::vector<PendingNotification> local_events;
+  if (pindexOldTip && pindexFork) {
+    LOG_CHAIN_TRACE("ActivateBestChainStep: Disconnecting {} blocks back to fork",
+                    pindexOldTip->nHeight - pindexFork->nHeight);
+    chain::CBlockIndex *pindexWalk = pindexOldTip;
+    while (pindexWalk && pindexWalk != pindexFork) {
+      disconnected_blocks.push_back(pindexWalk);
+      LOG_CHAIN_TRACE("ActivateBestChainStep: Disconnecting block height={} hash={}",
+                      pindexWalk->nHeight, pindexWalk->GetBlockHash().ToString().substr(0, 16));
+      if (!DisconnectTip(local_events)) {
+        LOG_CHAIN_ERROR("Failed to disconnect block during reorg");
+        return ActivateResult::SYSTEM_ERROR;
+      }
+      pindexWalk = block_manager_.GetTip();
+    }
+  }
+
+  // Build forward connect list
   std::vector<chain::CBlockIndex *> connect_blocks;
-  pindexWalk = pindexMostWork;
+  chain::CBlockIndex *pindexWalk = pindexMostWork;
   while (pindexWalk && pindexWalk != pindexFork) {
     connect_blocks.push_back(pindexWalk);
     pindexWalk = pindexWalk->pprev;
   }
 
-  LOG_CHAIN_TRACE("ActivateBestChain: Connecting {} blocks from fork to new tip",
+  LOG_CHAIN_TRACE("ActivateBestChainStep: Connecting {} blocks from fork to new tip",
                   connect_blocks.size());
 
-  // Connect in reverse order (from fork to tip)
   for (auto it = connect_blocks.rbegin(); it != connect_blocks.rend(); ++it) {
-    LOG_CHAIN_TRACE("ActivateBestChain: Connecting block height={} hash={}",
+    LOG_CHAIN_TRACE("ActivateBestChainStep: Connecting block height={} hash={}",
                     (*it)->nHeight, (*it)->GetBlockHash().ToString().substr(0, 16));
-    if (!ConnectTip(*it)) {
-      LOG_CHAIN_ERROR("Failed to connect block during reorg at height {}",
-                (*it)->nHeight);
+    if (!ConnectTip(*it, local_events)) {
+      LOG_CHAIN_ERROR("Failed to connect block during reorg at height {}", (*it)->nHeight);
 
-      // ERROR RECOVERY: Roll back to old tip
-      LOG_CHAIN_TRACE("Attempting to roll back to old tip...");
-
-      // First, disconnect any blocks we successfully connected
+      // Roll back to fork
+      LOG_CHAIN_TRACE("Attempting rollback to fork...");
       while (block_manager_.GetTip() != pindexFork) {
-        if (!DisconnectTip()) {
-          LOG_CHAIN_ERROR(
-              "CRITICAL: Rollback failed! Chain state may be inconsistent!");
-          return false;
+        if (!DisconnectTip(local_events)) {
+          LOG_CHAIN_ERROR("CRITICAL: Rollback failed! Chain state may be inconsistent!");
+          return ActivateResult::SYSTEM_ERROR;
         }
       }
 
-      // Now reconnect the old chain
-      for (auto rit = disconnected_blocks.rbegin();
-           rit != disconnected_blocks.rend(); ++rit) {
-        if (!ConnectTip(*rit)) { // No const_cast needed now
-          LOG_CHAIN_ERROR("CRITICAL: Failed to restore old chain! Chain state may be "
-                    "inconsistent!");
-          return false;
+      // Reconnect old chain
+      for (auto rit = disconnected_blocks.rbegin(); rit != disconnected_blocks.rend(); ++rit) {
+        if (!ConnectTip(*rit, local_events)) {
+          LOG_CHAIN_ERROR("CRITICAL: Failed to restore old chain! Chain state may be inconsistent!");
+          return ActivateResult::SYSTEM_ERROR;
         }
       }
 
-      // Defensive: GetTip() should be non-null after successful reconnection,
-      // but guard against unexpected state corruption
       const chain::CBlockIndex *restored_tip = block_manager_.GetTip();
-      if (restored_tip) {
-LOG_CHAIN_TRACE("Rollback successful - restored old tip at height {}",
-                 restored_tip->nHeight);
-      } else {
-        LOG_CHAIN_ERROR("CRITICAL: Rollback completed but tip is null! Chain state "
-                  "is inconsistent!");
+      if (!restored_tip) {
+        LOG_CHAIN_ERROR("CRITICAL: Rollback completed but tip is null! Inconsistent state!");
+        return ActivateResult::SYSTEM_ERROR;
       }
-      return false;
+
+      LOG_CHAIN_TRACE("Rollback successful - restored old tip at height {}", restored_tip->nHeight);
+
+      // Treat this branch as invalid (consensus failure path)
+      return ActivateResult::CONSENSUS_INVALID;
     }
   }
 
-  // Log reorg information
   if (!disconnected_blocks.empty()) {
-    // INVARIANT: If we disconnected blocks, there must have been an old tip
-    // This was verified earlier (pindexOldTip non-null after line 242 assert)
-    // and the tip was only used to fill disconnected_blocks
-    assert(pindexOldTip &&
-           "pindexOldTip must be non-null if blocks were disconnected");
-
+    assert(pindexOldTip && "pindexOldTip must be non-null if blocks were disconnected");
     LOG_CHAIN_DEBUG("REORGANIZE: Disconnect {} blocks; Connect {} blocks",
-             disconnected_blocks.size(), connect_blocks.size());
+                    disconnected_blocks.size(), connect_blocks.size());
     LOG_CHAIN_TRACE("REORGANIZE: Old tip: height={}, hash={}", pindexOldTip->nHeight,
-             pindexOldTip->GetBlockHash().ToString().substr(0, 16));
+                    pindexOldTip->GetBlockHash().ToString().substr(0, 16));
     LOG_CHAIN_TRACE("REORGANIZE: New tip: height={}, hash={}", pindexMostWork->nHeight,
-             pindexMostWork->GetBlockHash().ToString().substr(0, 16));
+                    pindexMostWork->GetBlockHash().ToString().substr(0, 16));
     LOG_CHAIN_TRACE("REORGANIZE: Fork point: height={}, hash={}",
-             pindexFork ? pindexFork->nHeight : -1,
-             pindexFork ? pindexFork->GetBlockHash().ToString().substr(0, 16)
-                        : "null");
+                    pindexFork ? pindexFork->nHeight : -1,
+                    pindexFork ? pindexFork->GetBlockHash().ToString().substr(0, 16) : "null");
   }
 
-  // Emit final tip notification
-  Notifications().NotifyChainTip(pindexMostWork, pindexMostWork->nHeight);
+  // Final tip notification (headers-only: emit explicit notification)
+  local_events.push_back(PendingNotification{NotifyType::ChainTip, CBlockHeader{}, pindexMostWork, pindexMostWork->nHeight});
 
-  // Prune candidates that now have less work than active tip
+  // Prune stale candidates now that tip advanced
   chain_selector_.PruneBlockIndexCandidates(block_manager_);
 
-  // Log successful chain activation with chainwork (Bitcoin Core style)
-  // Only log if this is a non-reorg activation (no blocks disconnected)
   if (disconnected_blocks.empty()) {
     LOG_CHAIN_INFO("New best chain activated! Height: {}, Hash: {}, log2_work: {:.6f}",
                    pindexMostWork->nHeight,
@@ -406,7 +427,9 @@ LOG_CHAIN_TRACE("Rollback successful - restored old tip at height {}",
                    std::log(pindexMostWork->nChainWork.getdouble()) / std::log(2.0));
   }
 
-  return true;
+  // Success: append local events to output buffer
+  events.insert(events.end(), local_events.begin(), local_events.end());
+  return ActivateResult::OK;
 }
 
 const chain::CBlockIndex *ChainstateManager::GetTip() const {
@@ -449,7 +472,8 @@ ChainstateManager::GetBlockAtHeight(int height) const {
   return block_manager_.ActiveChain()[height];
 }
 
-bool ChainstateManager::ConnectTip(chain::CBlockIndex *pindexNew) {
+bool ChainstateManager::ConnectTip(chain::CBlockIndex *pindexNew,
+                                   std::vector<PendingNotification> &events) {
   if (!pindexNew) {
     LOG_CHAIN_ERROR("ConnectTip: null block index");
     return false;
@@ -480,30 +504,18 @@ bool ChainstateManager::ConnectTip(chain::CBlockIndex *pindexNew) {
 
   block_manager_.SetActiveTip(*pindexNew);
 
-  // Bitcoin Core-style: UpdateTip log with extra fields
-  const std::string best_hash = pindexNew->GetBlockHash().ToString();
-  double log2_work = std::log(pindexNew->nChainWork.getdouble()) / std::log(2.0);
-  std::string date_str = FormatDateTimeUTC(pindexNew->GetBlockTime());
-  int32_t version = pindexNew->nVersion;
-  // Headers-only: no transactions/UTXO cache; use zeros to match Core's fields
-  uint64_t total_tx = 0;
-  double progress = 0.0;
-  int64_t now = util::GetTime();
-  if (now > 0) {
-    progress = static_cast<double>(pindexNew->GetBlockTime()) / static_cast<double>(now);
-    if (progress < 0.0) progress = 0.0;
-    if (progress > 1.0) progress = 1.0;
-  }
-  double cache_mib = 0.0;
-  int cache_percent = 0;
-  LOG_CHAIN_DEBUG(
-      "UpdateTip: new best={} height={} version=0x{:08x} log2_work={:.8g} tx={} date='{}' progress={:.6f} cache={:.1f}MiB({}%)",
-      best_hash, pindexNew->nHeight, static_cast<uint32_t>(version), log2_work,
-      total_tx, date_str, progress, cache_mib, cache_percent);
+  // Headers-only chain: concise UpdateTip log (no tx/progress/cache)
+  const std::string best_hash = pindexNew->GetBlockHash().ToString().substr(0, 16);
+  const double log2_work = std::log(pindexNew->nChainWork.getdouble()) / std::log(2.0);
+  const std::string date_str = FormatDateTimeUTC(pindexNew->GetBlockTime());
+  const uint32_t version = static_cast<uint32_t>(pindexNew->nVersion);
+  LOG_CHAIN_INFO(
+      "UpdateTip: new best={} height={} version=0x{:08x} log2_work={:.6f} date='{}'",
+      best_hash, pindexNew->nHeight, version, log2_work, date_str);
 
-  // Emit block connected notification AFTER updating tip
+  // Queue block connected notification AFTER updating tip
   CBlockHeader header = pindexNew->GetBlockHeader();
-  Notifications().NotifyBlockConnected(header, pindexNew);
+  events.push_back(PendingNotification{NotifyType::BlockConnected, header, pindexNew, pindexNew->nHeight});
 
   return true;
 }
@@ -513,7 +525,7 @@ bool ChainstateManager::AddOrphanHeader(const CBlockHeader &header, int peer_id)
   return TryAddOrphanHeader(header, peer_id);
 }
 
-bool ChainstateManager::DisconnectTip() {
+bool ChainstateManager::DisconnectTip(std::vector<PendingNotification> &events) {
   chain::CBlockIndex *pindexDelete = block_manager_.GetTip();
   if (!pindexDelete) {
     LOG_CHAIN_ERROR("DisconnectTip: no tip to disconnect");
@@ -539,7 +551,7 @@ bool ChainstateManager::DisconnectTip() {
   // See ConnectTip() for the complementary (but asymmetric) behavior on block
   // connection.
   CBlockHeader header = pindexDelete->GetBlockHeader();
-  Notifications().NotifyBlockDisconnected(header, pindexDelete);
+  events.push_back(PendingNotification{NotifyType::BlockDisconnected, header, pindexDelete, pindexDelete->nHeight});
 
   // For headers-only chain, "disconnecting" just means:
   // Moving the active tip pointer back to parent
@@ -571,9 +583,9 @@ bool ChainstateManager::IsInitialBlockDownload() const {
     return true;
   }
 
-  // Tip too old - still syncing (1 hour for 2-minute blocks)
+  // Tip too old - still syncing (12 hours = 12 blocks for 1-hour block times)
   int64_t now = util::GetTime();
-  if (tip->nTime < now - 3600) {
+  if (tip->nTime < now - 12 * 3600) {
     return true;
   }
 
@@ -769,7 +781,7 @@ void ChainstateManager::ProcessOrphanHeaders(const uint256 &parentHash) {
 
     ValidationState orphan_state;
     chain::CBlockIndex *pindex =
-        AcceptBlockHeader(orphan_header, orphan_state, orphan_peer_id);
+        AcceptBlockHeader(orphan_header, orphan_state, /*min_pow_checked=*/true);
 
     if (!pindex) {
       LOG_CHAIN_TRACE("Orphan header {} failed validation: {}",
@@ -965,7 +977,8 @@ bool ChainstateManager::ContextualCheckBlockHeaderWrapper(
 }
 
 bool ChainstateManager::InvalidateBlock(const uint256 &hash) {
-  std::lock_guard<std::recursive_mutex> lock(validation_mutex_);
+  std::unique_lock<std::recursive_mutex> lock(validation_mutex_);
+  std::vector<PendingNotification> pending_events;
 
   LOG_CHAIN_TRACE("InvalidateBlock: hash={}", hash.ToString().substr(0, 16));
 
@@ -1030,7 +1043,7 @@ bool ChainstateManager::InvalidateBlock(const uint256 &hash) {
     chain::CBlockIndex *invalid_walk_tip = current_tip;
 
     // Disconnect the current tip
-    if (!DisconnectTip()) {
+    if (!DisconnectTip(pending_events)) {
       LOG_CHAIN_ERROR("Failed to disconnect tip during invalidation");
       return false;
     }
@@ -1152,6 +1165,22 @@ LOG_CHAIN_TRACE(
   // NOTE: Bitcoin Core does NOT call ActivateBestChain() here
   // The candidates are set up correctly, and the next block arrival
   // or external ActivateBestChain() call will activate the best chain
+
+  // Release lock and dispatch any queued notifications
+  lock.unlock();
+  for (const auto &ev : pending_events) {
+    switch (ev.type) {
+    case NotifyType::BlockConnected:
+      Notifications().NotifyBlockConnected(ev.header, ev.pindex);
+      break;
+    case NotifyType::BlockDisconnected:
+      Notifications().NotifyBlockDisconnected(ev.header, ev.pindex);
+      break;
+    case NotifyType::ChainTip:
+      Notifications().NotifyChainTip(ev.pindex, ev.height);
+      break;
+    }
+  }
 
   return true;
 }

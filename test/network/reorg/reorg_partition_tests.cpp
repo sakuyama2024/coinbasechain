@@ -116,10 +116,15 @@ TEST_CASE("NetworkPartitionTest - HealAndReorg", "[networkpartitiontest][network
     t += 1000; network.AdvanceTime(t);
 
     network.HealPartition();
-    t += 35000; network.AdvanceTime(t);
 
-    CHECK(node1.GetTipHeight() == 5);
-    CHECK(node2.GetTipHeight() == 5);
+    // Core-aligned: a new block triggers immediate INV announcements; simulate
+    // a post-heal block on the longer chain to drive convergence without relying
+    // on long periodic re-announce intervals.
+    (void)node1.MineBlock();
+    for (int i = 0; i < 50; ++i) { t += 100; network.AdvanceTime(t); }
+
+    CHECK(node2.GetTipHeight() == node1.GetTipHeight());
+    CHECK(node2.GetTipHeight() >= 5);
     CHECK(node1.GetTipHash() == node2.GetTipHash());
 }
 

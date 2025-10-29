@@ -16,43 +16,56 @@ namespace network {
 
 HeaderSyncManager::HeaderSyncManager(validation::ChainstateManager& chainstate,
                                      PeerManager& peer_mgr,
-                                     BanMan* ban_man)
+                                     BanMan& ban_man)
     : chainstate_manager_(chainstate),
       peer_manager_(peer_mgr),
       ban_man_(ban_man) {}
 
-void HeaderSyncManager::SetSyncPeer(uint64_t peer_id) {
-  // Use mockable steady time so tests that advance simulated time work correctly
-  auto now = util::GetSteadyTime();
-  int64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                       now.time_since_epoch())
-                       .count();
+uint64_t HeaderSyncManager::GetSyncPeerId() const {
+  std::lock_guard<std::mutex> lock(sync_mutex_);
+  return sync_state_.sync_peer_id;
+}
 
-  sync_peer_id_.store(peer_id, std::memory_order_release);
-  sync_start_time_.store(now_us, std::memory_order_release);
-  last_headers_received_.store(now_us, std::memory_order_release);
-  initial_sync_started_.store(true, std::memory_order_release);
+void HeaderSyncManager::SetSyncPeerUnlocked(uint64_t peer_id) {
+  int64_t now_us = util::GetTime() * 1000000;
+  // Invariant: at most one sync peer at a time (enforced by HasSyncPeer() check)
+  sync_state_.sync_peer_id = peer_id;
+  sync_state_.sync_start_time_us = now_us;
+  sync_state_.last_headers_received_us = now_us;
+}
+
+void HeaderSyncManager::SetSyncPeer(uint64_t peer_id) {
+  std::lock_guard<std::mutex> lock(sync_mutex_);
+  SetSyncPeerUnlocked(peer_id);
+}
+
+void HeaderSyncManager::ClearSyncPeerUnlocked() {
+  uint64_t prev_sync = sync_state_.sync_peer_id;
+  if (prev_sync != NO_SYNC_PEER) {
+    auto peer_ptr = peer_manager_.get_peer(static_cast<int>(prev_sync));
+    if (peer_ptr) {
+      peer_ptr->set_sync_started(false);
+    }
+  }
+  // Clear current sync peer and allow re-selection on next maintenance
+  sync_state_.sync_peer_id = NO_SYNC_PEER;
+  sync_state_.sync_start_time_us = 0;
+  sync_state_.last_headers_received_us = 0;
 }
 
 void HeaderSyncManager::ClearSyncPeer() {
-  // Clear current sync peer and allow re-selection on next maintenance
-  sync_peer_id_.store(NO_SYNC_PEER, std::memory_order_release);
-  initial_sync_started_.store(false, std::memory_order_release);
+  std::lock_guard<std::mutex> lock(sync_mutex_);
+  ClearSyncPeerUnlocked();
 }
 
 void HeaderSyncManager::OnPeerDisconnected(uint64_t peer_id) {
   // Bitcoin Core cleanup (FinalizeNode): if (state->fSyncStarted) nSyncStarted--;
   // If this was our sync peer, reset sync state to allow retry with another peer
-  uint64_t current_sync_peer = sync_peer_id_.load(std::memory_order_acquire);
-  
-  if (current_sync_peer == static_cast<uint64_t>(peer_id)) {
+  std::lock_guard<std::mutex> lock(sync_mutex_);
+  if (sync_state_.sync_peer_id == peer_id) {
     LOG_NET_DEBUG("Sync peer {} disconnected, clearing sync state", peer_id);
-    
-    // Reset all sync state
-    sync_peer_id_.store(NO_SYNC_PEER, std::memory_order_release);
-    initial_sync_started_.store(false, std::memory_order_release);
-    sync_start_time_.store(0, std::memory_order_release);
-    last_headers_received_.store(0, std::memory_order_release);
+    // Use ClearSyncPeerUnlocked to properly clear fSyncStarted flag
+    ClearSyncPeerUnlocked();
   }
 }
 
@@ -60,13 +73,17 @@ void HeaderSyncManager::ProcessTimers() {
   // Basic headers sync stall detection (loosely based on Bitcoin Core)
   // If initial sync is running and we haven't received headers for a while,
   // disconnect the sync peer to allow retrying another peer.
-  const uint64_t sync_id = sync_peer_id_.load(std::memory_order_acquire);
+  uint64_t sync_id = NO_SYNC_PEER;
+  int64_t last_us = 0;
+  {
+    std::lock_guard<std::mutex> lock(sync_mutex_);
+    sync_id = sync_state_.sync_peer_id;
+    last_us = sync_state_.last_headers_received_us;
+  }
   if (sync_id == NO_SYNC_PEER) return;
 
-  const int64_t last_us = last_headers_received_.load(std::memory_order_acquire);
-  // Use mockable steady time for determinism in tests
-  auto now = util::GetSteadyTime();
-  const int64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+  // Use mockable wall-clock time for determinism in tests
+  const int64_t now_us = util::GetTime() * 1000000;
 
   // Conservative timeout (2 minutes). Bitcoin uses a dynamic timeout; we keep it simple.
   static constexpr int64_t HEADERS_SYNC_TIMEOUT_US = 120 * 1000 * 1000; // 120s
@@ -74,104 +91,60 @@ void HeaderSyncManager::ProcessTimers() {
   if (last_us > 0 && (now_us - last_us) > HEADERS_SYNC_TIMEOUT_US) {
     LOG_NET_INFO("Headers sync stalled for {:.1f}s with peer {}, disconnecting",
                  (now_us - last_us) / 1e6, sync_id);
-    // Ask PeerManager to drop the peer. This triggers OnPeerDisconnected() which
-    // resets our sync state so CheckInitialSync can pick a new peer.
+    // Ask PeerManager to drop the peer. This triggers OnPeerDisconnected() via callback
     peer_manager_.remove_peer(static_cast<int>(sync_id));
-
-    // Immediately attempt to select a new sync peer (even post-IBD) so that
-    // we send a fresh GETHEADERS to another peer. This is harmless if fully
-    // synced (peer will respond with empty HEADERS).
-    CheckInitialSync();
+    // Do NOT call CheckInitialSync() here; SendMessages/maintenance cadence will do reselection.
   }
 }
 
 void HeaderSyncManager::CheckInitialSync() {
-  // If we've already started initial sync once, do nothing. Prevents fan-out to multiple peers.
-  if (initial_sync_started_.load(std::memory_order_acquire)) {
-    return;
-  }
-
   // Prefer to run initial sync when in IBD (Bitcoin Core behavior).
-  // However, if we lost our sync peer due to stall (sync_peer_id_ cleared),
-  // allow selecting a new peer even post-IBD to re-establish header sync.
-  const bool in_ibd = chainstate_manager_.IsInitialBlockDownload();
-  if (!in_ibd) {
-    if (sync_peer_id_.load(std::memory_order_acquire) == NO_SYNC_PEER) {
-      // Proceed to choose a peer even post-IBD (will result in a benign
-      // GETHEADERS that returns an empty response if fully synced).
-    } else {
-      return;
-    }
-  }
-
-  // Only actively request headers from a single peer (Bitcoin Core nSyncStarted logic)
-
-  // If we already have a sync peer, nothing to do (atomic load)
-  if (sync_peer_id_.load(std::memory_order_acquire) != NO_SYNC_PEER) {
+  // If there is no current sync peer, we may (re)select one even post-IBD;
+  // the resulting GETHEADERS is harmless if fully synced.
+  if (HasSyncPeer()) {
     return;
   }
 
-  // Protect peer selection with mutex to prevent race conditions
-  std::lock_guard<std::mutex> lock(sync_mutex_);
+  const bool in_ibd = chainstate_manager_.IsInitialBlockDownload();
+  (void)in_ibd; // informational; selection is allowed even post-IBD if no sync peer
 
-  // Double-check after acquiring lock (another thread may have set sync peer)
-  if (sync_peer_id_.load(std::memory_order_acquire) != NO_SYNC_PEER) {
+  // Protect peer selection with mutex to prevent races
+  std::lock_guard<std::mutex> lock(sync_mutex_);
+  if (sync_state_.sync_peer_id != NO_SYNC_PEER) {
     return;
   }
 
   // Try outbound peers first (preferred for initial sync)
   auto outbound_peers = peer_manager_.get_outbound_peers();
-
   for (const auto &peer : outbound_peers) {
-    if (!peer || !peer->successfully_connected()) {
-      continue; // Skip peers that haven't completed handshake
-    }
+    if (!peer) continue;
+    if (peer->sync_started()) continue; // Already started with this peer
 
-    // Bitcoin Core: Check !state.fSyncStarted to avoid re-requesting from same peer
-    if (peer->sync_started()) {
-      continue; // Already started sync with this peer
-    }
-
-    // We found a ready outbound peer! Start initial sync with this peer
     int current_height = chainstate_manager_.GetChainHeight();
-LOG_NET_DEBUG("initial getheaders ({}) peer={}",
-                 current_height, peer->id());
+    LOG_NET_DEBUG("initial getheaders ({}) peer={}", current_height, peer->id());
 
-    SetSyncPeer(peer->id());
-    peer->set_sync_started(true);  // Bitcoin Core: state.fSyncStarted = true
-    initial_sync_started_.store(true, std::memory_order_release);
-
-    // Send GETHEADERS to initiate sync (like Bitcoin's "initial getheaders")
-    RequestHeadersFromPeer(peer);
-
-    return; // Only sync from one peer at a time
-  }
-
-  // Fallback: If no outbound peers available, try inbound peers
-  auto inbound_peers = peer_manager_.get_inbound_peers();
-
-  for (const auto &peer : inbound_peers) {
-    if (!peer || !peer->successfully_connected()) {
-      continue; // Skip peers that haven't completed handshake
-    }
-
-    if (peer->sync_started()) {
-      continue; // Already started sync with this peer
-    }
-
-    // We found a ready inbound peer! Use it as fallback for initial sync
-    int current_height = chainstate_manager_.GetChainHeight();
-LOG_NET_DEBUG("initial getheaders ({}) peer={}",
-                 current_height, peer->id());
-
-    SetSyncPeer(peer->id());
-    peer->set_sync_started(true);  // Bitcoin Core: state.fSyncStarted = true
-    initial_sync_started_.store(true, std::memory_order_release);
+    SetSyncPeerUnlocked(peer->id());
+    peer->set_sync_started(true);  // CNodeState::fSyncStarted
 
     // Send GETHEADERS to initiate sync
     RequestHeadersFromPeer(peer);
+    return; // Only one sync peer
+  }
 
-    return; // Only sync from one peer at a time
+  // Fallback: inbound peers
+  auto inbound_peers = peer_manager_.get_inbound_peers();
+  for (const auto &peer : inbound_peers) {
+    if (!peer) continue;
+    if (peer->sync_started()) continue;
+
+    int current_height = chainstate_manager_.GetChainHeight();
+    LOG_NET_DEBUG("initial getheaders ({}) peer={}", current_height, peer->id());
+
+    SetSyncPeerUnlocked(peer->id());
+    peer->set_sync_started(true);
+
+    RequestHeadersFromPeer(peer);
+    return; // Only one sync peer
   }
 }
 
@@ -221,7 +194,7 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   // Gate large batches to the designated sync peer ONLY during IBD (Bitcoin Core behavior).
   if (chainstate_manager_.IsInitialBlockDownload()) {
     constexpr size_t MAX_UNSOLICITED_ANNOUNCEMENT = 2; // accept small announcements
-    uint64_t sync_id = sync_peer_id_.load(std::memory_order_acquire);
+    uint64_t sync_id = GetSyncPeerId();
     if (!headers.empty() && headers.size() > MAX_UNSOLICITED_ANNOUNCEMENT &&
         (sync_id == NO_SYNC_PEER || static_cast<uint64_t>(peer_id) != sync_id)) {
       LOG_NET_TRACE(
@@ -252,18 +225,17 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   LOG_NET_TRACE("Processing {} headers from peer {}, skip_dos_checks={}",
                 headers.size(), peer_id, skip_dos_checks);
 
-  // Update last headers received timestamp (atomic store)
-  auto now_tp = util::GetSteadyTime();
-  int64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                       now_tp.time_since_epoch())
-                       .count();
-  last_headers_received_.store(now_us, std::memory_order_release);
+  // Update last headers received timestamp
+  {
+    std::lock_guard<std::mutex> lock(sync_mutex_);
+    sync_state_.last_headers_received_us = util::GetTime() * 1000000;
+  }
 
   // Process headers (logic moved from HeaderSync::ProcessHeaders)
   if (headers.empty()) {
     // Bitcoin Core: "Nothing interesting. Stop asking this peer for more headers."
     // Clear current sync peer and allow reselection on next CheckInitialSync() call.
-LOG_NET_DEBUG("received headers (0) peer={}", peer_id);
+    LOG_NET_DEBUG("received headers (0) peer={}", peer_id);
     ClearSyncPeer();
     return true;
   }
@@ -275,16 +247,14 @@ LOG_NET_DEBUG("received headers (0) peer={}", peer_id);
     peer_manager_.ReportOversizedMessage(peer_id);
     // Check if peer should be disconnected
     if (peer_manager_.ShouldDisconnect(peer_id)) {
-      if (ban_man_) {
-        ban_man_->Discourage(peer->address());
-      }
+      ban_man_.Discourage(peer->address());
       peer_manager_.remove_peer(peer_id);
     }
     ClearSyncPeer();
     return false;
   }
 
-LOG_NET_DEBUG("received headers ({}) peer={}", headers.size(), peer_id);
+  LOG_NET_DEBUG("received headers ({}) peer={}", headers.size(), peer_id);
 
   // DoS Protection: Check if first header connects to known chain
   const uint256 &first_prev = headers[0].hashPrevBlock;
@@ -294,19 +264,18 @@ LOG_NET_DEBUG("received headers ({}) peer={}", headers.size(), peer_id);
     LOG_NET_WARN("headers don't connect to known chain from peer={} (first prevhash: {})",
              peer_id, first_prev.ToString());
     peer_manager_.IncrementUnconnectingHeaders(peer_id);
-    // Check if peer should be disconnected
+    // Check if peer should be disconnected (but continue processing as orphan chain)
     if (peer_manager_.ShouldDisconnect(peer_id)) {
-      if (ban_man_) {
-        ban_man_->Discourage(peer->address());
-      }
+      ban_man_.Discourage(peer->address());
       peer_manager_.remove_peer(peer_id);
     }
-    ClearSyncPeer();
-    return false;
+    // Do NOT ClearSyncPeer() and do NOT return; proceed to treat batch as orphans
   }
 
   // Headers connect - reset unconnecting counter
-  peer_manager_.ResetUnconnectingHeaders(peer_id);
+  if (prev_exists) {
+    peer_manager_.ResetUnconnectingHeaders(peer_id);
+  }
 
   // DoS Protection: Cheap PoW commitment check
   bool pow_ok = chainstate_manager_.CheckHeadersPoW(headers);
@@ -314,9 +283,7 @@ LOG_NET_DEBUG("received headers ({}) peer={}", headers.size(), peer_id);
     LOG_NET_ERROR("headers failed PoW commitment check from peer={}", peer_id);
     peer_manager_.ReportInvalidPoW(peer_id);
     if (peer_manager_.ShouldDisconnect(peer_id)) {
-      if (ban_man_) {
-        ban_man_->Discourage(peer->address());
-      }
+      ban_man_.Discourage(peer->address());
       peer_manager_.remove_peer(peer_id);
     }
     ClearSyncPeer();
@@ -329,9 +296,7 @@ LOG_NET_DEBUG("received headers ({}) peer={}", headers.size(), peer_id);
     LOG_NET_ERROR("non-continuous headers from peer={}", peer_id);
     peer_manager_.ReportNonContinuousHeaders(peer_id);
     if (peer_manager_.ShouldDisconnect(peer_id)) {
-      if (ban_man_) {
-        ban_man_->Discourage(peer->address());
-      }
+      ban_man_.Discourage(peer->address());
       peer_manager_.remove_peer(peer_id);
     }
     ClearSyncPeer();
@@ -412,9 +377,7 @@ LOG_NET_DEBUG("received headers ({}) peer={}", headers.size(), peer_id);
                         peer_id);
           peer_manager_.ReportTooManyOrphans(peer_id);
           if (peer_manager_.ShouldDisconnect(peer_id)) {
-            if (ban_man_) {
-              ban_man_->Discourage(peer->address());
-            }
+            ban_man_.Discourage(peer->address());
             peer_manager_.remove_peer(peer_id);
           }
           ClearSyncPeer();
@@ -451,9 +414,7 @@ LOG_NET_DEBUG("received headers ({}) peer={}", headers.size(), peer_id);
         peer_manager_.ReportInvalidHeader(peer_id, "duplicate-invalid");
         peer_manager_.NoteInvalidHeaderHash(peer_id, h);
         if (peer_manager_.ShouldDisconnect(peer_id)) {
-          if (ban_man_) {
-            ban_man_->Discourage(peer->address());
-          }
+          ban_man_.Discourage(peer->address());
           peer_manager_.remove_peer(peer_id);
         }
         ClearSyncPeer();
@@ -476,9 +437,7 @@ LOG_NET_DEBUG("received headers ({}) peer={}", headers.size(), peer_id);
         peer_manager_.ReportInvalidHeader(peer_id, reason);
         peer_manager_.NoteInvalidHeaderHash(peer_id, h);
         if (peer_manager_.ShouldDisconnect(peer_id)) {
-          if (ban_man_) {
-            ban_man_->Discourage(peer->address());
-          }
+          ban_man_.Discourage(peer->address());
           peer_manager_.remove_peer(peer_id);
         }
         ClearSyncPeer();
@@ -616,7 +575,7 @@ bool HeaderSyncManager::HandleGetHeadersMessage(
     pindex = chainstate_manager_.GetBlockAtHeight(pindex->nHeight + 1);
   }
 
-LOG_NET_DEBUG("sending headers ({}) peer={}",
+  LOG_NET_DEBUG("sending headers ({}) peer={}",
                 response->headers.size(), peer->id());
 
   peer->send_message(std::move(response));

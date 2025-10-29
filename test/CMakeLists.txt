@@ -69,6 +69,7 @@ add_executable(coinbasechain_tests
     network/banman_adversarial_tests.cpp
     network/manager/header_sync_adversarial_tests.cpp
     network/manager/header_sync_ibd_gating_tests.cpp
+    network/manager/header_sync_reselection_regression_tests.cpp
     chain/orphan_dos_tests.cpp
     chain/orphan_edge_case_tests.cpp
     chain/orphan_integration_tests.cpp
@@ -101,7 +102,7 @@ set_target_properties(coinbasechain_tests PROPERTIES
 
 # Enable testing
 enable_testing()
-add_test(NAME coinbasechain_tests COMMAND coinbasechain_tests)
+add_test(NAME coinbasechain_tests COMMAND $<TARGET_FILE:coinbasechain_tests>)
 
 # Include all unit tests under test/unit
 file(GLOB UNIT_TEST_SOURCES "${CMAKE_SOURCE_DIR}/test/unit/*.cpp")
