@@ -265,8 +265,17 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
   // (e.g., 8+ failures have 3.57% chance, will be selected after ~28 iterations)
   while (true) {
     // Select tried or new table with 50% probability (Bitcoin Core parity)
-    std::uniform_int_distribution<int> dist(0, 99);
-    bool use_tried = !tried_.empty() && (dist(rng_) < 50 || new_.empty());
+    // Only roll dice when both tables are non-empty (optimization)
+    bool use_tried;
+    if (tried_.empty()) {
+      use_tried = false; // Must use new
+    } else if (new_.empty()) {
+      use_tried = true; // Must use tried
+    } else {
+      // Both non-empty, roll the dice (50/50)
+      std::uniform_int_distribution<int> dist(0, 99);
+      use_tried = (dist(rng_) < 50);
+    }
 
     if (use_tried && !tried_keys_.empty()) {
       // Select random address from tried table (O(1) random access)
