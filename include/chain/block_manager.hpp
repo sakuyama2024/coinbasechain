@@ -3,12 +3,15 @@
 
 #pragma once
 
+#include <stddef.h>
 #include "chain/block_index.hpp"
 #include "chain/chain.hpp"
-#include "chain/block.hpp"
+#include "chain/uint.hpp"
 #include <map>
-#include <memory>
 #include <string>
+
+// Forward declaration
+class CBlockHeader;
 
 namespace coinbasechain {
 namespace chain {

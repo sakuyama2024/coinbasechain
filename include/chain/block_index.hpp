@@ -15,7 +15,7 @@ namespace coinbasechain {
 namespace chain {
 
 // Median Time Past calculation span (number of previous blocks)
-// Used by GetMedianTimePast() and also defined in validation.hpp
+// Used by GetMedianTimePast()
 static constexpr int MEDIAN_TIME_SPAN = 11;
 static_assert(MEDIAN_TIME_SPAN % 2 == 1, "MEDIAN_TIME_SPAN must be odd for proper median calculation");
 

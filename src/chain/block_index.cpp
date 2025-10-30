@@ -3,7 +3,6 @@
 
 #include "chain/block_index.hpp"
 #include "chain/arith_uint256.hpp"
-#include <iomanip>
 #include <sstream>
 #include <string>
 

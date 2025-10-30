@@ -3,8 +3,16 @@
 
 #include "chain/block_manager.hpp"
 #include "chain/arith_uint256.hpp"
+#include "chain/block.hpp"
 #include "chain/logging.hpp"
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <exception>
 #include <fstream>
+#include <type_traits>
+#include <utility>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 //DTC1
