@@ -135,8 +135,6 @@ TEST_CASE("PoW - RandomX initialization and shutdown", "[pow][randomx]") {
     // Should be able to get seed hash after init
     uint256 seed = crypto::GetSeedHash(0);
     REQUIRE(!seed.IsNull());
-
-    crypto::ShutdownRandomX();
 }
 
 TEST_CASE("PoW - CheckProofOfWork validation modes", "[pow][randomx]") {
@@ -192,8 +190,6 @@ TEST_CASE("PoW - CheckProofOfWork validation modes", "[pow][randomx]") {
         REQUIRE_FALSE(consensus::CheckProofOfWork(bad_header, bad_header.nBits, *params,
                                                  crypto::POWVerifyMode::FULL));
     }
-
-    crypto::ShutdownRandomX();
 }
 
 TEST_CASE("PoW - GetRandomXCommitment", "[pow][randomx]") {
@@ -240,8 +236,6 @@ TEST_CASE("PoW - GetRandomXCommitment", "[pow][randomx]") {
 
         REQUIRE(commit1 != commit2);
     }
-
-    crypto::ShutdownRandomX();
 }
 
 TEST_CASE("PoW - ASERT difficulty adjustment", "[pow][asert]") {
@@ -307,8 +301,6 @@ TEST_CASE("PoW - VM caching works correctly", "[pow][randomx][vm]") {
         REQUIRE(vm != nullptr);
         REQUIRE(vm->vm != nullptr);
     }
-
-    crypto::ShutdownRandomX();
 }
 
 TEST_CASE("PoW - CreateVMForEpoch for parallel verification", "[pow][randomx][vm]") {
@@ -327,8 +319,6 @@ TEST_CASE("PoW - CreateVMForEpoch for parallel verification", "[pow][randomx][vm
     REQUIRE(vm1->vm != vm2->vm);  // Different VM instances
 
     // VMs automatically cleaned up by RAII wrappers
-
-    crypto::ShutdownRandomX();
 }
 
 TEST_CASE("PoW - Invalid PoW detection", "[pow][randomx][validation]") {
@@ -362,8 +352,6 @@ TEST_CASE("PoW - Invalid PoW detection", "[pow][randomx][validation]") {
         REQUIRE_FALSE(consensus::CheckProofOfWork(header, 0, *params,
                                                  crypto::POWVerifyMode::FULL));
     }
-
-    crypto::ShutdownRandomX();
 }
 
 TEST_CASE("PoW - Edge cases", "[pow][randomx][edge]") {
@@ -389,8 +377,6 @@ TEST_CASE("PoW - Edge cases", "[pow][randomx][edge]") {
         REQUIRE_FALSE(consensus::CheckProofOfWork(header, header.nBits, *params,
                                                  crypto::POWVerifyMode::COMMITMENT_ONLY));
     }
-
-    crypto::ShutdownRandomX();
 }
 
 TEST_CASE("PoW - ASERT difficulty adjustment detailed", "[pow][asert][detailed]") {
