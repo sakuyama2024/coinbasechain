@@ -4,6 +4,7 @@
 #include "catch_amalgamated.hpp"
 #include "network/addr_manager.hpp"
 #include "network/protocol.hpp"
+#include "util/time.hpp"
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -66,8 +67,7 @@ TEST_CASE("AddressManager basic operations", "[network][addrman]") {
 
     SECTION("Add multiple addresses") {
         std::vector<TimestampedAddress> addresses;
-        uint32_t current_time = static_cast<uint32_t>(
-            std::chrono::system_clock::now().time_since_epoch().count() / 1000000000);
+        uint32_t current_time = static_cast<uint32_t>(coinbasechain::util::GetTime());
 
         for (int i = 0; i < 10; i++) {
             std::string ip = "192.168.1." + std::to_string(i + 1);
@@ -202,8 +202,10 @@ TEST_CASE("AddressManager selection", "[network][addrman]") {
             }
         }
 
-        // Should select tried address about 80% of the time
-        REQUIRE(tried_count > 60);
+        // Should select tried address about 50% of the time (Bitcoin Core parity)
+        // Allow variance: expect 35-65 out of 100 selections
+        REQUIRE(tried_count > 35);
+        REQUIRE(tried_count < 65);
     }
 
     SECTION("Get multiple addresses") {

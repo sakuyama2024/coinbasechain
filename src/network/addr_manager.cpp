@@ -1,5 +1,6 @@
 #include "network/addr_manager.hpp"
 #include "util/logging.hpp"
+#include "util/time.hpp"
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
@@ -52,8 +53,8 @@ bool AddrInfo::is_terrible(uint32_t now) const {
 AddressManager::AddressManager() : rng_(std::random_device{}()) {}
 
 uint32_t AddressManager::now() const {
-  return static_cast<uint32_t>(
-      std::chrono::system_clock::now().time_since_epoch().count() / 1000000000);
+  // Use portable time utility (supports mock time for testing)
+  return static_cast<uint32_t>(util::GetTime());
 }
 
 bool AddressManager::add(const protocol::NetworkAddress &addr,

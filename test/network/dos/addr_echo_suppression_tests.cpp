@@ -6,6 +6,7 @@
 #include "network/message.hpp"
 #include "network/protocol.hpp"
 #include "test_orchestrator.hpp"
+#include "util/time.hpp"
 #include <algorithm>
 #include <cstring>
 
@@ -47,8 +48,7 @@ TEST_CASE("Echo suppression: node does not echo addresses learned from same peer
     REQUIRE(orch.WaitForConnection(A, B));
 
     // B announces address X to A via ADDR
-const uint32_t ts = static_cast<uint32_t>(
-        std::chrono::system_clock::now().time_since_epoch().count() / 1000000000);
+    const uint32_t ts = static_cast<uint32_t>(coinbasechain::util::GetTime());
     auto X = MakeTsAddrIPv4("10.0.0.42", ports::REGTEST, ts);
     message::AddrMessage addr_msg; addr_msg.addresses.push_back(X);
     auto payload = addr_msg.serialize();
@@ -92,8 +92,7 @@ TEST_CASE("Echo suppression is per-peer: addresses from C are served to other pe
     REQUIRE(orch.WaitForConnection(A, C));
 
     // C announces X to A
-const uint32_t ts = static_cast<uint32_t>(
-        std::chrono::system_clock::now().time_since_epoch().count() / 1000000000);
+    const uint32_t ts = static_cast<uint32_t>(coinbasechain::util::GetTime());
     auto X = MakeTsAddrIPv4("10.0.0.99", ports::REGTEST, ts);
     message::AddrMessage addr_msg; addr_msg.addresses.push_back(X);
     auto payload = addr_msg.serialize();
@@ -153,8 +152,7 @@ TEST_CASE("Echo suppression TTL expiry allows address to be served back after 10
     REQUIRE(orch.WaitForConnection(A, B));
 
     // B announces Y to A
-const uint32_t ts2 = static_cast<uint32_t>(
-        std::chrono::system_clock::now().time_since_epoch().count() / 1000000000);
+    const uint32_t ts2 = static_cast<uint32_t>(coinbasechain::util::GetTime());
     auto Y = MakeTsAddrIPv4("10.0.0.77", ports::REGTEST, ts2);
     message::AddrMessage addr_msg2; addr_msg2.addresses.push_back(Y);
     auto payload2 = addr_msg2.serialize();
