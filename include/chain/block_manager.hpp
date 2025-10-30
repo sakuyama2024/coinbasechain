@@ -15,11 +15,15 @@ namespace coinbasechain {
 namespace chain {
 
 // BlockManager - Manages all known block headers and the active chain
-// Simplified from Bitcoin Core for headers-only chain 
+// Simplified from Bitcoin Core for headers-only chain
 //
-// THREAD SAFETY: NO internal mutex - caller MUST hold
-// ChainstateManager::validation_mutex_ BlockManager is PRIVATE member of
-// ChainstateManager, all access goes through ChainstateManager
+// THREAD SAFETY: NO internal synchronization - caller MUST serialize all access
+// BlockManager is a PRIVATE member of ChainstateManager
+// ChainstateManager::validation_mutex_ protects ALL BlockManager methods
+// ALL public methods (Initialize, AddToBlockIndex, LookupBlockIndex, Save, Load, etc.)
+// MUST be called while holding ChainstateManager::validation_mutex_
+// m_block_index, m_active_chain, and m_initialized are NOT thread-safe
+// Concurrent access without external locking will cause data races and undefined behavior
 
 class BlockManager {
 public:
@@ -43,8 +47,7 @@ public:
   CBlockIndex *GetTip() { return m_active_chain.Tip(); }
   const CBlockIndex *GetTip() const { return m_active_chain.Tip(); }
 
-  // Set new tip for active chain (populates entire vChain vector by walking
-  // backwards)
+  // Set new tip for active chain (populates entire vChain vector by walking backwards)
   void SetActiveTip(CBlockIndex &block) { m_active_chain.SetTip(block); }
 
   size_t GetBlockCount() const { return m_block_index.size(); }
@@ -57,7 +60,7 @@ public:
   bool Save(const std::string &filepath) const;
 
   // Load headers from disk (reconstructs block index and active chain)
-  // Returns true if loaded successfully and genesis matches
+  // Returns true if loaded successfully and passes validation checks
   bool Load(const std::string &filepath, const uint256 &expected_genesis_hash);
 
 private:

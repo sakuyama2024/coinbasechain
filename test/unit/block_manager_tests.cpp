@@ -126,16 +126,17 @@ TEST_CASE("BlockManager - AddToBlockIndex", "[chain][block_manager][unit]") {
         REQUIRE(bm.GetBlockCount() == 2);  // Still only 2 blocks
     }
 
-    SECTION("Add orphan block (parent not found)") {
+    SECTION("Add orphan block (parent not found) - rejected") {
+        // Test defensive behavior: orphans are rejected by BlockManager
         uint256 unknown_parent;
         unknown_parent.SetHex("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
 
         CBlockHeader orphan = CreateChildHeader(unknown_parent);
         CBlockIndex* pindex = bm.AddToBlockIndex(orphan);
 
-        REQUIRE(pindex != nullptr);
-        REQUIRE(pindex->pprev == nullptr);  // No parent found
-        REQUIRE(pindex->nHeight == 0);  // Treated as height 0 (orphan)
+        // Orphans are now rejected (defensive fix)
+        REQUIRE(pindex == nullptr);
+        REQUIRE(bm.GetBlockCount() == 1);  // Only genesis
     }
 
     SECTION("Add chain of blocks") {
@@ -531,7 +532,10 @@ TEST_CASE("BlockManager - Edge Cases", "[chain][block_manager][unit]") {
         REQUIRE(bm.GetBlockCount() == 3);  // Genesis + 2 forks
     }
 
-    SECTION("Out of order block addition") {
+    SECTION("Out of order block addition - orphans rejected") {
+        // Test defensive behavior: orphans (blocks with missing parents) are rejected
+        // This is correct - ChainstateManager handles orphans via AddOrphanHeader,
+        // not BlockManager::AddToBlockIndex
         BlockManager bm;
         CBlockHeader genesis = CreateTestHeader();
         bm.Initialize(genesis);
@@ -540,24 +544,35 @@ TEST_CASE("BlockManager - Edge Cases", "[chain][block_manager][unit]") {
         CBlockHeader block2 = CreateChildHeader(block1.GetHash());
         CBlockHeader block3 = CreateChildHeader(block2.GetHash());
 
-        // Add block 3 first (orphan)
+        // Try to add block 3 first (orphan) - should be rejected
         CBlockIndex* p3 = bm.AddToBlockIndex(block3);
-        REQUIRE(p3->pprev == nullptr);  // Parent not found yet
-        REQUIRE(p3->nHeight == 0);
+        REQUIRE(p3 == nullptr);  // Orphan rejected
+        REQUIRE(bm.GetBlockCount() == 1);  // Only genesis
 
-        // Add block 2 (still orphan)
+        // Try to add block 2 (still orphan) - should also be rejected
         CBlockIndex* p2 = bm.AddToBlockIndex(block2);
-        REQUIRE(p2->pprev == nullptr);  // Block 1 not found yet
-        REQUIRE(p2->nHeight == 0);
+        REQUIRE(p2 == nullptr);  // Orphan rejected
+        REQUIRE(bm.GetBlockCount() == 1);  // Still only genesis
 
-        // Add block 1 (connects to genesis)
+        // Add block 1 (connects to genesis) - should succeed
         CBlockIndex* p1 = bm.AddToBlockIndex(block1);
+        REQUIRE(p1 != nullptr);
         REQUIRE(p1->pprev != nullptr);
         REQUIRE(p1->nHeight == 1);
+        REQUIRE(bm.GetBlockCount() == 2);  // Genesis + block1
 
-        // Note: Earlier orphans don't automatically reconnect
-        // (That's ChainStateManager's job)
-        REQUIRE(p2->pprev == nullptr);
-        REQUIRE(p3->pprev == nullptr);
+        // Now add block 2 (connects to block1) - should succeed
+        p2 = bm.AddToBlockIndex(block2);
+        REQUIRE(p2 != nullptr);
+        REQUIRE(p2->pprev == p1);
+        REQUIRE(p2->nHeight == 2);
+        REQUIRE(bm.GetBlockCount() == 3);  // Genesis + block1 + block2
+
+        // Finally add block 3 (connects to block2) - should succeed
+        p3 = bm.AddToBlockIndex(block3);
+        REQUIRE(p3 != nullptr);
+        REQUIRE(p3->pprev == p2);
+        REQUIRE(p3->nHeight == 3);
+        REQUIRE(bm.GetBlockCount() == 4);  // Complete chain
     }
 }

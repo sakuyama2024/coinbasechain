@@ -7,11 +7,62 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 
+//DTC1
+
 namespace coinbasechain {
 namespace chain {
 
 BlockManager::BlockManager() = default;
 BlockManager::~BlockManager() = default;
+
+// Helper: Verify that pindex forms a continuous chain back to genesis
+// Returns true if chain is valid, false otherwise
+// Used for defensive verification during Initialize and Load
+static bool VerifyChainContinuity(const CBlockIndex *pindex,
+                                   const uint256 &expected_genesis_hash,
+                                   std::string &error_msg) {
+  if (!pindex) {
+    error_msg = "null pointer";
+    return false;
+  }
+
+  const CBlockIndex *walk = pindex;
+  int blocks_walked = 0;
+
+  // Walk backwards to genesis
+  while (walk->pprev) {
+    walk = walk->pprev;
+    blocks_walked++;
+
+    // Sanity: prevent infinite loop in case of circular reference bug
+    if (blocks_walked > 1000000) {
+      error_msg = "chain walk exceeded 1M blocks (circular reference?)";
+      return false;
+    }
+  }
+
+  // Reached a block with no parent - must be genesis
+  if (walk->GetBlockHash() != expected_genesis_hash) {
+    error_msg = "chain does not descend from expected genesis (found " +
+                walk->GetBlockHash().ToString().substr(0, 16) + ", expected " +
+                expected_genesis_hash.ToString().substr(0, 16) + ")";
+    return false;
+  }
+
+  // Verify height consistency
+  if (walk->nHeight != 0) {
+    error_msg = "genesis block has non-zero height " + std::to_string(walk->nHeight);
+    return false;
+  }
+
+  if (pindex->nHeight != blocks_walked) {
+    error_msg = "height mismatch: pindex->nHeight=" + std::to_string(pindex->nHeight) +
+                " but walked " + std::to_string(blocks_walked) + " blocks";
+    return false;
+  }
+
+  return true;
+}
 
 bool BlockManager::Initialize(const CBlockHeader &genesis) {
   LOG_CHAIN_TRACE("Initialize: called with genesis hash={}",
@@ -34,10 +85,17 @@ bool BlockManager::Initialize(const CBlockHeader &genesis) {
 
   // Remember genesis hash
   m_genesis_hash = genesis.GetHash();
-  m_initialized = true;
 
-  LOG_CHAIN_TRACE("BlockManager initialized with genesis: {}",
-                 m_genesis_hash.ToString());
+  // Defensive: Verify chain continuity (trivial for genesis, but ensures invariant)
+  std::string error_msg;
+  if (!VerifyChainContinuity(pindex, m_genesis_hash, error_msg)) {
+    LOG_CHAIN_ERROR("Chain continuity verification failed during Initialize: {}", error_msg);
+    return false;
+  }
+
+  m_initialized = true;
+  
+  LOG_CHAIN_TRACE("BlockManager initialized with genesis: {}",m_genesis_hash.ToString().substr(0, 16));
 
   return true;
 }
@@ -73,13 +131,18 @@ CBlockIndex *BlockManager::AddToBlockIndex(const CBlockHeader &header) {
   // Create new entry (use try_emplace to construct CBlockIndex in-place)
   auto [iter, inserted] = m_block_index.try_emplace(hash, header);
   if (!inserted) {
-    LOG_CHAIN_ERROR("Failed to insert block {}", hash.ToString());
+    LOG_CHAIN_ERROR("Failed to insert block {}", hash.ToString().substr(0, 16));
     return nullptr;
   }
 
   CBlockIndex *pindex = &iter->second;
 
   // Set hash pointer (points to the map's key)
+  // CRITICAL: This requires pointer stability from the container
+  // std::map guarantees this, std::unordered_map does NOT
+  static_assert(std::is_same<decltype(m_block_index), std::map<uint256, CBlockIndex>>::value,
+                "m_block_index must be std::map for pointer stability (phashBlock = &iter->first). "
+                "std::unordered_map will cause use-after-free on rehash.");
   pindex->phashBlock = &iter->first;
 
   // Connect to parent
@@ -90,12 +153,11 @@ CBlockIndex *BlockManager::AddToBlockIndex(const CBlockHeader &header) {
   // std::set ordering and MUST remain immutable after the block is added
   // to any sorted container (e.g., candidate set).
   //
-  // NEVER modify these fields after this point! Doing so would violate
+  // NEVER modify these fields after this point. Doing so would violate
   // std::set invariants and cause undefined behavior (broken ordering,
   // failed lookups, crashes).
   //
-  // If you need to modify these fields for any reason (e.g., revalidation),
-  // you MUST:
+  // If you need to modify these fields for any reason you MUST:
   // 1. Remove the block from all ChainSelector candidate sets
   // 2. Modify the fields
   // 3. Re-add the block to candidate sets if applicable
@@ -108,7 +170,25 @@ CBlockIndex *BlockManager::AddToBlockIndex(const CBlockHeader &header) {
     LOG_CHAIN_TRACE("AddToBlockIndex: Created new block index height={} log2_work={:.6f}",
                     pindex->nHeight, std::log(pindex->nChainWork.getdouble()) / std::log(2.0));
   } else {
-    // Genesis block
+    // Genesis block - verify invariant
+    // CRITICAL DEFENSE: pprev is null but we must verify this is actually genesis
+    // If hashPrevBlock is non-null, this is an orphan (missing parent), which
+    // should NEVER reach AddToBlockIndex. ChainstateManager must reject orphans
+    // and stash them in the orphan pool. If we allowed this, we'd permanently
+    // corrupt the block with height=0 and wrong chainwork (std::set invariants
+    // forbid changing these fields after insertion).
+    if (!header.hashPrevBlock.IsNull()) {
+      LOG_CHAIN_ERROR("CRITICAL BUG: AddToBlockIndex called with orphan header {}. "
+                      "Parent {} not found in index. Orphans must be handled at "
+                      "ChainstateManager level (AddOrphanHeader), not passed to "
+                      "AddToBlockIndex. This indicates a caller bug.",
+                      hash.ToString().substr(0, 16),
+                      header.hashPrevBlock.ToString().substr(0, 16));
+      // Remove the corrupted entry we just created
+      m_block_index.erase(hash);
+      return nullptr;
+    }
+
     pindex->nHeight = 0;
     pindex->nChainWork = GetBlockProof(*pindex);
     pindex->nTimeMax = pindex->GetBlockTime();
@@ -139,30 +219,41 @@ bool BlockManager::Save(const std::string &filepath) const {
     // Save genesis hash
     root["genesis_hash"] = m_genesis_hash.ToString();
 
-    // Save all blocks
-    json blocks = json::array();
+    // Save all blocks in height order (topological order)
+    // This makes the JSON file easier to read and diff for debugging
+    std::vector<const CBlockIndex*> sorted_blocks;
+    sorted_blocks.reserve(m_block_index.size());
     for (const auto &[hash, block_index] : m_block_index) {
+      sorted_blocks.push_back(&block_index);
+    }
+    std::sort(sorted_blocks.begin(), sorted_blocks.end(),
+              [](const CBlockIndex* a, const CBlockIndex* b) {
+                return a->nHeight < b->nHeight;
+              });
+
+    json blocks = json::array();
+    for (const CBlockIndex* block_index : sorted_blocks) {
       json block_data;
 
       // Block hash
-      block_data["hash"] = hash.ToString();
+      block_data["hash"] = block_index->GetBlockHash().ToString();
 
       // Header fields
-      block_data["version"] = block_index.nVersion;
-      block_data["miner_address"] = block_index.minerAddress.ToString();
-      block_data["time"] = block_index.nTime;
-      block_data["bits"] = block_index.nBits;
-      block_data["nonce"] = block_index.nNonce;
-      block_data["hash_randomx"] = block_index.hashRandomX.ToString();
+      block_data["version"] = block_index->nVersion;
+      block_data["miner_address"] = block_index->minerAddress.ToString();
+      block_data["time"] = block_index->nTime;
+      block_data["bits"] = block_index->nBits;
+      block_data["nonce"] = block_index->nNonce;
+      block_data["hash_randomx"] = block_index->hashRandomX.ToString();
 
       // Chain metadata
-      block_data["height"] = block_index.nHeight;
-      block_data["chainwork"] = block_index.nChainWork.GetHex();
-      block_data["status"] = block_index.nStatus;
+      block_data["height"] = block_index->nHeight;
+      block_data["chainwork"] = block_index->nChainWork.GetHex();
+      block_data["status"] = block_index->nStatus;
 
       // Previous block hash (for reconstruction)
-      if (block_index.pprev) {
-        block_data["prev_hash"] = block_index.pprev->GetBlockHash().ToString();
+      if (block_index->pprev) {
+        block_data["prev_hash"] = block_index->pprev->GetBlockHash().ToString();
       } else {
         block_data["prev_hash"] = uint256().ToString(); // Genesis has null prev
       }
@@ -191,8 +282,7 @@ bool BlockManager::Save(const std::string &filepath) const {
   }
 }
 
-bool BlockManager::Load(const std::string &filepath,
-                        const uint256 &expected_genesis_hash) {
+bool BlockManager::Load(const std::string &filepath, const uint256 &expected_genesis_hash) {
   using json = nlohmann::json;
 
   try {
@@ -224,13 +314,13 @@ bool BlockManager::Load(const std::string &filepath,
     LOG_CHAIN_TRACE("Loading {} headers, genesis: {}, tip: {}", block_count,
                    genesis_hash_str, tip_hash_str);
 
-    // CRITICAL: Validate genesis block hash matches expected network
+    // Validate genesis block hash matches expected network
     uint256 loaded_genesis_hash;
     loaded_genesis_hash.SetHex(genesis_hash_str);
     if (loaded_genesis_hash != expected_genesis_hash) {
       LOG_CHAIN_ERROR("GENESIS MISMATCH: Loaded genesis {} does not match "
                       "expected genesis {}",
-                      genesis_hash_str, expected_genesis_hash.ToString());
+                      genesis_hash_str.substr(0, 16), expected_genesis_hash.ToString().substr(0, 16));
       LOG_CHAIN_ERROR(
           "This datadir contains headers from a different network!");
       LOG_CHAIN_ERROR(
@@ -244,14 +334,43 @@ bool BlockManager::Load(const std::string &filepath,
     m_block_index.clear();
     m_active_chain.Clear();
 
-    // Load all blocks
+    // Validate blocks field exists and is an array
+    if (!root.contains("blocks")) {
+      LOG_CHAIN_ERROR("Header file missing 'blocks' field");
+      return false;
+    }
+    if (!root["blocks"].is_array()) {
+      LOG_CHAIN_ERROR("'blocks' field is not an array");
+      return false;
+    }
+
     const json &blocks = root["blocks"];
+
+    // Verify block_count matches actual array size (detect corruption/truncation)
+    if (blocks.size() != block_count) {
+      LOG_CHAIN_WARN("Block count mismatch: header says {}, array has {}. "
+                    "File may be corrupted or truncated. Using actual array size.",
+                    block_count, blocks.size());
+      block_count = blocks.size();
+    }
 
     // First pass: Create all CBlockIndex objects (without connecting pprev)
     std::map<uint256, std::pair<CBlockIndex *, uint256>>
-        block_map; // hash -> (pindex, prev_hash)
+        block_map; // hash -> (pindex, prev_hash), expected size: blocks.size()
 
     for (const auto &block_data : blocks) {
+      // Validate required fields are present
+      static const std::vector<std::string> required_fields = {
+        "hash", "prev_hash", "version", "miner_address", "time",
+        "bits", "nonce", "hash_randomx", "height", "chainwork", "status"
+      };
+      for (const auto &field : required_fields) {
+        if (!block_data.contains(field)) {
+          LOG_CHAIN_ERROR("Block entry missing required field '{}'. File corrupted.", field);
+          return false;
+        }
+      }
+
       // Parse block data
       uint256 hash;
       hash.SetHex(block_data["hash"].get<std::string>());
@@ -262,22 +381,37 @@ bool BlockManager::Load(const std::string &filepath,
       // Create header
       CBlockHeader header;
       header.nVersion = block_data["version"].get<int32_t>();
-      header.minerAddress.SetHex(
-          block_data["miner_address"].get<std::string>());
+      header.minerAddress.SetHex(block_data["miner_address"].get<std::string>());
       header.nTime = block_data["time"].get<uint32_t>();
       header.nBits = block_data["bits"].get<uint32_t>();
       header.nNonce = block_data["nonce"].get<uint32_t>();
       header.hashRandomX.SetHex(block_data["hash_randomx"].get<std::string>());
       header.hashPrevBlock = prev_hash;
 
+      // Verify reconstructed header hash matches stored hash
+      // This detects corruption, tampering, or missing fields in the JSON
+      uint256 recomputed_hash = header.GetHash();
+      if (recomputed_hash != hash) {
+        LOG_CHAIN_ERROR("CORRUPTION DETECTED: Stored hash {} does not match "
+                       "recomputed hash {} for block at height {}. "
+                       "The header file may be corrupted or tampered. "
+                       "Please delete {} and resync.",
+                       hash.ToString().substr(0, 16), recomputed_hash.ToString().substr(0, 16),
+                       block_data.value("height", -1), filepath);
+        return false;
+      }
+
       // Add to block index (use try_emplace to construct CBlockIndex in-place)
       auto [iter, inserted] = m_block_index.try_emplace(hash, header);
       if (!inserted) {
-        LOG_CHAIN_ERROR("Duplicate block in header file: {}", hash.ToString());
+        LOG_CHAIN_ERROR("Duplicate block in header file: {}", hash.ToString().substr(0, 16));
         return false;
       }
 
       CBlockIndex *pindex = &iter->second;
+      // Same pointer stability requirement as AddToBlockIndex
+      static_assert(std::is_same<decltype(m_block_index), std::map<uint256, CBlockIndex>>::value,
+                    "m_block_index must be std::map for pointer stability");
       pindex->phashBlock = &iter->first;
 
       // Restore metadata
@@ -297,13 +431,43 @@ bool BlockManager::Load(const std::string &filepath,
       if (!prev_hash.IsNull()) {
         pindex->pprev = LookupBlockIndex(prev_hash);
         if (!pindex->pprev) {
-          LOG_CHAIN_ERROR("Parent block not found for {}: {}", hash.ToString(),
-                          prev_hash.ToString());
+          LOG_CHAIN_ERROR("Parent block not found for {}: {}", hash.ToString().substr(0, 16),
+                          prev_hash.ToString().substr(0, 16));
           return false;
         }
       } else {
         pindex->pprev = nullptr; // Genesis
       }
+    }
+
+    // Validate genesis uniqueness: exactly one block with pprev == nullptr
+    CBlockIndex *found_genesis = nullptr;
+    int genesis_count = 0;
+    for (auto &kv : m_block_index) {
+      CBlockIndex *pindex = &kv.second;
+      if (pindex->pprev == nullptr) {
+        genesis_count++;
+        found_genesis = pindex;
+      }
+    }
+
+    if (genesis_count == 0) {
+      LOG_CHAIN_ERROR("No genesis block found (no block with pprev == nullptr)");
+      return false;
+    }
+    if (genesis_count > 1) {
+      LOG_CHAIN_ERROR("Multiple genesis blocks found ({} blocks with pprev == nullptr). "
+                     "File corrupted - should have exactly one genesis.",
+                     genesis_count);
+      return false;
+    }
+
+    // Verify the genesis block hash matches expected
+    if (found_genesis->GetBlockHash() != expected_genesis_hash) {
+      LOG_CHAIN_ERROR("Genesis block hash mismatch: found {} but expected {}",
+                     found_genesis->GetBlockHash().ToString().substr(0, 16),
+                     expected_genesis_hash.ToString().substr(0, 16));
+      return false;
     }
 
     // Third pass: Compute nTimeMax in height order to ensure monotonicity
@@ -317,6 +481,16 @@ bool BlockManager::Load(const std::string &filepath,
     });
     for (CBlockIndex* pindex : by_height) {
       if (pindex->pprev) {
+        // Defensive: Verify parent-child height invariant
+        // Because we're iterating in height order, parent must have lower height
+        // If this fails, either heights are corrupted or pprev is broken
+        if (pindex->pprev->nHeight >= pindex->nHeight) {
+          LOG_CHAIN_ERROR("INVARIANT VIOLATION: Block {} (height {}) has parent {} (height {}). "
+                         "Parent height must be less than child height!",
+                         pindex->GetBlockHash().ToString().substr(0, 16), pindex->nHeight,
+                         pindex->pprev->GetBlockHash().ToString().substr(0, 16), pindex->pprev->nHeight);
+          return false;
+        }
         pindex->nTimeMax = std::max<int64_t>(pindex->pprev->nTimeMax, pindex->GetBlockTime());
       } else {
         pindex->nTimeMax = pindex->GetBlockTime();
@@ -326,17 +500,60 @@ bool BlockManager::Load(const std::string &filepath,
     // Restore genesis hash
     m_genesis_hash.SetHex(genesis_hash_str);
 
-    // Restore active chain tip
-    if (!tip_hash_str.empty()) {
-      uint256 tip_hash;
-      tip_hash.SetHex(tip_hash_str);
-      CBlockIndex *tip = LookupBlockIndex(tip_hash);
-      if (!tip) {
-        LOG_CHAIN_ERROR("Tip block not found: {}", tip_hash_str);
+    // Find the best valid tip by chainwork (don't trust saved tip)
+    // Defense: The saved tip could be corrupted, stale, or from before invalidateblock
+    CBlockIndex *best_tip = nullptr;
+    arith_uint256 best_work = 0;
+
+    for (auto &kv : m_block_index) {
+      CBlockIndex *pindex = &kv.second;
+
+      // Skip invalid blocks
+      if (pindex->nStatus & BLOCK_FAILED_MASK) {
+        continue;
+      }
+
+      // Skip blocks that don't descend from genesis (broken chains)
+      if (pindex->pprev == nullptr && pindex->GetBlockHash() != m_genesis_hash) {
+        continue;
+      }
+
+      // Track block with most work
+      if (pindex->nChainWork > best_work) {
+        best_work = pindex->nChainWork;
+        best_tip = pindex;
+      }
+    }
+
+    if (best_tip) {
+      m_active_chain.SetTip(*best_tip);
+      LOG_CHAIN_TRACE("Set active chain to best tip by work: height={} hash={}",
+                     best_tip->nHeight, best_tip->GetBlockHash().ToString().substr(0, 16));
+
+      // Defensive: Verify chain continuity from best_tip to genesis
+      // This catches corrupted pprev pointers, broken chains, or height inconsistencies
+      std::string error_msg;
+      if (!VerifyChainContinuity(best_tip, m_genesis_hash, error_msg)) {
+        LOG_CHAIN_ERROR("Chain continuity verification failed during Load: {}", error_msg);
+        LOG_CHAIN_ERROR("Active chain tip does not form valid chain to genesis!");
         return false;
       }
-      m_active_chain.SetTip(*tip);
-      LOG_CHAIN_TRACE("Restored active chain to height {}", tip->nHeight);
+
+      // Verify saved tip matches best tip (detect corruption/staleness)
+      if (!tip_hash_str.empty()) {
+        uint256 saved_tip_hash;
+        saved_tip_hash.SetHex(tip_hash_str);
+        if (saved_tip_hash != best_tip->GetBlockHash()) {
+          CBlockIndex *saved_tip = LookupBlockIndex(saved_tip_hash);
+          LOG_CHAIN_WARN("Saved tip {} (height={}) differs from best tip {} (height={}). "
+                        "Using best tip. This can happen after invalidateblock or corruption.",
+                        tip_hash_str, saved_tip ? saved_tip->nHeight : -1,
+                        best_tip->GetBlockHash().ToString().substr(0, 16), best_tip->nHeight);
+        }
+      }
+    } else {
+      LOG_CHAIN_ERROR("No valid tip found in loaded headers!");
+      return false;
     }
 
     m_initialized = true;
