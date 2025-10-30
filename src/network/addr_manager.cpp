@@ -12,8 +12,8 @@ namespace network {
 
 // Constants
 static constexpr uint32_t STALE_AFTER_DAYS = 30;
-static constexpr uint32_t MAX_FAILURES = 10;
 static constexpr uint32_t SECONDS_PER_DAY = 86400;
+static constexpr uint32_t RECENT_TRY_SEC = 600; // 10 minutes
 
 // AddrInfo implementation
 
@@ -30,17 +30,32 @@ bool AddrInfo::is_stale(uint32_t now) const {
 }
 
 bool AddrInfo::is_terrible(uint32_t now) const {
-  // Too many failed attempts
-  if (attempts >= MAX_FAILURES) {
-    return true;
-  }
-
-  // No success and too old
+  // Only applies to new (untried) addresses
+  // Tried addresses stay in tried table permanently (Bitcoin Core parity)
   if (!tried && is_stale(now)) {
     return true;
   }
 
   return false;
+}
+
+double AddrInfo::GetChance(uint32_t now) const {
+  double chance = 1.0;
+
+  // Deprioritize very recent attempts (Bitcoin Core: 1% chance if tried < 10min ago)
+  if (last_try > 0 && (now - last_try) < RECENT_TRY_SEC) {
+    chance *= 0.01;
+  }
+
+  // Deprioritize by failure count: 66% per failure, capped at 8 attempts
+  // After 8 failures: 0.66^8 = 3.57% chance (never zero!)
+  // Formula: chance *= 0.66^min(attempts, 8)
+  if (attempts > 0) {
+    int capped_attempts = std::min(attempts, 8);
+    chance *= std::pow(0.66, capped_attempts);
+  }
+
+  return chance;
 }
 
 // AddressManager implementation
@@ -202,72 +217,81 @@ void AddressManager::failed(const protocol::NetworkAddress &addr) {
   // Update in tried table
   auto tried_it = tried_.find(key);
   if (tried_it != tried_.end()) {
+    // Just increment attempts - tried addresses stay in tried permanently
+    // They become less likely to be selected via GetChance() penalty
+    // Bitcoin Core parity: no table movement based on failure count
     tried_it->second.attempts++;
-
-    // Move back to new table if too many failures
-    if (tried_it->second.attempts >= MAX_FAILURES) {
-      tried_it->second.tried = false;
-      new_[key] = tried_it->second;
-      new_keys_.push_back(key);
-      tried_.erase(tried_it);
-
-      // Remove key from tried_keys_ vector (swap-and-pop)
-      auto vec_it = std::find(tried_keys_.begin(), tried_keys_.end(), key);
-      if (vec_it != tried_keys_.end()) {
-        *vec_it = tried_keys_.back();
-        tried_keys_.pop_back();
-      }
-    }
   }
 }
 
 std::optional<protocol::NetworkAddress> AddressManager::select() {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  // Select tried or new table with 50% probability (Bitcoin Core parity)
-  std::uniform_int_distribution<int> dist(0, 99);
-  bool use_tried = !tried_.empty() && (dist(rng_) < 50 || new_.empty());
+  // Return early if no addresses available
+  if (tried_.empty() && new_.empty()) {
+    return std::nullopt;
+  }
 
   const uint32_t now_ts = now();
-  const uint32_t COOLDOWN_SEC = 600; // 10 minutes
-  const int ATTEMPT_BYPASS = 30;     // After 30 attempts, allow sooner retries
+  double chance_factor = 1.0;
 
-  auto ok = [&](const AddrInfo& info) -> bool {
-    if (info.last_try == 0) return true;
-    if (now_ts - info.last_try >= COOLDOWN_SEC) return true;
-    if (info.attempts >= ATTEMPT_BYPASS) return true;
-    return false;
-  };
+  // Bitcoin Core parity: Infinite loop with escalating chance_factor
+  // Ensures eventual selection even for addresses with low GetChance()
+  // (e.g., 8+ failures have 3.57% chance, will be selected after ~28 iterations)
+  while (true) {
+    // Select tried or new table with 50% probability (Bitcoin Core parity)
+    std::uniform_int_distribution<int> dist(0, 99);
+    bool use_tried = !tried_.empty() && (dist(rng_) < 50 || new_.empty());
 
-  if (use_tried && !tried_keys_.empty()) {
-    std::uniform_int_distribution<size_t> idx_dist(0, tried_keys_.size() - 1);
-    const size_t max_checks = std::min<size_t>(tried_keys_.size(), 64);
-    for (size_t i = 0; i < max_checks; ++i) {
+    if (use_tried && !tried_keys_.empty()) {
+      // Select random address from tried table (O(1) random access)
+      std::uniform_int_distribution<size_t> idx_dist(0, tried_keys_.size() - 1);
       const AddressKey& key = tried_keys_[idx_dist(rng_)];
       auto it = tried_.find(key);
-      if (it != tried_.end() && ok(it->second)) {
-        return it->second.address;
-      }
-    }
-    // No suitable address found in tried table after max_checks
-    // Fall through to try new_ table
-  }
 
-  if (!new_keys_.empty()) {
-    std::uniform_int_distribution<size_t> idx_dist(0, new_keys_.size() - 1);
-    const size_t max_checks = std::min<size_t>(new_keys_.size(), 64);
-    for (size_t i = 0; i < max_checks; ++i) {
+      if (it != tried_.end()) {
+        const AddrInfo& info = it->second;
+
+        // Probabilistic selection based on GetChance() * chance_factor
+        // GetChance() returns penalty based on attempts and recency
+        double selection_chance = chance_factor * info.GetChance(now_ts);
+
+        // Generate random value [0.0, 1.0) and accept if below selection_chance
+        std::uniform_real_distribution<double> prob_dist(0.0, 1.0);
+        if (prob_dist(rng_) < selection_chance) {
+          return info.address;
+        }
+      }
+    } else if (!new_keys_.empty()) {
+      // Select random address from new table (O(1) random access)
+      std::uniform_int_distribution<size_t> idx_dist(0, new_keys_.size() - 1);
       const AddressKey& key = new_keys_[idx_dist(rng_)];
       auto it = new_.find(key);
-      if (it != new_.end() && ok(it->second)) {
-        return it->second.address;
+
+      if (it != new_.end()) {
+        const AddrInfo& info = it->second;
+
+        // Probabilistic selection based on GetChance() * chance_factor
+        double selection_chance = chance_factor * info.GetChance(now_ts);
+
+        std::uniform_real_distribution<double> prob_dist(0.0, 1.0);
+        if (prob_dist(rng_) < selection_chance) {
+          return info.address;
+        }
       }
     }
-  }
 
-  // No suitable address found in either table
-  // All addresses are in cooldown or have too many recent failures
-  return std::nullopt;
+    // Not selected - escalate chance_factor to ensure eventual selection
+    // Bitcoin Core uses 1.2 multiplier per iteration
+    chance_factor *= 1.2;
+
+    // Safety check: if chance_factor exceeds 100, something is very wrong
+    // (should select within ~28 iterations even for 3.57% chance addresses)
+    if (chance_factor > 100.0) {
+      LOG_NET_ERROR("AddressManager::select() infinite loop exceeded safety threshold");
+      return std::nullopt;
+    }
+  }
 }
 
 std::optional<protocol::NetworkAddress>

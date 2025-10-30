@@ -124,39 +124,37 @@ TEST_CASE("AddressManager state transitions", "[network][addrman]") {
         REQUIRE(addrman.new_count() == 0);
     }
 
-    SECTION("Too many failures removes address") {
+    SECTION("Too many failures - new address stays but becomes unlikely") {
         REQUIRE(addrman.add(addr));
 
-        // Fail it many times (MAX_FAILURES = 10)
+        // Fail it many times
         for (int i = 0; i < 15; i++) {
             addrman.failed(addr);
         }
 
-        // Address should be removed from new table
-        REQUIRE(addrman.size() == 0);
+        // New address stays in table (only removed if stale - Bitcoin Core parity)
+        // It becomes less likely to be selected via GetChance() penalty
+        REQUIRE(addrman.size() == 1);
+        REQUIRE(addrman.new_count() == 1);
     }
 
-    SECTION("Failed tried address moves back to new") {
+    SECTION("Failed tried address stays in tried - Bitcoin Core parity") {
         REQUIRE(addrman.add(addr));
         addrman.good(addr);
         REQUIRE(addrman.tried_count() == 1);
 
-        // Fail it exactly MAX_FAILURES times (10)
-        for (int i = 0; i < 10; i++) {
+        // Fail it many times
+        for (int i = 0; i < 20; i++) {
             addrman.failed(addr);
         }
 
-        // Should move back to new table after reaching MAX_FAILURES
-        REQUIRE(addrman.tried_count() == 0);
-        REQUIRE(addrman.new_count() == 1);
-
-        // Additional failures in new table will eventually remove it
-        for (int i = 0; i < 5; i++) {
-            addrman.failed(addr);
-        }
-
-        // Now it should be removed entirely (too many failures)
-        REQUIRE(addrman.size() == 0);
+        // Bitcoin Core parity: Tried addresses stay in tried table permanently
+        // They never move back to new table regardless of failure count
+        // They become less likely to be selected via GetChance() penalty
+        // (After 8 failures: 0.66^8 = 3.57% chance, but never removed)
+        REQUIRE(addrman.tried_count() == 1);
+        REQUIRE(addrman.new_count() == 0);
+        REQUIRE(addrman.size() == 1);
     }
 }
 

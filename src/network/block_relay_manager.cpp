@@ -94,7 +94,6 @@ void BlockRelayManager::AnnounceTipToPeer(Peer* peer) {
   LOG_NET_DEBUG("Adding tip to peer {} announcement queue (height={}, hash={})",
                 peer->id(), tip->nHeight, current_tip_hash.GetHex().substr(0, 16));
 
-  // Time now (mocked unix seconds)
   const int64_t now_s = util::GetTime();
   static constexpr int64_t REANNOUNCE_INTERVAL_SEC = 10LL * 60;
 

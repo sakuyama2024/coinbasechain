@@ -115,11 +115,7 @@ void HeaderSyncManager::CheckInitialSync() {
 
   LOG_NET_TRACE("CheckInitialSync: no sync peer, attempting selection...");
 
-  // Select sync peer from OUTBOUND peers ONLY (Bitcoin Core: net_processing.cpp)
-  // Bitcoin Core only sets CNodeState::fSyncStarted for outbound peers to prevent
-  // eclipse attacks. Outbound peer selection is controlled by your node (DNS seeds,
-  // AddressManager diversity); inbound peer selection is controlled by attackers.
-  //
+  // Select sync peer from OUTBOUND peers ONLY 
   // Security rationale:
   // - During IBD: Attacker can feed fake chain from genesis (no valid history)
   // - Post-IBD: Attacker can waste bandwidth with invalid headers, DoS vectors
@@ -153,7 +149,6 @@ void HeaderSyncManager::CheckInitialSync() {
   }
 
   // No suitable outbound peer available - wait for outbound connections.
-  // Bitcoin Core behavior: Never fall back to inbound peers for sync.
 }
 
 void HeaderSyncManager::RequestHeadersFromPeer(PeerPtr peer) {
@@ -195,11 +190,10 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   const auto &headers = msg->headers;
   int peer_id = peer->id();
 
-  // Bitcoin Core parity: During IBD, only process large (batch) headers from the
-  // designated sync peer. Allow small unsolicited announcements (1-2 headers)
-  // from any peer. This avoids wasting bandwidth processing full batches from
-  // multiple peers.
-  // Gate large batches to the designated sync peer ONLY during IBD (Bitcoin Core behavior).
+  // During IBD, only process large (batch) headers from the designated sync peer.
+  // Allow small unsolicited announcements (1-2 headers) from any peer
+  // This avoids wasting bandwidth processing full batches from multiple peers.
+  // Gate large batches to the designated sync peer ONLY during IBD.
   if (chainstate_manager_.IsInitialBlockDownload()) {
     constexpr size_t MAX_UNSOLICITED_ANNOUNCEMENT = 2; // accept small announcements
     uint64_t sync_id = GetSyncPeerId();
@@ -216,10 +210,6 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   // Bitcoin Core approach: If the last header in this batch is already in our chain
   // and is an ancestor of our best header or tip, skip all DoS checks for this entire batch.
   // This prevents false positives when reconnecting to peers after manual InvalidateBlock.
-  //
-  // Fixed implementation: Check that header is on active chain (not just any side chain).
-  // This prevents DoS where attacker creates low-work side chain forks and forces
-  // expensive RandomX validation by claiming headers build on validated side-chain headers.
   bool skip_dos_checks = false;
   if (!headers.empty()) {
     const chain::CBlockIndex* last_header_index =
@@ -312,8 +302,7 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
     return false;
   }
 
-  // DoS Protection: Check for low-work headers (Bitcoin Core approach)
-  // Bitcoin Core: net_processing.cpp lines 2993-2999
+  // DoS Protection: Check for low-work headers
   // Only run anti-DoS check if we haven't already validated this work
   if (!skip_dos_checks) {
     const chain::CBlockIndex* chain_start = chainstate_manager_.LookupBlockIndex(headers[0].hashPrevBlock);
@@ -394,14 +383,13 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
         }
       }
 
-      // Duplicate header - Bitcoin Core approach: only penalize if it's a duplicate of an INVALID header
+      // Duplicate header: only penalize if it's a duplicate of an INVALID header
       if (reason == "duplicate") {
         const chain::CBlockIndex* existing = chainstate_manager_.LookupBlockIndex(header.GetHash());
         LOG_NET_TRACE("Duplicate header from peer {}: {} (existing={}, valid={}, skip_dos_checks={})",
                       peer_id, header.GetHash().ToString().substr(0, 16),
                       existing ? "yes" : "no", existing ? existing->IsValid() : false, skip_dos_checks);
 
-        // Bitcoin Core parity:
         // - If we're skipping DoS checks (ancestor on active chain), do not penalize duplicates.
         if (skip_dos_checks) {
           LOG_NET_TRACE("Skipping DoS check for duplicate header (batch contains ancestors)");
@@ -488,14 +476,11 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   }
 
   // Check if we should request more headers
-  // Bitcoin Core: Never clears fSyncStarted after receiving headers successfully
-  // Only timeout clears it. This prevents trying all peers sequentially.
   if (ShouldRequestMore()) {
     RequestHeadersFromPeer(peer);
   } else {
     // Do not clear sync peer here. Keep the current sync peer so that future
     // INV announcements from this peer can trigger additional GETHEADERS,
-    // matching Bitcoin Core behavior where fSyncStarted remains until timeout.
   }
 
   return true;
@@ -605,22 +590,18 @@ bool HeaderSyncManager::IsSynced(int64_t max_age_seconds) const {
 }
 
 bool HeaderSyncManager::ShouldRequestMore() const {
-  // Bitcoin Core logic (net_processing.cpp line 3019):
-  // if (nCount == MAX_HEADERS_RESULTS && !have_headers_sync)
-  //
   // Request more if batch was full (peer may have more headers).
   // We don't have Bitcoin's HeadersSyncState mechanism, so we always
   // behave like have_headers_sync=false.
   //
   // IMPORTANT: Do NOT check IsSynced() here! In regtest, blocks are mined
   // instantly so tip is always "recent", which would cause us to abandon
-  // sync peers prematurely. Bitcoin Core doesn't check sync state here either.
+  // sync peers prematurely. 
   std::lock_guard<std::mutex> lock(sync_mutex_);
   return last_batch_size_ == protocol::MAX_HEADERS_SIZE;
 }
 
 CBlockLocator HeaderSyncManager::GetLocatorFromPrev() const {
-  // Matches Bitcoin's initial sync logic
   // Start from pprev of tip to ensure non-empty response
   const chain::CBlockIndex *tip = chainstate_manager_.GetTip();
   if (!tip) {

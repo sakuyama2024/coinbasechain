@@ -172,8 +172,7 @@ private:
   // Components
   std::unique_ptr<AddressManager> addr_manager_;
   std::unique_ptr<PeerManager> peer_manager_;
-  validation::ChainstateManager
-      &chainstate_manager_; // Reference to Application's ChainstateManager
+  validation::ChainstateManager &chainstate_manager_; 
   std::unique_ptr<BanMan> ban_man_;
   std::unique_ptr<NATManager> nat_manager_;
   std::unique_ptr<AnchorManager> anchor_manager_;

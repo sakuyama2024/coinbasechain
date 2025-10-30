@@ -50,6 +50,10 @@ struct AddrInfo {
 
   // Get binary key for this address (efficient: no string formatting)
   AddressKey get_key() const;
+
+  // Calculate selection probability based on failure count and recency
+  // Bitcoin Core parity: probabilistic selection instead of hard cutoffs
+  double GetChance(uint32_t now) const;
 };
 
 /**

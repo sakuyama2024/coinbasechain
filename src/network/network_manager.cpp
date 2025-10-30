@@ -413,7 +413,7 @@ void NetworkManager::disconnect_from(int peer_id) {
 }
 
 bool NetworkManager::already_connected_to_address(const std::string& address, uint16_t port) {
-  // Bitcoin Core pattern: Check existing connections to prevent duplicates
+  // Check existing connections to prevent duplicates
   // Uses peer_manager's find_peer_by_address which iterates through all peers
   // Returns true if we already have a connection to this address:port
   return peer_manager_->find_peer_by_address(address, port) != -1;
@@ -433,7 +433,6 @@ size_t NetworkManager::inbound_peer_count() const {
 
 void NetworkManager::bootstrap_from_fixed_seeds(const chain::ChainParams &params) {
   // Bootstrap AddressManager from hardcoded seed nodes
-  // (follows Bitcoin's ThreadDNSAddressSeed logic when addrman is empty)
 
   const auto &fixed_seeds = params.FixedSeeds();
 
@@ -576,8 +575,6 @@ void NetworkManager::attempt_outbound_connections() {
     addr_manager_->attempt(addr);
 
     // Try to connect
-    // Bitcoin Core: Don't mark as failed here for other failure cases
-    // The connection callback will mark as failed for actual network errors
     if (!connect_to(addr)) {
       LOG_NET_TRACE("Failed to initiate connection to {}:{}", ip_str, addr.port);
       // Note: Don't call addr_manager_->failed() here
@@ -670,13 +667,10 @@ void NetworkManager::run_maintenance() {
     ban_man_->SweepBanned();
   }
 
-  // Periodically announce our tip to peers (Bitcoin Core pattern: queue only, SendMessages loop flushes)
+  // Periodically announce our tip to peers
   if (block_relay_manager_) {
     block_relay_manager_->AnnounceTipToAllPeers();
   }
-
-  // TODO: Sync timeout logic should be moved to HeaderSyncManager
-  // For now, HeaderSyncManager handles its own timeout tracking internally
 
   // Check if we need to start initial sync
   check_initial_sync();
@@ -889,12 +883,8 @@ void NetworkManager::setup_peer_message_handler(Peer *peer) {
       [this](PeerPtr peer, std::unique_ptr<message::Message> msg) {
         return handle_message(peer, std::move(msg));
       });
-
-  // No need to register peer - network::PeerManager already tracks all peers
-  // Misbehavior tracking is now handled by the unified PeerManager
 }
 
-// Bitcoin Core CheckIncomingNonce pattern (net.cpp:370-378)
 // Check if incoming nonce matches any outbound peer's local nonce
 // Returns true if OK (not self-connection), false if self-connection detected
 bool NetworkManager::check_incoming_nonce(uint64_t nonce) {
@@ -917,14 +907,11 @@ bool NetworkManager::check_incoming_nonce(uint64_t nonce) {
 
 bool NetworkManager::handle_message(PeerPtr peer,
                                     std::unique_ptr<message::Message> msg) {
-  // SECURITY: Bitcoin Core pattern - detect SELF-connections in VERSION handler
-  // Reference: net_processing.cpp:3453-3459 ProcessMessage() for "version"
   // This ONLY detects when we connect to ourselves (e.g., 127.0.0.1)
   // It does NOT handle bidirectional connections between different nodes
   if (msg->command() == protocol::commands::VERSION) {
     auto* version_msg = static_cast<message::VersionMessage*>(msg.get());
 
-    // Bitcoin Core: Only check INBOUND connections for self-connection
     // If this is an inbound peer, check if their nonce matches any of our
     // outbound peers' nonces (which would mean we connected to ourselves)
     if (peer->is_inbound()) {
