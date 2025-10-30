@@ -11,7 +11,6 @@ target_include_directories(attack_node PRIVATE
 )
 
 target_link_libraries(attack_node PRIVATE
-    chain
     network
     Boost::system
 )

@@ -367,7 +367,7 @@ TEST_CASE("CBlockIndex - IsValid and RaiseValidity", "[block_index]") {
     SECTION("RaiseValidity to TREE") {
         CBlockIndex index;
 
-        index.RaiseValidity(BLOCK_VALID_TREE);
+        (void)index.RaiseValidity(BLOCK_VALID_TREE);
 
         REQUIRE(index.IsValid(BLOCK_VALID_HEADER));
         REQUIRE(index.IsValid(BLOCK_VALID_TREE));
@@ -405,7 +405,7 @@ TEST_CASE("CBlockIndex - IsValid and RaiseValidity", "[block_index]") {
     SECTION("Validity levels are hierarchical") {
         CBlockIndex index;
 
-        index.RaiseValidity(BLOCK_VALID_TREE);
+        (void)index.RaiseValidity(BLOCK_VALID_TREE);
 
         // TREE implies HEADER
         REQUIRE(index.IsValid(BLOCK_VALID_HEADER));

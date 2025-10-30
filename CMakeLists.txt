@@ -372,7 +372,6 @@ target_include_directories(coinbasechain_tests PRIVATE
 )
 
 target_link_libraries(coinbasechain_tests PRIVATE
-    chain
     network
     Boost::system
 )

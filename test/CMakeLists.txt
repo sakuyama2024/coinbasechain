@@ -16,7 +16,6 @@ target_include_directories(test2_network_infra PUBLIC
 )
 
 target_link_libraries(test2_network_infra PUBLIC
-    chain
     network
 )
 
@@ -91,7 +90,6 @@ target_include_directories(coinbasechain_tests PRIVATE
 
 target_link_libraries(coinbasechain_tests PRIVATE
     test2_network_infra
-    chain
     network
 )
 
