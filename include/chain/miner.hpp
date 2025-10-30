@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_MINING_MINER_HPP
-#define COINBASECHAIN_MINING_MINER_HPP
+#pragma once
 
 #include "chain/chainparams.hpp"
 #include "chain/block.hpp"
@@ -104,4 +103,4 @@ private:
 } // namespace mining
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_MINING_MINER_HPP
+

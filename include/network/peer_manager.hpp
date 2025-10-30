@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_PEER_MANAGER_HPP
-#define COINBASECHAIN_PEER_MANAGER_HPP
+#pragma once
 
 #include "network/addr_manager.hpp"
 #include "network/peer.hpp"
@@ -194,4 +193,4 @@ private:
 } // namespace network
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_PEER_MANAGER_HPP
+

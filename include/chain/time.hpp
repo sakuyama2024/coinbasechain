@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_UTIL_TIME_HPP
-#define COINBASECHAIN_UTIL_TIME_HPP
+#pragma once
 
 #include <atomic>
 #include <chrono>
@@ -89,4 +88,4 @@ private:
 } // namespace util
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_UTIL_TIME_HPP
+

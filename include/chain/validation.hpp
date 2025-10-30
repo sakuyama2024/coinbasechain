@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_VALIDATION_VALIDATION_HPP
-#define COINBASECHAIN_VALIDATION_VALIDATION_HPP
+#pragma once
 
 #include "chain/block_index.hpp"
 #include "chain/chainparams.hpp"
@@ -147,4 +146,4 @@ bool CheckHeadersAreContinuous(const std::vector<CBlockHeader> &headers);
 } // namespace validation
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_VALIDATION_VALIDATION_HPP
+

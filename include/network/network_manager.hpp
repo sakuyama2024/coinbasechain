@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_NETWORK_MANAGER_HPP
-#define COINBASECHAIN_NETWORK_MANAGER_HPP
+#pragma once
 
 #include "chain/chainparams.hpp"
 #include "chain/block.hpp"
@@ -204,4 +203,4 @@ private:
 } // namespace network
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_NETWORK_MANAGER_HPP
+

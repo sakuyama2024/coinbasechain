@@ -3,8 +3,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef COINBASECHAIN_ARITH_UINT256_HPP
-#define COINBASECHAIN_ARITH_UINT256_HPP
+#pragma once
 
 #include <compare>
 #include <cstdint>
@@ -306,4 +305,4 @@ inline arith_uint256 ArithU512ToU256(const arith_uint512& u512)
 
 // END COINBASE CHAIN EXTENSION
 
-#endif // COINBASECHAIN_ARITH_UINT256_HPP
+

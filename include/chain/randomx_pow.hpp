@@ -2,8 +2,7 @@
 // Based on Bitcoin Consensus implementation
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_CRYPTO_RANDOMX_POW_HPP
-#define COINBASECHAIN_CRYPTO_RANDOMX_POW_HPP
+#pragma once
 
 #include "chain/block.hpp"
 #include <cstdint>
@@ -84,4 +83,4 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch);
 } // namespace crypto
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_CRYPTO_RANDOMX_POW_HPP
+

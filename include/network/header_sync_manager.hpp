@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_HEADER_SYNC_MANAGER_HPP
-#define COINBASECHAIN_HEADER_SYNC_MANAGER_HPP
+#pragma once
 
 #include "chain/block.hpp"
 #include "network/peer.hpp"
@@ -95,4 +94,4 @@ private:
 } // namespace network
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_HEADER_SYNC_MANAGER_HPP
+

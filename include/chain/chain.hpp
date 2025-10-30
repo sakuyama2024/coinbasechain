@@ -3,8 +3,7 @@
 // Copyright (c) 2025 The Unicity Foundation
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_CHAIN_CHAIN_HPP
-#define COINBASECHAIN_CHAIN_CHAIN_HPP
+#pragma once
 
 #include "chain/block_index.hpp"
 #include "chain/block.hpp"
@@ -61,8 +60,7 @@ public:
       return nullptr;
   }
 
-  // Return maximal height in chain (equal to chain.Tip() ? chain.Tip()->nHeight
-  // : -1)
+  // Return maximal height in chain (equal to chain.Tip() ? chain.Tip()->nHeight: -1)
   int Height() const { return int(vChain.size()) - 1; }
 
   // Set/initialize chain with given tip (walks backwards using pprev to
@@ -71,12 +69,10 @@ public:
 
   void Clear() { vChain.clear(); }
 
-  // Return CBlockLocator that refers to tip of this chain (used for GETHEADERS
-  // messages)
+  // Return CBlockLocator that refers to tip of this chain (used for GETHEADER messages)
   CBlockLocator GetLocator() const;
 
-  // Find last common block between this chain and block index entry (fork
-  // point)
+  // Find last common block between this chain and block index entry (fork point)
   const CBlockIndex *FindFork(const CBlockIndex *pindex) const;
 
   // Find earliest block with timestamp >= nTime and height >= height
@@ -95,4 +91,4 @@ std::vector<uint256> LocatorEntries(const CBlockIndex *index);
 } // namespace chain
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_CHAIN_CHAIN_HPP
+

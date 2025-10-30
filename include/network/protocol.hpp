@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_PROTOCOL_HPP
-#define COINBASECHAIN_PROTOCOL_HPP
+#pragma once
 
 #include "version.hpp"
 #include <array>
@@ -186,4 +185,4 @@ struct InventoryVector {
 } // namespace protocol
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_PROTOCOL_HPP
+

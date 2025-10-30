@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_ADDR_MANAGER_HPP
-#define COINBASECHAIN_ADDR_MANAGER_HPP
+#pragma once
 
 #include "network/protocol.hpp"
 #include <chrono>
@@ -108,4 +107,4 @@ private:
 } // namespace network
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_ADDR_MANAGER_HPP
+

@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_UTIL_FILES_HPP
-#define COINBASECHAIN_UTIL_FILES_HPP
+#pragma once
 
 #include <cstdint>
 #include <filesystem>
@@ -62,4 +61,4 @@ std::filesystem::path get_default_datadir();
 } // namespace util
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_UTIL_FILES_HPP
+

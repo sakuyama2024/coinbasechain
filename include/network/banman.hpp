@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_NETWORK_BANMAN_HPP
-#define COINBASECHAIN_NETWORK_BANMAN_HPP
+#pragma once
 
 #include <cstdint>
 #include <map>
@@ -83,4 +82,4 @@ private:
 } // namespace network
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_NETWORK_BANMAN_HPP
+

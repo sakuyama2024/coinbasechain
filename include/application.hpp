@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_APPLICATION_HPP
-#define COINBASECHAIN_APPLICATION_HPP
+#pragma once
 
 #include "chain/block_manager.hpp"
 #include "chain/chainparams.hpp"
@@ -123,4 +122,3 @@ private:
 } // namespace app
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_APPLICATION_HPP

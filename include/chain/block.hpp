@@ -4,8 +4,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef COINBASECHAIN_PRIMITIVES_BLOCK_HPP
-#define COINBASECHAIN_PRIMITIVES_BLOCK_HPP
+#pragma once
 
 #include "chain/uint.hpp"
 #include <array>
@@ -16,7 +15,7 @@
 #include <vector>
 
 // CBlockHeader - Block header structure (represents entire block in headers-only chain)
-// Based on Bitcoin's block header, simplified for Coinbase Chain:
+// Based on Bitcoin's block header:
 // - Uses minerAddress (uint160) instead of hashMerkleRoot
 // - Includes hashRandomX for RandomX PoW algorithm
 // - No transaction data (headers-only chain)
@@ -147,4 +146,4 @@ struct CBlockLocator
     }
 };
 
-#endif // COINBASECHAIN_PRIMITIVES_BLOCK_HPP
+

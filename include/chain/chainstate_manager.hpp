@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_VALIDATION_CHAINSTATE_MANAGER_HPP
-#define COINBASECHAIN_VALIDATION_CHAINSTATE_MANAGER_HPP
+#pragma once
 
 #include "chain/block_manager.hpp"
 #include "chain/block.hpp"
@@ -180,4 +179,4 @@ private:
 } // namespace validation
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_VALIDATION_CHAINSTATE_MANAGER_HPP
+

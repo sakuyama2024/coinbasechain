@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Unicity Foundation
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_VERSION_HPP
-#define COINBASECHAIN_VERSION_HPP
+#pragma once
 
 #include <string>
 
@@ -112,4 +111,4 @@ inline std::string GetStartupBanner(const std::string &chain_type) {
 
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_VERSION_HPP
+

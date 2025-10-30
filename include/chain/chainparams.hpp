@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_CHAIN_CHAINPARAMS_HPP
-#define COINBASECHAIN_CHAIN_CHAINPARAMS_HPP
+#pragma once
 
 #include "chain/arith_uint256.hpp"
 #include "chain/block.hpp"
@@ -142,4 +141,4 @@ CBlockHeader CreateGenesisBlock(uint32_t nTime, uint32_t nNonce, uint32_t nBits,
 } // namespace chain
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_CHAIN_CHAINPARAMS_HPP
+

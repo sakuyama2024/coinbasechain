@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_MESSAGE_HPP
-#define COINBASECHAIN_MESSAGE_HPP
+#pragma once
 
 #include "network/protocol.hpp"
 #include "chain/block.hpp"
@@ -303,4 +302,4 @@ std::unique_ptr<Message> create_message(const std::string &command);
 } // namespace message
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_MESSAGE_HPP
+

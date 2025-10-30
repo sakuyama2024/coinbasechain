@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_CHAIN_BLOCK_MANAGER_HPP
-#define COINBASECHAIN_CHAIN_BLOCK_MANAGER_HPP
+#pragma once
 
 #include "chain/block_index.hpp"
 #include "chain/chain.hpp"
@@ -78,4 +77,4 @@ private:
 } // namespace chain
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_CHAIN_BLOCK_MANAGER_HPP
+

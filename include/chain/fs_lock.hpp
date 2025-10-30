@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_UTIL_FS_LOCK_HPP
-#define COINBASECHAIN_UTIL_FS_LOCK_HPP
+#pragma once
 
 #include <filesystem>
 #include <map>
@@ -93,4 +92,4 @@ void ReleaseAllDirectoryLocks();
 } // namespace util
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_UTIL_FS_LOCK_HPP
+

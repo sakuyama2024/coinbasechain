@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_CONSENSUS_POW_HPP
-#define COINBASECHAIN_CONSENSUS_POW_HPP
+#pragma once
 
 #include "chain/arith_uint256.hpp"
 #include "chain/block.hpp"
@@ -46,4 +45,4 @@ bool CheckProofOfWork(const CBlockHeader &block, uint32_t nBits,
 } // namespace consensus
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_CONSENSUS_POW_HPP
+

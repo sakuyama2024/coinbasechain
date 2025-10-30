@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_TRANSPORT_HPP
-#define COINBASECHAIN_TRANSPORT_HPP
+#pragma once
 
 #include <cstdint>
 #include <functional>
@@ -85,4 +84,4 @@ public:
 } // namespace network
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_TRANSPORT_HPP
+

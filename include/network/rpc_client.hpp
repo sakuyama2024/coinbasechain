@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_RPC_RPC_CLIENT_HPP
-#define COINBASECHAIN_RPC_RPC_CLIENT_HPP
+#pragma once
 
 #include <memory>
 #include <optional>
@@ -61,4 +60,4 @@ private:
 } // namespace rpc
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_RPC_RPC_CLIENT_HPP
+

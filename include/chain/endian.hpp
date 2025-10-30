@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_UTIL_ENDIAN_HPP
-#define COINBASECHAIN_UTIL_ENDIAN_HPP
+#pragma once
 
 #include <bit>
 #include <cstdint>
@@ -128,4 +127,4 @@ inline void WriteBE64(uint8_t *ptr, uint64_t value) {
 }
 } // namespace endian
 
-#endif // COINBASECHAIN_UTIL_ENDIAN_HPP
+

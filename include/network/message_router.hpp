@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_MESSAGE_ROUTER_HPP
-#define COINBASECHAIN_MESSAGE_ROUTER_HPP
+#pragma once
 
 #include "network/peer.hpp"
 #include "network/message.hpp"
@@ -67,4 +66,4 @@ private:
 } // namespace network
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_MESSAGE_ROUTER_HPP
+

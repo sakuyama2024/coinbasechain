@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_REAL_TRANSPORT_HPP
-#define COINBASECHAIN_REAL_TRANSPORT_HPP
+#pragma once
 
 #include "network/transport.hpp"
 #include <atomic>
@@ -130,4 +129,4 @@ private:
 } // namespace network
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_REAL_TRANSPORT_HPP
+

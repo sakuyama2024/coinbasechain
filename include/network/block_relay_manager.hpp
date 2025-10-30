@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_BLOCK_RELAY_MANAGER_HPP
-#define COINBASECHAIN_BLOCK_RELAY_MANAGER_HPP
+#pragma once
 
 #include "network/peer.hpp"
 #include "network/peer_manager.hpp"
@@ -66,4 +65,4 @@ private:
 } // namespace network
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_BLOCK_RELAY_MANAGER_HPP
+

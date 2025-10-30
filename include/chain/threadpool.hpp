@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_THREADPOOL_HPP
-#define COINBASECHAIN_THREADPOOL_HPP
+#pragma once
 
 #include <condition_variable>
 #include <functional>
@@ -86,4 +85,4 @@ auto ThreadPool::enqueue(F &&f, Args &&...args)
 } // namespace util
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_THREADPOOL_HPP
+

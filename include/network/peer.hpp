@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_PEER_HPP
-#define COINBASECHAIN_PEER_HPP
+#pragma once
 
 #include "network/connection_types.hpp"
 #include "network/message.hpp"
@@ -217,4 +216,4 @@ public:
 } // namespace network
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_PEER_HPP
+

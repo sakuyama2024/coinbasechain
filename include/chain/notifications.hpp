@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_NOTIFICATIONS_HPP
-#define COINBASECHAIN_NOTIFICATIONS_HPP
+#pragma once
 
 #include "chain/block.hpp"
 #include <concepts>
@@ -225,4 +224,4 @@ inline ChainNotifications &Notifications() { return ChainNotifications::Get(); }
 
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_NOTIFICATIONS_HPP
+

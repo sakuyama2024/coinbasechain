@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Connection types for peer-to-peer network connections
 
-#ifndef COINBASECHAIN_CONNECTION_TYPES_HPP
-#define COINBASECHAIN_CONNECTION_TYPES_HPP
+#pragma once
 
 #include <string>
 
@@ -65,4 +64,4 @@ std::string ConnectionTypeAsString(ConnectionType conn_type);
 } // namespace network
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_CONNECTION_TYPES_HPP
+

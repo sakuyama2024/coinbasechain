@@ -3,8 +3,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef COINBASECHAIN_UINT_HPP
-#define COINBASECHAIN_UINT_HPP
+#pragma once
 
 #include "chain/endian.hpp"
 
@@ -176,4 +175,4 @@ inline uint256 uint256S(std::string_view str) {
   return rv;
 }
 
-#endif // COINBASECHAIN_UINT_HPP
+

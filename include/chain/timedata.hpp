@@ -2,8 +2,7 @@
 // Distributed under the MIT software license
 // Based on Bitcoin Core's timedata implementation
 
-#ifndef COINBASECHAIN_UTIL_TIMEDATA_HPP
-#define COINBASECHAIN_UTIL_TIMEDATA_HPP
+#pragma once
 
 #include <algorithm>
 #include <cassert>
@@ -95,4 +94,4 @@ void TestOnlyResetTimeData();
 } // namespace util
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_UTIL_TIMEDATA_HPP
+

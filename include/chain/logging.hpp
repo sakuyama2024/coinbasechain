@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_UTIL_LOGGING_HPP
-#define COINBASECHAIN_UTIL_LOGGING_HPP
+#pragma once
 
 #include <memory>
 #include <spdlog/spdlog.h>
@@ -120,4 +119,4 @@ private:
 #define LOG_CRYPTO_ERROR(...)                                                  \
   coinbasechain::util::LogManager::GetLogger("crypto")->error(__VA_ARGS__)
 
-#endif // COINBASECHAIN_UTIL_LOGGING_HPP
+

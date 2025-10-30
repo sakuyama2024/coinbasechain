@@ -1,5 +1,4 @@
-#ifndef COINBASECHAIN_ANCHOR_MANAGER_HPP
-#define COINBASECHAIN_ANCHOR_MANAGER_HPP
+#pragma once
 
 #include "network/protocol.hpp"
 #include <string>
@@ -58,4 +57,4 @@ private:
 } // namespace network
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_ANCHOR_MANAGER_HPP
+
