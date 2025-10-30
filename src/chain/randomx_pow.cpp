@@ -112,7 +112,7 @@ std::shared_ptr<RandomXVMWrapper> GetCachedVM(uint32_t nEpoch) {
   auto vmWrapper = std::make_shared<RandomXVMWrapper>(myVM, myCache);
   t_vm_cache[nEpoch] = vmWrapper;
 
-  LOG_CRYPTO_INFO("Created thread-local RandomX VM for epoch {} (interpreter mode, isolated cache)", nEpoch);
+  LOG_CRYPTO_INFO("Created thread-local RandomX VM for epoch {} (isolated cache)", nEpoch);
 
   return vmWrapper;
 }
@@ -165,9 +165,6 @@ std::shared_ptr<RandomXVMWrapper> CreateVMForEpoch(uint32_t nEpoch) {
 
   uint256 seedHash = GetSeedHash(nEpoch);
   randomx_flags flags = randomx_get_flags();
-  // Disable JIT and use secure mode (interpreter only)
-  flags = static_cast<randomx_flags>(flags & ~RANDOMX_FLAG_JIT);
-  flags = static_cast<randomx_flags>(flags | RANDOMX_FLAG_SECURE);
 
   // Get or create thread-local cache (each thread has isolated cache)
   std::shared_ptr<RandomXCacheWrapper> myCache;
