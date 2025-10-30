@@ -6,14 +6,28 @@
 #include <iomanip>
 #include <sstream>
 
+//DCA1
+
 namespace coinbasechain {
 namespace chain {
 
+// Function used for debugging purposes
 std::string CBlockIndex::ToString() const {
   std::ostringstream ss;
-  ss << "CBlockIndex(pprev=" << pprev << ", nHeight=" << nHeight
-     << ", minerAddress=" << minerAddress.ToString()
-     << ", hashBlock=" << (phashBlock ? phashBlock->ToString() : "null") << ")";
+  ss << "CBlockIndex("
+     << "hash=" << (phashBlock ? phashBlock->ToString().substr(0, 16) : "null")
+     << ", height=" << nHeight
+     << ", chainwork=0x" << nChainWork.GetHex()
+     << ", status=0x" << std::hex << nStatus << std::dec
+     << ", version=" << nVersion
+     << ", time=" << nTime
+     << ", bits=0x" << std::hex << nBits << std::dec
+     << ", nonce=" << nNonce
+     << ", miner=" << minerAddress.ToString()
+     << ", randomx=" << hashRandomX.ToString().substr(0, 16)
+     << ", timemax=" << nTimeMax
+     << ", pprev=" << pprev
+     << ")";
   return ss.str();
 }
 

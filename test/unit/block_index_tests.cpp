@@ -425,7 +425,7 @@ TEST_CASE("CBlockIndex - ToString", "[block_index]") {
 
         std::string str = index.ToString();
 
-        REQUIRE(str.find("nHeight=100") != std::string::npos);
+        REQUIRE(str.find("height=100") != std::string::npos);
         REQUIRE(str.find("CBlockIndex") != std::string::npos);
         REQUIRE_FALSE(str.empty());
     }

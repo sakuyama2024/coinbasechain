@@ -1,8 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#ifndef COINBASECHAIN_CHAIN_BLOCK_INDEX_HPP
-#define COINBASECHAIN_CHAIN_BLOCK_INDEX_HPP
+#pragma once
 
 #include "chain/arith_uint256.hpp"
 #include "chain/block.hpp"
@@ -10,6 +9,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <string>
 
 namespace coinbasechain {
 namespace chain {
@@ -17,6 +17,7 @@ namespace chain {
 // Median Time Past calculation span (number of previous blocks)
 // Used by GetMedianTimePast() and also defined in validation.hpp
 static constexpr int MEDIAN_TIME_SPAN = 11;
+static_assert(MEDIAN_TIME_SPAN % 2 == 1, "MEDIAN_TIME_SPAN must be odd for proper median calculation");
 
 // Block validation status - tracks how far a block header has been validated
 // Headers-only chain - no transaction/script validation levels
@@ -40,6 +41,11 @@ enum BlockStatus : uint32_t {
   BLOCK_FAILED_MASK = BLOCK_FAILED_VALID | BLOCK_FAILED_CHILD,
 };
 
+// Enforce validity levels are sequential integers, not bitflags
+// IsValid() and RaiseValidity() use numeric comparison (< and >=)
+static_assert(BLOCK_VALID_HEADER == 1 && BLOCK_VALID_TREE == 2,
+              "Validity levels must be sequential integers (not bitflags) for comparison logic in IsValid()");
+
 // CBlockIndex - Metadata for a single block header
 // Simplified from Bitcoin Core for headers-only chain (no transaction counts,
 // file positions, skip list, or sequence ID). Header data is stored inline.
@@ -56,6 +62,10 @@ public:
    *
    * MUST be set after insertion via: pindex->phashBlock = &map_iterator->first
    * NEVER null after proper initialization (GetBlockHash() asserts non-null).
+   *
+   * CRITICAL: Requires pointer stability - BlockManager MUST use std::map
+   * (or equivalent node-based container). Do NOT change to std::unordered_map
+   * as rehashing would invalidate all phashBlock pointers.
    */
   const uint256 *phashBlock{nullptr};
 
@@ -108,9 +118,8 @@ public:
     return *phashBlock;
   }
 
-  // Reconstruct full block header (self-contained, safe to use if CBlockIndex
-  // destroyed)
-  [[nodiscard]] CBlockHeader GetBlockHeader() const {
+  // Reconstruct full block header (self-contained, safe to use if CBlockIndex destroyed)
+  [[nodiscard]] CBlockHeader GetBlockHeader() const noexcept {
     CBlockHeader block;
     block.nVersion = nVersion;
     if (pprev)
@@ -188,6 +197,7 @@ public:
     return false;
   }
 
+  // For debugging/testing only - produces human-readable representation
   [[nodiscard]] std::string ToString() const;
 
   /**
@@ -227,4 +237,4 @@ public:
 } // namespace chain
 } // namespace coinbasechain
 
-#endif // COINBASECHAIN_CHAIN_BLOCK_INDEX_HPP
+
