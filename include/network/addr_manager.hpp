@@ -30,30 +30,30 @@ struct AddressKey {
  */
 struct AddrInfo {
   protocol::NetworkAddress address;
-  uint32_t timestamp;    // Last time we heard about this address
-  uint32_t last_try;     // Last connection attempt
-  uint32_t last_success; // Last successful connection
+  int64_t timestamp;    // Last time we heard about this address
+  int64_t last_try;     // Last connection attempt
+  int64_t last_success; // Last successful connection
   int attempts;          // Number of connection attempts
   bool tried;            // Successfully connected at least once
 
   AddrInfo()
       : timestamp(0), last_try(0), last_success(0), attempts(0), tried(false) {}
-  explicit AddrInfo(const protocol::NetworkAddress &addr, uint32_t ts = 0)
+  explicit AddrInfo(const protocol::NetworkAddress &addr, int64_t ts = 0)
       : address(addr), timestamp(ts), last_try(0), last_success(0), attempts(0),
         tried(false) {}
 
   // Check if address is too old to be useful
-  bool is_stale(uint32_t now) const;
+  bool is_stale(int64_t now) const;
 
   // Check if address is terrible (too many failed attempts, etc.)
-  bool is_terrible(uint32_t now) const;
+  bool is_terrible(int64_t now) const;
 
   // Get binary key for this address (efficient: no string formatting)
   AddressKey get_key() const;
 
   // Calculate selection probability based on failure count and recency
   // Bitcoin Core parity: probabilistic selection instead of hard cutoffs
-  double GetChance(uint32_t now) const;
+  double GetChance(int64_t now) const;
 };
 
 /**
@@ -65,7 +65,7 @@ public:
   AddressManager();
 
   // Add a new address from peer discovery
-  bool add(const protocol::NetworkAddress &addr, uint32_t timestamp = 0);
+  bool add(const protocol::NetworkAddress &addr, int64_t timestamp = 0);
 
   // Add multiple addresses (e.g., from ADDR message)
   size_t
@@ -119,11 +119,8 @@ private:
   // Random number generator for selection
   std::mt19937 rng_;
 
-  // Get current time as unix timestamp
-  uint32_t now() const;
-
   // Internal add (assumes lock is held)
-  bool add_internal(const protocol::NetworkAddress &addr, uint32_t timestamp);
+  bool add_internal(const protocol::NetworkAddress &addr, int64_t timestamp);
 };
 
 } // namespace network

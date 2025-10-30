@@ -67,13 +67,13 @@ TEST_CASE("AddressManager basic operations", "[network][addrman]") {
 
     SECTION("Add multiple addresses") {
         std::vector<TimestampedAddress> addresses;
-        uint32_t current_time = static_cast<uint32_t>(coinbasechain::util::GetTime());
+        int64_t current_time = coinbasechain::util::GetTime();
 
         for (int i = 0; i < 10; i++) {
             std::string ip = "192.168.1." + std::to_string(i + 1);
             NetworkAddress addr = MakeAddress(ip, 8333);
             // Use timestamps from recent past (1 hour ago - 10 seconds ago)
-            addresses.push_back({current_time - 3600 + (i * 360), addr});
+            addresses.push_back({static_cast<uint32_t>(current_time - 3600 + (i * 360)), addr});
         }
 
         size_t added = addrman.add_multiple(addresses);
