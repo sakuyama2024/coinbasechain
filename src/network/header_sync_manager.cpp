@@ -115,6 +115,8 @@ void HeaderSyncManager::CheckInitialSync() {
   }
 
   // Try outbound peers first (preferred for initial sync)
+  // Note: Bitcoin Core only sets fSyncStarted for outbound peers to reduce eclipse attack surface.
+  // We also allow inbound fallback for simpler deployment, but this is less secure.
   auto outbound_peers = peer_manager_.get_outbound_peers();
   for (const auto &peer : outbound_peers) {
     if (!peer) continue;
@@ -132,7 +134,8 @@ void HeaderSyncManager::CheckInitialSync() {
     return; // Only one sync peer
   }
 
-  // Fallback: inbound peers
+  // Fallback: inbound peers (diverges from Bitcoin Core for operational flexibility)
+  // TODO: Consider making this configurable or removing for production hardening
   auto inbound_peers = peer_manager_.get_inbound_peers();
   for (const auto &peer : inbound_peers) {
     if (!peer) continue;
