@@ -443,13 +443,14 @@ void PeerManager::disconnect_all() {
 }
 
 void PeerManager::process_periodic() {
-  LOG_NET_TRACE("process_periodic() peers={} misbehavior_entries={}",
-                peers_.size(), peer_misbehavior_.size());
-
   std::vector<int> to_remove;
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    // Log after acquiring lock to avoid data race on peers_/peer_misbehavior_
+    LOG_NET_TRACE("process_periodic() peers={} misbehavior_entries={}",
+                  peers_.size(), peer_misbehavior_.size());
 
     // Find disconnected peers and peers marked for disconnection
     for (const auto &[id, peer] : peers_) {
