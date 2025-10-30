@@ -154,8 +154,13 @@ void ShutdownRandomX() {
 
   g_randomx_initialized = false;
 
+  // Explicitly clear thread-local caches and VMs to prevent stale state
+  // when RandomX is re-initialized in the same thread (e.g., during tests)
+  t_vm_cache.clear();
+  t_cache_storage.clear();
+
   LOG_CRYPTO_INFO("RandomX shutdown complete (thread-local caches and VMs "
-                  "cleaned up automatically)");
+                  "cleaned up)");
 }
 
 std::shared_ptr<RandomXVMWrapper> CreateVMForEpoch(uint32_t nEpoch) {
