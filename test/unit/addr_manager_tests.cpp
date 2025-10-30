@@ -124,18 +124,18 @@ TEST_CASE("AddressManager state transitions", "[network][addrman]") {
         REQUIRE(addrman.new_count() == 0);
     }
 
-    SECTION("Too many failures - new address stays but becomes unlikely") {
+    SECTION("New address removed after ADDRMAN_RETRIES failures - Bitcoin Core parity") {
         REQUIRE(addrman.add(addr));
 
-        // Fail it many times
-        for (int i = 0; i < 15; i++) {
+        // Fail it 3 times (ADDRMAN_RETRIES = 3)
+        // Bitcoin Core: New addresses that never succeed are removed after 3 attempts
+        for (int i = 0; i < 3; i++) {
             addrman.failed(addr);
         }
 
-        // New address stays in table (only removed if stale - Bitcoin Core parity)
-        // It becomes less likely to be selected via GetChance() penalty
-        REQUIRE(addrman.size() == 1);
-        REQUIRE(addrman.new_count() == 1);
+        // Address should be removed (is_terrible returns true after 3 failures with no success)
+        REQUIRE(addrman.size() == 0);
+        REQUIRE(addrman.new_count() == 0);
     }
 
     SECTION("Failed tried address stays in tried - Bitcoin Core parity") {

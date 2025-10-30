@@ -10,10 +10,15 @@
 namespace coinbasechain {
 namespace network {
 
-// Constants
-static constexpr uint32_t STALE_AFTER_DAYS = 30;
+// Constants (Bitcoin Core parity)
 static constexpr uint32_t SECONDS_PER_DAY = 86400;
 static constexpr uint32_t RECENT_TRY_SEC = 600; // 10 minutes
+
+// Bitcoin Core staleness/terrible constants
+static constexpr uint32_t ADDRMAN_HORIZON = 30 * SECONDS_PER_DAY;  // 30 days - how old addresses can maximally be
+static constexpr int32_t ADDRMAN_RETRIES = 3;                       // After how many failed attempts we give up on a new node
+static constexpr int32_t ADDRMAN_MAX_FAILURES = 10;                 // How many successive failures are allowed...
+static constexpr uint32_t ADDRMAN_MIN_FAIL = 7 * SECONDS_PER_DAY;   // ...in at least this duration (7 days)
 
 // AddrInfo implementation
 
@@ -26,13 +31,38 @@ AddressKey AddrInfo::get_key() const {
 }
 
 bool AddrInfo::is_stale(uint32_t now) const {
-  return (now - timestamp) > (STALE_AFTER_DAYS * SECONDS_PER_DAY);
+  // Simple staleness check: address timestamp is older than HORIZON (30 days)
+  return (now - timestamp) > ADDRMAN_HORIZON;
 }
 
 bool AddrInfo::is_terrible(uint32_t now) const {
-  // Only applies to new (untried) addresses
-  // Tried addresses stay in tried table permanently (Bitcoin Core parity)
-  if (!tried && is_stale(now)) {
+  // Bitcoin Core parity: Full IsTerrible() logic from addrman.cpp lines 71-94
+
+  // Never remove things tried in the last minute (grace period)
+  if (last_try > 0 && (now - last_try) <= 60) {
+    return false;
+  }
+
+  // Time traveler check: timestamp is more than 10 minutes in the future
+  if (timestamp > now + 600) {
+    return true;
+  }
+
+  // Not seen in recent history (older than 30 days)
+  if ((now - timestamp) > ADDRMAN_HORIZON) {
+    return true;
+  }
+
+  // For new addresses: tried N times and never a success
+  // (last_success == 0 means never succeeded)
+  if (last_success == 0 && attempts >= ADDRMAN_RETRIES) {
+    return true;
+  }
+
+  // For tried addresses: N successive failures in the last week
+  // (Must have succeeded at least once, but has many recent failures)
+  if (last_success > 0 && (now - last_success) > ADDRMAN_MIN_FAIL &&
+      attempts >= ADDRMAN_MAX_FAILURES) {
     return true;
   }
 
@@ -318,20 +348,34 @@ std::vector<protocol::TimestampedAddress>
 AddressManager::get_addresses(size_t max_count) {
   std::lock_guard<std::mutex> lock(mutex_);
 
+  const uint32_t now_ts = now();
   std::vector<protocol::TimestampedAddress> result;
   result.reserve(std::min(max_count, tried_.size() + new_.size()));
 
-  // Add tried addresses first
+  // Add tried addresses first, filtering terrible ones (Bitcoin Core parity)
   for (const auto &[key, info] : tried_) {
     if (result.size() >= max_count)
       break;
+
+    // Bitcoin Core: Filter terrible addresses (addrman.cpp line 838)
+    // Don't share addresses that are too old, have too many failures, etc.
+    if (info.is_terrible(now_ts)) {
+      continue;
+    }
+
     result.push_back({info.timestamp, info.address});
   }
 
-  // Add new addresses
+  // Add new addresses, filtering terrible ones
   for (const auto &[key, info] : new_) {
     if (result.size() >= max_count)
       break;
+
+    // Filter terrible addresses
+    if (info.is_terrible(now_ts)) {
+      continue;
+    }
+
     result.push_back({info.timestamp, info.address});
   }
 
