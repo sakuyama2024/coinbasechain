@@ -229,9 +229,8 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
         return it->second.address;
       }
     }
-    auto it = tried_.begin();
-    std::advance(it, idx_dist(rng_));
-    return it->second.address;
+    // No suitable address found in tried table after max_checks
+    // Fall through to try new_ table
   }
 
   if (!new_.empty()) {
@@ -244,11 +243,10 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
         return it->second.address;
       }
     }
-    auto it = new_.begin();
-    std::advance(it, idx_dist(rng_));
-    return it->second.address;
   }
 
+  // No suitable address found in either table
+  // All addresses are in cooldown or have too many recent failures
   return std::nullopt;
 }
 
