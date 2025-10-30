@@ -90,8 +90,7 @@ private:
   std::atomic<bool> template_invalidated_{false};
   std::atomic<int> target_height_{-1};  // -1 = mine forever, else stop at height
 
-  // Current template (unused after local template refactor, kept for ABI compatibility)
-  BlockTemplate current_template_;
+  // Mining timing (for hashrate calculation)
   std::chrono::steady_clock::time_point start_time_;
   mutable std::mutex time_mutex_; // Protects start_time_ from concurrent access
 

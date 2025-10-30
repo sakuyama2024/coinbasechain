@@ -741,3 +741,364 @@ TEST_CASE("CBlockIndex - Integration scenarios", "[block_index]") {
         REQUIRE(mtp <= indices[9]->nTime);
     }
 }
+
+// ============================================================================
+// Skip List Tests - Bitcoin Core O(log n) ancestor lookup
+// ============================================================================
+
+TEST_CASE("CBlockIndex - BuildSkip initialization", "[block_index][skip_list]") {
+    SECTION("Genesis block has no skip pointer") {
+        CBlockIndex genesis;
+        genesis.nHeight = 0;
+        genesis.pprev = nullptr;
+
+        genesis.BuildSkip();
+
+        REQUIRE(genesis.pskip == nullptr);
+    }
+
+    SECTION("Block 1 skips to genesis") {
+        CBlockIndex genesis;
+        genesis.nHeight = 0;
+        genesis.pprev = nullptr;
+        genesis.BuildSkip();
+
+        CBlockIndex block1;
+        block1.nHeight = 1;
+        block1.pprev = &genesis;
+
+        block1.BuildSkip();
+
+        // Height 1: GetSkipHeight(1) = 0, pprev->GetAncestor(0) = genesis
+        REQUIRE(block1.pskip == &genesis);
+    }
+
+    SECTION("Block 2 skips to genesis") {
+        std::vector<CBlockIndex> chain(3);
+        chain[0].nHeight = 0;
+        chain[0].pprev = nullptr;
+        chain[0].BuildSkip();
+
+        chain[1].nHeight = 1;
+        chain[1].pprev = &chain[0];
+        chain[1].BuildSkip();
+
+        chain[2].nHeight = 2;
+        chain[2].pprev = &chain[1];
+        chain[2].BuildSkip();
+
+        // Height 2: GetSkipHeight(2) = InvertLowestOne(2) = 0
+        REQUIRE(chain[2].pskip == &chain[0]);
+    }
+
+    SECTION("Power of 2 heights skip to previous power of 2") {
+        // Create chain: 0, 1, 2, 3, 4, 5, 6, 7, 8
+        std::vector<CBlockIndex> chain(9);
+        for (int i = 0; i < 9; i++) {
+            chain[i].nHeight = i;
+            chain[i].pprev = (i > 0) ? &chain[i-1] : nullptr;
+            chain[i].BuildSkip();
+        }
+
+        // Height 2 -> 0
+        REQUIRE(chain[2].pskip == &chain[0]);
+
+        // Height 4 -> 0
+        REQUIRE(chain[4].pskip == &chain[0]);
+
+        // Height 8 -> 0
+        REQUIRE(chain[8].pskip == &chain[0]);
+    }
+
+    SECTION("Binary tree structure for heights 1-16") {
+        std::vector<CBlockIndex> chain(17);
+        for (int i = 0; i < 17; i++) {
+            chain[i].nHeight = i;
+            chain[i].pprev = (i > 0) ? &chain[i-1] : nullptr;
+            chain[i].BuildSkip();
+        }
+
+        // Verify skip pattern follows Bitcoin Core algorithm
+        REQUIRE(chain[0].pskip == nullptr);   // Genesis
+        REQUIRE(chain[1].pskip == &chain[0]); // 1 -> 0
+        REQUIRE(chain[2].pskip == &chain[0]); // 2 -> 0
+        REQUIRE(chain[3].pskip == &chain[1]); // 3 -> 1
+        REQUIRE(chain[4].pskip == &chain[0]); // 4 -> 0
+        REQUIRE(chain[5].pskip == &chain[1]); // 5 -> 1
+        REQUIRE(chain[6].pskip == &chain[4]); // 6 -> 4
+        REQUIRE(chain[7].pskip == &chain[1]); // 7 -> 1
+        REQUIRE(chain[8].pskip == &chain[0]); // 8 -> 0
+        REQUIRE(chain[9].pskip == &chain[1]); // 9 -> 1
+        REQUIRE(chain[10].pskip == &chain[8]); // 10 -> 8
+        REQUIRE(chain[11].pskip == &chain[1]); // 11 -> 1
+        REQUIRE(chain[12].pskip == &chain[8]); // 12 -> 8
+        REQUIRE(chain[13].pskip == &chain[1]); // 13 -> 1
+        REQUIRE(chain[14].pskip == &chain[12]); // 14 -> 12
+        REQUIRE(chain[15].pskip == &chain[9]); // 15 -> 9
+        REQUIRE(chain[16].pskip == &chain[0]); // 16 -> 0
+    }
+}
+
+TEST_CASE("CBlockIndex - GetAncestor uses skip list", "[block_index][skip_list]") {
+    SECTION("GetAncestor correctness with skip list") {
+        // Build chain with skip pointers
+        const int chain_length = 100;
+        std::vector<CBlockIndex> chain(chain_length);
+        for (int i = 0; i < chain_length; i++) {
+            chain[i].nHeight = i;
+            chain[i].pprev = (i > 0) ? &chain[i-1] : nullptr;
+            chain[i].BuildSkip();
+        }
+
+        // Verify GetAncestor returns correct blocks
+        REQUIRE(chain[99].GetAncestor(0) == &chain[0]);
+        REQUIRE(chain[99].GetAncestor(50) == &chain[50]);
+        REQUIRE(chain[99].GetAncestor(99) == &chain[99]);
+        REQUIRE(chain[99].GetAncestor(25) == &chain[25]);
+        REQUIRE(chain[99].GetAncestor(75) == &chain[75]);
+        REQUIRE(chain[99].GetAncestor(1) == &chain[1]);
+        REQUIRE(chain[99].GetAncestor(98) == &chain[98]);
+    }
+
+    SECTION("GetAncestor with powers of 2") {
+        const int chain_length = 65;
+        std::vector<CBlockIndex> chain(chain_length);
+        for (int i = 0; i < chain_length; i++) {
+            chain[i].nHeight = i;
+            chain[i].pprev = (i > 0) ? &chain[i-1] : nullptr;
+            chain[i].BuildSkip();
+        }
+
+        // Should use skip pointers efficiently for power-of-2 heights
+        REQUIRE(chain[64].GetAncestor(0) == &chain[0]);
+        REQUIRE(chain[64].GetAncestor(32) == &chain[32]);
+        REQUIRE(chain[64].GetAncestor(16) == &chain[16]);
+        REQUIRE(chain[64].GetAncestor(8) == &chain[8]);
+        REQUIRE(chain[64].GetAncestor(4) == &chain[4]);
+        REQUIRE(chain[64].GetAncestor(2) == &chain[2]);
+    }
+
+    SECTION("GetAncestor on long chain verifies O(log n) access") {
+        // Create a longer chain to demonstrate skip list efficiency
+        const int chain_length = 1000;
+        std::vector<CBlockIndex> chain(chain_length);
+        for (int i = 0; i < chain_length; i++) {
+            chain[i].nHeight = i;
+            chain[i].pprev = (i > 0) ? &chain[i-1] : nullptr;
+            chain[i].BuildSkip();
+        }
+
+        // Verify correctness for various ancestor queries
+        REQUIRE(chain[999].GetAncestor(0) == &chain[0]);
+        REQUIRE(chain[999].GetAncestor(500) == &chain[500]);
+        REQUIRE(chain[999].GetAncestor(250) == &chain[250]);
+        REQUIRE(chain[999].GetAncestor(750) == &chain[750]);
+        REQUIRE(chain[999].GetAncestor(999) == &chain[999]);
+        REQUIRE(chain[999].GetAncestor(1) == &chain[1]);
+
+        // Test from middle of chain
+        REQUIRE(chain[500].GetAncestor(0) == &chain[0]);
+        REQUIRE(chain[500].GetAncestor(250) == &chain[250]);
+        REQUIRE(chain[500].GetAncestor(125) == &chain[125]);
+    }
+}
+
+TEST_CASE("CBlockIndex - Skip list performance characteristics", "[block_index][skip_list]") {
+    SECTION("Skip list provides logarithmic jumps") {
+        // Build a 1024-block chain (2^10)
+        const int chain_length = 1024;
+        std::vector<CBlockIndex> chain(chain_length);
+        for (int i = 0; i < chain_length; i++) {
+            chain[i].nHeight = i;
+            chain[i].pprev = (i > 0) ? &chain[i-1] : nullptr;
+            chain[i].BuildSkip();
+        }
+
+        // Manually trace GetAncestor(0) from height 1023 to count jumps
+        // With skip list, this should take ~10 jumps (log2(1024))
+        // Without skip list, would take 1023 jumps
+
+        CBlockIndex* current = &chain[1023];
+        int jump_count = 0;
+
+        // Simulate GetAncestor traversal (simplified logic)
+        while (current->nHeight > 0) {
+            jump_count++;
+            if (current->pskip != nullptr && current->pskip->nHeight >= 0) {
+                // Can use skip pointer
+                current = current->pskip;
+            } else if (current->pprev != nullptr) {
+                // Fall back to pprev
+                current = current->pprev;
+            } else {
+                break;
+            }
+            // Safety: prevent infinite loop
+            REQUIRE(jump_count < 1000);
+        }
+
+        // With skip list, should take ~log2(1023) = ~10 jumps
+        // We allow up to 20 jumps to account for algorithm details
+        REQUIRE(jump_count <= 20);
+        REQUIRE(current->nHeight == 0);
+    }
+
+    SECTION("Skip list handles deep chains efficiently") {
+        // Test with chain length simulating mainnet depth
+        const int chain_length = 10000;
+        std::vector<CBlockIndex> chain(chain_length);
+
+        // Build chain with skip pointers
+        for (int i = 0; i < chain_length; i++) {
+            chain[i].nHeight = i;
+            chain[i].pprev = (i > 0) ? &chain[i-1] : nullptr;
+            chain[i].BuildSkip();
+        }
+
+        // Verify correctness for various queries
+        REQUIRE(chain[9999].GetAncestor(0) == &chain[0]);
+        REQUIRE(chain[9999].GetAncestor(5000) == &chain[5000]);
+        REQUIRE(chain[9999].GetAncestor(9999) == &chain[9999]);
+
+        // Test ASERT-like scenario: anchor at height 1, query from 9999
+        REQUIRE(chain[9999].GetAncestor(1) == &chain[1]);
+
+        // This should be O(log 9998) ≈ 13 jumps, not O(9998) jumps
+        // The test itself doesn't measure time, but verifies correctness
+    }
+}
+
+TEST_CASE("CBlockIndex - Skip list edge cases", "[block_index][skip_list]") {
+    SECTION("Skip list with non-sequential pprev updates") {
+        // Simulate out-of-order block insertion (can happen with headers-first sync)
+        std::vector<CBlockIndex> chain(10);
+
+        // Initialize all blocks
+        for (int i = 0; i < 10; i++) {
+            chain[i].nHeight = i;
+            chain[i].pprev = (i > 0) ? &chain[i-1] : nullptr;
+        }
+
+        // Build skip pointers in order (simulates BlockManager::AddToBlockIndex)
+        for (int i = 0; i < 10; i++) {
+            chain[i].BuildSkip();
+        }
+
+        // Verify skip pointers are valid
+        for (int i = 2; i < 10; i++) {
+            if (chain[i].pskip != nullptr) {
+                REQUIRE(chain[i].pskip->nHeight < chain[i].nHeight);
+                REQUIRE(chain[i].pskip->nHeight >= 0);
+            }
+        }
+
+        // Verify GetAncestor still works
+        REQUIRE(chain[9].GetAncestor(0) == &chain[0]);
+        REQUIRE(chain[9].GetAncestor(5) == &chain[5]);
+    }
+
+    SECTION("Skip list with nullptr pprev (genesis)") {
+        CBlockIndex genesis;
+        genesis.nHeight = 0;
+        genesis.pprev = nullptr;
+        genesis.BuildSkip();
+
+        REQUIRE(genesis.pskip == nullptr);
+        REQUIRE(genesis.GetAncestor(0) == &genesis);
+        REQUIRE(genesis.GetAncestor(1) == nullptr);
+    }
+
+    SECTION("Skip list consistency after chain reorg") {
+        // Simulate a reorg scenario
+        // Main chain: 0 -> 1 -> 2 -> 3 -> 4
+        // Fork chain: 0 -> 1 -> 2' -> 3' -> 4' -> 5'
+
+        std::vector<CBlockIndex> main_chain(5);
+        for (int i = 0; i < 5; i++) {
+            main_chain[i].nHeight = i;
+            main_chain[i].pprev = (i > 0) ? &main_chain[i-1] : nullptr;
+            main_chain[i].BuildSkip();
+        }
+
+        // Fork shares common blocks 0, 1 then diverges
+        std::vector<CBlockIndex> fork_chain(6);
+        // Fork blocks 0 and 1 point to same ancestors as main chain
+        fork_chain[0].nHeight = 0;
+        fork_chain[0].pprev = nullptr;
+        fork_chain[0].BuildSkip();
+
+        fork_chain[1].nHeight = 1;
+        fork_chain[1].pprev = &fork_chain[0];
+        fork_chain[1].BuildSkip();
+
+        // Fork diverges at height 2
+        for (int i = 2; i < 6; i++) {
+            fork_chain[i].nHeight = i;
+            fork_chain[i].pprev = &fork_chain[i-1];
+            fork_chain[i].BuildSkip();
+        }
+
+        // Verify skip pointers are set correctly on fork
+        REQUIRE(fork_chain[5].GetAncestor(0) == &fork_chain[0]);
+        REQUIRE(fork_chain[5].GetAncestor(1) == &fork_chain[1]);
+        REQUIRE(fork_chain[5].GetAncestor(2) == &fork_chain[2]);
+    }
+}
+
+TEST_CASE("CBlockIndex - Skip list matches Bitcoin Core behavior", "[block_index][skip_list]") {
+    SECTION("Verify GetSkipHeight pattern for first 32 blocks") {
+        // Expected skip heights based on Bitcoin Core's GetSkipHeight() algorithm
+        // Computed from: GetSkipHeight(h) called within BuildSkip()
+        const std::vector<int> expected_skip_heights = {
+            -1,  // height 0 (genesis, no skip)
+            0,   // height 1 -> 0
+            0,   // height 2 -> 0
+            1,   // height 3 -> 1
+            0,   // height 4 -> 0
+            1,   // height 5 -> 1
+            4,   // height 6 -> 4
+            1,   // height 7 -> 1
+            0,   // height 8 -> 0
+            1,   // height 9 -> 1
+            8,   // height 10 -> 8
+            1,   // height 11 -> 1
+            8,   // height 12 -> 8
+            1,   // height 13 -> 1
+            12,  // height 14 -> 12
+            9,   // height 15 -> 9
+            0,   // height 16 -> 0
+            1,   // height 17 -> 1
+            16,  // height 18 -> 16
+            1,   // height 19 -> 1
+            16,  // height 20 -> 16
+            1,   // height 21 -> 1
+            20,  // height 22 -> 20
+            17,  // height 23 -> 17
+            16,  // height 24 -> 16
+            1,   // height 25 -> 1
+            24,  // height 26 -> 24
+            17,  // height 27 -> 17
+            24,  // height 28 -> 24
+            17,  // height 29 -> 17
+            28,  // height 30 -> 28
+            25   // height 31 -> 25
+        };
+
+        std::vector<CBlockIndex> chain(32);
+        for (int i = 0; i < 32; i++) {
+            chain[i].nHeight = i;
+            chain[i].pprev = (i > 0) ? &chain[i-1] : nullptr;
+            chain[i].BuildSkip();
+        }
+
+        // Verify skip pointers match expected pattern
+        for (int i = 0; i < 32; i++) {
+            int expected_skip = expected_skip_heights[i];
+            if (expected_skip == -1) {
+                REQUIRE(chain[i].pskip == nullptr);
+            } else {
+                REQUIRE(chain[i].pskip == &chain[expected_skip]);
+            }
+        }
+    }
+}

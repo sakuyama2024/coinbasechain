@@ -54,15 +54,14 @@ static arith_uint256 CalculateASERT(const arith_uint256 &refTarget,
   //
   // We use fixed-point arithmetic with 16 bits of fractional precision
   // (multiply by 65536)
-  assert(llabs(nTimeDiff - nPowTargetSpacing * nHeightDiff) <
-         (1ll << (63 - 16)));
-  const int64_t exponent =
-      ((nTimeDiff - nPowTargetSpacing * (nHeightDiff + 1)) * 65536) / nHalfLife;
+  const int64_t exponentBase = nTimeDiff - nPowTargetSpacing * (nHeightDiff + 1);
+  // Check if exponentBase * 65536 will fit in int64_t (i.e., exponentBase < 2^47)
+  assert(llabs(exponentBase) < (1ll << (63 - 16)));
+  const int64_t exponent = (exponentBase * 65536) / nHalfLife;
 
   // Decompose exponent into integer and fractional parts
   // Using arithmetic right shift for proper floored division
-  static_assert(int64_t(-1) >> 1 == int64_t(-1),
-                "ASERT needs arithmetic shift support");
+  static_assert(int64_t(-1) >> 1 == int64_t(-1), "ASERT needs arithmetic shift support");
   int64_t shifts = exponent >> 16;
   const auto frac = uint16_t(exponent);
   assert(exponent == (shifts * 65536) + frac);
@@ -152,10 +151,8 @@ uint32_t GetNextWorkRequired(const chain::CBlockIndex *pindexPrev,
   }
 
   // Find the anchor block (block at nASERTAnchorHeight)
-  const chain::CBlockIndex *pindexAnchor = pindexPrev;
-  while (pindexAnchor && pindexAnchor->nHeight > consensus.nASERTAnchorHeight) {
-    pindexAnchor = pindexAnchor->pprev;
-  }
+  // Uses skip list for O(log n) performance (Bitcoin Core pattern)
+  const chain::CBlockIndex *pindexAnchor = pindexPrev->GetAncestor(consensus.nASERTAnchorHeight);
 
   // Should never happen if chain is valid
   assert(pindexAnchor != nullptr);

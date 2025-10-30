@@ -1034,6 +1034,8 @@ bool ChainstateManager::InvalidateBlock(const uint256 &hash) {
             candidate_blocks_by_work.size());
 
   // Step 2: Disconnect loop with incremental candidate addition
+  // We disconnect blocks from tip down to pindex, but do NOT mark their status yet.
+  // Status marking is done in a single pass after disconnection is complete.
   while (true) {
     chain::CBlockIndex *current_tip = block_manager_.GetTip();
 
@@ -1051,11 +1053,7 @@ bool ChainstateManager::InvalidateBlock(const uint256 &hash) {
       return false;
     }
 
-    // Mark the disconnected block as invalid
-    invalid_walk_tip->nStatus |= chain::BLOCK_FAILED_VALID;
-    m_failed_blocks.insert(invalid_walk_tip);
-
-    // Remove from candidates
+    // Remove from candidates (but don't mark status yet)
     chain_selector_.RemoveCandidate(invalid_walk_tip);
 
     // Add parent as candidate (so we have a valid tip to fall back to)
@@ -1074,7 +1072,7 @@ bool ChainstateManager::InvalidateBlock(const uint256 &hash) {
         // Check if this fork has at least as much work as the new tip
         if (fork_candidate->nChainWork >= invalid_walk_tip->pprev->nChainWork) {
           chain_selector_.AddCandidateUnchecked(fork_candidate);
-LOG_CHAIN_TRACE(
+          LOG_CHAIN_TRACE(
               "Added competing fork as candidate: height={}, hash={}, log2_work={:.6f}",
               fork_candidate->nHeight,
               fork_candidate->GetBlockHash().ToString().substr(0, 16),
@@ -1086,47 +1084,43 @@ LOG_CHAIN_TRACE(
       }
     }
 
-    // If this is not the originally requested block, mark it as
-    // BLOCK_FAILED_CHILD (it's only failing because its ancestor failed)
-    if (invalid_walk_tip->pprev == to_mark_failed &&
-        (to_mark_failed->nStatus & chain::BLOCK_FAILED_VALID)) {
-      to_mark_failed->nStatus =
-          (to_mark_failed->nStatus ^ chain::BLOCK_FAILED_VALID) |
-          chain::BLOCK_FAILED_CHILD;
-    }
-
     to_mark_failed = invalid_walk_tip;
 
-    LOG_CHAIN_TRACE("Disconnected and invalidated block at height {}: {}",
+    LOG_CHAIN_TRACE("Disconnected block at height {}: {}",
               invalid_walk_tip->nHeight,
               invalid_walk_tip->GetBlockHash().ToString().substr(0, 16));
   }
 
   // Safety check: If block is still in chain, something went wrong
-  if (block_manager_.ActiveChain().Contains(to_mark_failed)) {
+  if (block_manager_.ActiveChain().Contains(pindex)) {
     LOG_CHAIN_ERROR(
         "InvalidateBlock: block still in active chain after disconnect loop");
     return false;
   }
 
-  // Mark pindex (or the last disconnected block) as invalid
-  // even if it was never in the main chain
-  to_mark_failed->nStatus |= chain::BLOCK_FAILED_VALID;
-  m_failed_blocks.insert(to_mark_failed);
-  chain_selector_.RemoveCandidate(to_mark_failed);
+  // Step 3: Mark status flags in a single pass (clearer semantics)
+  // Only the originally requested block gets FAILED_VALID
+  pindex->nStatus |= chain::BLOCK_FAILED_VALID;
+  m_failed_blocks.insert(pindex);
+  chain_selector_.RemoveCandidate(pindex);
 
-  // Mark all other descendants as BLOCK_FAILED_CHILD
-  // (blocks that weren't in the active chain but descend from pindex)
+  // All descendants (including those we just disconnected) get FAILED_CHILD
+  // Use proper flag replacement to ensure only FAILED_CHILD is set
   for (const auto &[block_hash, block] : block_index) {
-    if (&block == to_mark_failed) {
+    if (&block == pindex) {
       continue;
     }
 
     const chain::CBlockIndex *ancestor = block.GetAncestor(pindex->nHeight);
     if (ancestor == pindex) {
-      const_cast<chain::CBlockIndex *>(&block)->nStatus |=
-          chain::BLOCK_FAILED_CHILD;
-      chain_selector_.RemoveCandidate(const_cast<chain::CBlockIndex *>(&block));
+      chain::CBlockIndex *mutable_block = const_cast<chain::CBlockIndex *>(&block);
+
+      // Clear FAILED_VALID if present, set FAILED_CHILD
+      mutable_block->nStatus = (mutable_block->nStatus & ~chain::BLOCK_FAILED_VALID) |
+                                chain::BLOCK_FAILED_CHILD;
+      m_failed_blocks.insert(mutable_block);
+      chain_selector_.RemoveCandidate(mutable_block);
+
       LOG_CHAIN_TRACE("Marked descendant {} at height {} as BLOCK_FAILED_CHILD",
                 block_hash.ToString().substr(0, 16), block.nHeight);
     }

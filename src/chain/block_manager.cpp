@@ -205,6 +205,10 @@ CBlockIndex *BlockManager::AddToBlockIndex(const CBlockHeader &header) {
                     std::log(pindex->nChainWork.getdouble()) / std::log(2.0));
   }
 
+  // Build skip list pointer for O(log n) ancestor lookup (Bitcoin Core pattern)
+  // Must be called after pprev and nHeight are set
+  pindex->BuildSkip();
+
   return pindex;
 }
 
@@ -504,6 +508,11 @@ bool BlockManager::Load(const std::string &filepath, const uint256 &expected_gen
       } else {
         pindex->nTimeMax = pindex->GetBlockTime();
       }
+
+      // Build skip list pointer for O(log n) ancestor lookup (Bitcoin Core pattern)
+      // Must be called after pprev and nHeight are set
+      // Safe to do here because we iterate in height order, so ancestors already have pskip set
+      pindex->BuildSkip();
     }
 
     // Restore genesis hash

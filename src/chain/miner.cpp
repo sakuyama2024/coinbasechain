@@ -119,8 +119,7 @@ double CPUMiner::GetHashrate() const {
 void CPUMiner::MiningWorker() {
   uint32_t nonce = 0;
 
-  // Use local template to avoid race condition with RPC thread
-  // The RPC thread may call Start() which writes to current_template_
+  // Create block template locally for this mining iteration
   BlockTemplate local_template = CreateBlockTemplate();
   uint256 template_prev_hash = local_template.hashPrevBlock;
 

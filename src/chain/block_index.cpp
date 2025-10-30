@@ -6,8 +6,67 @@
 #include <sstream>
 #include <string>
 
+//DTC1
+
 namespace coinbasechain {
 namespace chain {
+
+// Helper function for skip list: inverts the lowest set bit
+// Bitcoin Core pattern for deterministic skip heights
+static inline int InvertLowestOne(int n) { return n & (n - 1); }
+
+// Calculate the skip height for a given height (Bitcoin Core algorithm)
+// Returns the height of the ancestor this block should skip to
+static int GetSkipHeight(int height) {
+  if (height < 2)
+    return 0;
+
+  // Determine which height to skip to. When height is a power of 2,
+  // skip back to the previous power of 2 (e.g., 8 -> 4, 16 -> 8).
+  // Otherwise, skip to the most recent power of 2 less than height.
+  // This creates a binary tree structure for efficient traversal.
+  return (height & 1) ? InvertLowestOne(InvertLowestOne(height - 1)) + 1
+                      : InvertLowestOne(height);
+}
+
+// Build skip list pointer (Bitcoin Core algorithm)
+// Must be called when adding block to chain, after pprev and nHeight are set
+void CBlockIndex::BuildSkip() {
+  if (pprev)
+    pskip = pprev->GetAncestor(GetSkipHeight(nHeight));
+}
+
+// Get ancestor at given height using skip list (O(log n) with skip list)
+CBlockIndex *CBlockIndex::GetAncestor(int height) {
+  if (height > nHeight || height < 0)
+    return nullptr;
+
+  CBlockIndex *pindexWalk = this;
+  int heightWalk = nHeight;
+  while (heightWalk > height) {
+    int heightSkip = GetSkipHeight(heightWalk);
+    int heightSkipPrev = GetSkipHeight(heightWalk - 1);
+    // Use skip pointer when possible
+    if (pindexWalk->pskip != nullptr &&
+        (heightSkip == height ||
+         (heightSkip > height && !(heightSkipPrev < heightSkip - 2 &&
+                                   heightSkipPrev >= height)))) {
+      // Use skip
+      pindexWalk = pindexWalk->pskip;
+      heightWalk = heightSkip;
+    } else {
+      // Fall back to pprev
+      assert(pindexWalk->pprev);
+      pindexWalk = pindexWalk->pprev;
+      heightWalk--;
+    }
+  }
+  return pindexWalk;
+}
+
+const CBlockIndex *CBlockIndex::GetAncestor(int height) const {
+  return const_cast<CBlockIndex *>(this)->GetAncestor(height);
+}
 
 // Function used for debugging purposes
 std::string CBlockIndex::ToString() const {

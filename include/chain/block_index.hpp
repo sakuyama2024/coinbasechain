@@ -81,6 +81,19 @@ public:
    */
   CBlockIndex *pprev{nullptr};
 
+  /**
+   * Pointer to ancestor for efficient chain traversal (DOES NOT OWN).
+   *
+   * Skip list pointer for O(log n) ancestor lookup (Bitcoin Core pattern).
+   * Points to an ancestor at a strategically chosen height to enable
+   * logarithmic-time traversal. The skip pattern ensures any ancestor
+   * can be reached in O(log n) jumps instead of O(n) using pprev alone.
+   *
+   * Set by BuildSkip() when block is added to the chain.
+   * Lifetime: Points to CBlockIndex owned by BlockManager's map.
+   */
+  CBlockIndex *pskip{nullptr};
+
   // Height of this block in the chain (genesis = 0)
   int nHeight{0};
 
@@ -153,29 +166,13 @@ public:
     return pbegin[(pend - pbegin) / 2];
   }
 
-  // Get ancestor at given height (walks pprev pointers, O(n)
-  // list for O(log n))
-  [[nodiscard]] const CBlockIndex *GetAncestor(int height) const {
-    if (height > nHeight || height < 0)
-      return nullptr;
+  // Build skip list pointer (Bitcoin Core algorithm)
+  // Must be called when adding block to chain, after pprev and nHeight are set
+  void BuildSkip();
 
-    const CBlockIndex *pindex = this;
-    while (pindex && pindex->nHeight > height)
-      pindex = pindex->pprev;
-
-    return pindex;
-  }
-
-  [[nodiscard]] CBlockIndex *GetAncestor(int height) {
-    if (height > nHeight || height < 0)
-      return nullptr;
-
-    CBlockIndex *pindex = this;
-    while (pindex && pindex->nHeight > height)
-      pindex = pindex->pprev;
-
-    return pindex;
-  }
+  // Get ancestor at given height using skip list (O(log n) with skip list)
+  [[nodiscard]] const CBlockIndex *GetAncestor(int height) const;
+  [[nodiscard]] CBlockIndex *GetAncestor(int height);
 
   [[nodiscard]] bool
   IsValid(enum BlockStatus nUpTo = BLOCK_VALID_TREE) const noexcept {
