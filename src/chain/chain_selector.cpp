@@ -3,7 +3,7 @@
 
 // DTC1
 #include "chain/chain_selector.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include <cassert>
 
 namespace coinbasechain {

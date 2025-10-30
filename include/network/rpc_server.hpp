@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "chain/uint.hpp"
+#include "util/uint.hpp"
 #include <atomic>
 #include <functional>
 #include <map>

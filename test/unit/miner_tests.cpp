@@ -2,7 +2,7 @@
 #include "chain/miner.hpp"
 #include "chain/chainparams.hpp"
 #include "chain/chainstate_manager.hpp"
-#include "chain/uint.hpp"
+#include "util/uint.hpp"
 #include <memory>
 
 using namespace coinbasechain;

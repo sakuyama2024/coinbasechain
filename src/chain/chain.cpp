@@ -6,7 +6,7 @@
 //DTC1
 
 #include "chain/chain.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include <algorithm>
 
 namespace coinbasechain {

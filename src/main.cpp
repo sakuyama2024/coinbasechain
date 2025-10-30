@@ -1,5 +1,5 @@
 #include "application.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include "version.hpp"
 #include <cstring>
 #include <iostream> // Keep for CLI output and early errors before logger initialized

@@ -2,7 +2,7 @@
 // NetworkBridgedTransport implementation
 
 #include "network_bridged_transport.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include "network/message.hpp"
 #include <sstream>
 

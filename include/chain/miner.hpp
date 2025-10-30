@@ -5,7 +5,7 @@
 
 #include "chain/chainparams.hpp"
 #include "chain/block.hpp"
-#include "chain/uint.hpp"
+#include "util/uint.hpp"
 #include <atomic>
 #include <functional>
 #include <memory>

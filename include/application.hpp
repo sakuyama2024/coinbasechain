@@ -6,7 +6,7 @@
 #include "network/network_manager.hpp"
 #include "chain/notifications.hpp"
 #include "network/rpc_server.hpp"
-#include "chain/files.hpp"
+#include "util/files.hpp"
 #include "chain/chainstate_manager.hpp"
 #include <atomic>
 #include <chrono>

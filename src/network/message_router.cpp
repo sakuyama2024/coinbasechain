@@ -3,8 +3,8 @@
 #include "network/header_sync_manager.hpp"
 #include "network/block_relay_manager.hpp"
 #include "network/protocol.hpp"
-#include "chain/logging.hpp"
-#include "chain/time.hpp"
+#include "util/logging.hpp"
+#include "util/time.hpp"
 #include <sstream>
 #include <iomanip>
 #include <unordered_set>

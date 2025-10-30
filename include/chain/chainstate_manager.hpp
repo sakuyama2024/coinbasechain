@@ -14,7 +14,7 @@
 #include "chain/block.hpp"
 #include "chain/block_manager.hpp"
 #include "chain/chain_selector.hpp"
-#include "chain/uint.hpp"
+#include "util/uint.hpp"
 
 namespace coinbasechain {
 

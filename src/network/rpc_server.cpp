@@ -22,10 +22,10 @@
 #include <nlohmann/json.hpp>
 #include "chain/chainparams.hpp"
 #include "chain/chainstate_manager.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include "chain/miner.hpp"
-#include "chain/time.hpp"
-#include "chain/uint.hpp"
+#include "util/time.hpp"
+#include "util/uint.hpp"
 #include "network/banman.hpp"
 #include "network/network_manager.hpp"
 #include "network/peer_manager.hpp"

@@ -52,12 +52,12 @@ include_directories(
 # Create genesis miner executable
 add_executable(genesis_miner
     genesis_miner.cpp
-    ${COINBASE_ROOT}/src/chain/sha256.cpp
-    ${COINBASE_ROOT}/src/chain/uint.cpp
-    ${COINBASE_ROOT}/src/chain/arith_uint256.cpp
+    ${COINBASE_ROOT}/src/util/sha256.cpp
+    ${COINBASE_ROOT}/src/util/uint.cpp
+    ${COINBASE_ROOT}/src/util/arith_uint256.cpp
     ${COINBASE_ROOT}/src/chain/randomx_pow.cpp
     ${COINBASE_ROOT}/src/chain/block.cpp
-    ${COINBASE_ROOT}/src/chain/logging.cpp
+    ${COINBASE_ROOT}/src/util/logging.cpp
 )
 
 # Add randomx include directory

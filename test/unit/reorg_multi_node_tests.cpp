@@ -15,7 +15,7 @@
 #include "chain/chain.hpp"
 #include "chain/block_index.hpp"
 #include "chain/block.hpp"
-#include "chain/time.hpp"
+#include "util/time.hpp"
 #include <memory>
 #include <vector>
 #include <map>

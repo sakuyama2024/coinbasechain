@@ -1,7 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#include "chain/time.hpp"
+#include "util/time.hpp"
 #include <atomic>
 #include <ctime>
 #include <iomanip>

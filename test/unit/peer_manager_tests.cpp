@@ -13,7 +13,7 @@
 #include "network/peer_manager.hpp"
 #include "network/peer.hpp"
 #include "network/addr_manager.hpp"
-#include "chain/uint.hpp"
+#include "util/uint.hpp"
 #include <boost/asio.hpp>
 
 using namespace coinbasechain::network;

@@ -2,8 +2,8 @@
 // Distributed under the MIT software license
 // Unit tests for network-adjusted time (timedata)
 
-#include "chain/timedata.hpp"
-#include "chain/time.hpp"
+#include "util/timedata.hpp"
+#include "util/time.hpp"
 #include "catch_amalgamated.hpp"
 #include <ctime>
 

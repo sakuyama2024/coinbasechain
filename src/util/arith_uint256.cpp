@@ -4,8 +4,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "chain/arith_uint256.hpp"
-#include "chain/uint.hpp"
+#include "util/arith_uint256.hpp"
+#include "util/uint.hpp"
 #include "chain/endian.hpp"
 
 #include <cassert>

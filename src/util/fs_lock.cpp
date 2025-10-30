@@ -1,8 +1,8 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#include "chain/fs_lock.hpp"
-#include "chain/logging.hpp"
+#include "util/fs_lock.hpp"
+#include "util/logging.hpp"
 #include <cerrno>
 #include <cstring>
 #include <fstream>

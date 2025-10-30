@@ -1,7 +1,7 @@
 #include "simulated_network.hpp"
 #include "network_bridged_transport.hpp"
-#include "chain/time.hpp"
-#include "chain/logging.hpp"
+#include "util/time.hpp"
+#include "util/logging.hpp"
 #include "network/message.hpp"
 #include <algorithm>
 

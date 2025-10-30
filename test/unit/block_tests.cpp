@@ -1,6 +1,6 @@
 #include "catch_amalgamated.hpp"
 #include "chain/block.hpp"
-#include "chain/sha256.hpp"
+#include "util/sha256.hpp"
 #include <cstring>
 #include <array>
 #include <span>

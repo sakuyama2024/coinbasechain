@@ -2,8 +2,8 @@
 #include "network/peer_manager.hpp"
 #include "network/header_sync_manager.hpp"
 #include "chain/chainstate_manager.hpp"
-#include "chain/logging.hpp"
-#include "chain/time.hpp"
+#include "util/logging.hpp"
+#include "util/time.hpp"
 #include "network/protocol.hpp"
 #include <algorithm>
 #include <cstring>

@@ -2,9 +2,9 @@
 // Distributed under the MIT software license
 
 #include "chain/randomx_pow.hpp"
-#include "chain/arith_uint256.hpp"
-#include "chain/sha256.hpp"
-#include "chain/logging.hpp"
+#include "util/arith_uint256.hpp"
+#include "util/sha256.hpp"
+#include "util/logging.hpp"
 #include <cstring>
 #include <map>
 #include <memory>

@@ -2,7 +2,7 @@
 // Real transport implementation using boost::asio TCP sockets
 
 #include "network/real_transport.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include <thread>
 
 namespace coinbasechain {

@@ -14,7 +14,7 @@
 #include "network/protocol.hpp"
 #include "network/message.hpp"
 #include "chain/block.hpp"
-#include "chain/sha256.hpp"
+#include "util/sha256.hpp"
 
 using namespace coinbasechain;
 namespace asio = boost::asio;

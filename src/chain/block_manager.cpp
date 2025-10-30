@@ -12,9 +12,9 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#include "chain/arith_uint256.hpp"
+#include "util/arith_uint256.hpp"
 #include "chain/block.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 
 //DTC1
 

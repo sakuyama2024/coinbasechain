@@ -2,7 +2,7 @@
 // NAT traversal manager implementation
 
 #include "network/nat_manager.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include <chrono>
 #include <cstring>
 

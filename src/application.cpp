@@ -1,8 +1,8 @@
 #include "application.hpp"
 #include "chain/randomx_pow.hpp"
-#include "chain/fs_lock.hpp"
-#include "chain/logging.hpp"
-#include "chain/time.hpp"
+#include "util/fs_lock.hpp"
+#include "util/logging.hpp"
+#include "util/time.hpp"
 #include "version.hpp"
 #include <chrono>
 #include <iostream> // Keep for signal handler (async-signal-safe)

@@ -3,7 +3,7 @@
 #include "network/peer.hpp"
 #include "network/peer_manager.hpp"
 #include "network/message.hpp"
-#include "chain/uint.hpp"
+#include "util/uint.hpp"
 #include <memory>
 #include <unordered_map>
 #include <mutex>

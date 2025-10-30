@@ -8,9 +8,9 @@
 #include "chain/miner.hpp"
 #include <ctime>
 #include <thread>
-#include "chain/arith_uint256.hpp"
+#include "util/arith_uint256.hpp"
 #include "chain/chainstate_manager.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include "chain/pow.hpp"
 #include "chain/randomx_pow.hpp"
 #include "chain/validation.hpp"

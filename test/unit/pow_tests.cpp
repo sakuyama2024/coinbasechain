@@ -60,7 +60,7 @@
 #include "chain/chainparams.hpp"
 #include "chain/block_index.hpp"
 #include "chain/block.hpp"
-#include "chain/arith_uint256.hpp"
+#include "util/arith_uint256.hpp"
 #include <ctime>
 
 using namespace coinbasechain;

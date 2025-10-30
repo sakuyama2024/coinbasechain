@@ -14,7 +14,7 @@
 #include "chain/block_manager.hpp"
 #include "chain/block.hpp"
 #include "chain/chainparams.hpp"
-#include "chain/arith_uint256.hpp"
+#include "util/arith_uint256.hpp"
 
 using namespace coinbasechain;
 using namespace coinbasechain::validation;

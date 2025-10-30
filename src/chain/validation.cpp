@@ -7,11 +7,11 @@
 #include "chain/block.hpp"
 #include "chain/block_index.hpp"
 #include "chain/chainparams.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include "chain/pow.hpp"
 #include "chain/randomx_pow.hpp"
-#include "chain/timedata.hpp"
-#include "chain/uint.hpp"
+#include "util/timedata.hpp"
+#include "util/uint.hpp"
 
 namespace coinbasechain {
 namespace validation {

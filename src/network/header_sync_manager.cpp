@@ -6,8 +6,8 @@
 #include "chain/chainstate_manager.hpp"
 #include "chain/validation.hpp"
 #include "chain/block.hpp"
-#include "chain/logging.hpp"
-#include "chain/time.hpp"
+#include "util/logging.hpp"
+#include "util/time.hpp"
 #include <cstring>
 #include <chrono>
 

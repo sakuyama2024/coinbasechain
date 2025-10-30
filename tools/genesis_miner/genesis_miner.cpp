@@ -2,8 +2,8 @@
 // Genesis Block Miner - Finds nonce for genesis block using RandomX
 
 #include "chain/block.hpp"
-#include "chain/sha256.hpp"
-#include "chain/arith_uint256.hpp"
+#include "util/sha256.hpp"
+#include "util/arith_uint256.hpp"
 #include "randomx.h"
 #include <iostream>
 #include <iomanip>

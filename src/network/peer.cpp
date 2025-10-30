@@ -1,7 +1,7 @@
 #include "network/peer.hpp"
-#include "chain/logging.hpp"
-#include "chain/time.hpp"
-#include "chain/timedata.hpp"
+#include "util/logging.hpp"
+#include "util/time.hpp"
+#include "util/timedata.hpp"
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/address_v6.hpp>
 #include <random>

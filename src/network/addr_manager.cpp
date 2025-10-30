@@ -1,5 +1,5 @@
 #include "network/addr_manager.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include <algorithm>
 #include <fstream>
 #include <iomanip>

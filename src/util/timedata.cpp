@@ -2,8 +2,8 @@
 // Distributed under the MIT software license
 // Based on Bitcoin Core's timedata implementation
 
-#include "chain/timedata.hpp"
-#include "chain/logging.hpp"
+#include "util/timedata.hpp"
+#include "util/logging.hpp"
 #include <ctime>
 #include <mutex>
 #include <set>

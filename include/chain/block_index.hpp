@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include "chain/arith_uint256.hpp"
+#include "util/arith_uint256.hpp"
 #include "chain/block.hpp"
-#include "chain/uint.hpp"
+#include "util/uint.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cstdint>

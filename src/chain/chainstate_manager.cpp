@@ -7,16 +7,16 @@
 #include <compare>
 #include <ctime>
 #include <utility>
-#include "chain/arith_uint256.hpp"
+#include "util/arith_uint256.hpp"
 #include "chain/block_index.hpp"
 #include "chain/block_manager.hpp"
 #include "chain/chain.hpp"
 #include "chain/chainparams.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include "chain/notifications.hpp"
 #include "chain/pow.hpp"
 #include "chain/randomx_pow.hpp"
-#include "chain/time.hpp"
+#include "util/time.hpp"
 #include "chain/validation.hpp"
 #include "network/protocol.hpp"
 

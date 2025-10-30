@@ -1,7 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include <iostream>
 #include <map>
 #include <spdlog/sinks/basic_file_sink.h>

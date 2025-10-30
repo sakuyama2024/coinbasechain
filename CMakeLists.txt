@@ -144,19 +144,39 @@ FetchContent_MakeAvailable(miniupnpc)
 # network: All I/O and communication (networking, RPC, application)
 #
 
+# Create util library - general utilities used by all components
+add_library(util STATIC
+    # File system
+    src/util/files.cpp
+    src/util/fs_lock.cpp
+    # Logging
+    src/util/logging.cpp
+    # Threading
+    src/util/threadpool.cpp
+    # Time
+    src/util/time.cpp
+    src/util/timedata.cpp
+    # Crypto primitives
+    src/util/sha256.cpp
+    src/util/uint.cpp
+    src/util/arith_uint256.cpp
+)
+
+target_include_directories(util PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+# Disable optimized SHA256 (SSE4/AVX2/SHANI) since we don't have implementation files
+target_compile_definitions(util PRIVATE DISABLE_OPTIMIZED_SHA256)
+
+target_link_libraries(util PUBLIC
+    spdlog::spdlog
+)
+
 # Create chain library - everything blockchain-related
 add_library(chain STATIC
-    # Util
-    src/chain/files.cpp
-    src/chain/logging.cpp
-    src/chain/fs_lock.cpp
-    src/chain/threadpool.cpp
-    src/chain/time.cpp
-    src/chain/timedata.cpp
-    # Crypto
-    src/chain/sha256.cpp
-    src/chain/uint.cpp
-    src/chain/arith_uint256.cpp
+    # RandomX PoW
     src/chain/randomx_pow.cpp
     # Primitives
     src/chain/block.cpp
@@ -182,9 +202,6 @@ target_include_directories(chain PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-# Disable optimized SHA256 (SSE4/AVX2/SHANI) since we don't have implementation files
-target_compile_definitions(chain PRIVATE DISABLE_OPTIMIZED_SHA256)
-
 # Get randomx include directory after it's been made available
 FetchContent_GetProperties(randomx)
 if(randomx_POPULATED)
@@ -192,8 +209,8 @@ if(randomx_POPULATED)
 endif()
 
 target_link_libraries(chain PUBLIC
+    util
     randomx
-    spdlog::spdlog
     nlohmann_json::nlohmann_json
 )
 

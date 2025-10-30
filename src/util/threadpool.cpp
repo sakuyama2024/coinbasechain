@@ -1,7 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
 // Distributed under the MIT software license
 
-#include "chain/threadpool.hpp"
+#include "util/threadpool.hpp"
 #include <algorithm>
 
 namespace coinbasechain {

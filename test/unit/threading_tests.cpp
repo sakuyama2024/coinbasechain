@@ -8,7 +8,7 @@
 #include "chain/block.hpp"
 #include "chain/randomx_pow.hpp"
 #include "chain/pow.hpp"
-#include "chain/arith_uint256.hpp"
+#include "util/arith_uint256.hpp"
 #include <randomx.h>
 #include <thread>
 #include <vector>

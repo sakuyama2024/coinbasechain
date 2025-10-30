@@ -7,7 +7,7 @@
 #include "chain/block.hpp"
 #include "chain/pow.hpp"
 #include "chain/randomx_pow.hpp"
-#include "chain/time.hpp"
+#include "util/time.hpp"
 
 using namespace coinbasechain;
 using namespace coinbasechain::validation;

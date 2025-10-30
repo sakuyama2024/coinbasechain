@@ -12,8 +12,8 @@
 #include "chain/block.hpp"
 #include "chain/notifications.hpp"
 #include "chain/miner.hpp"
-#include "chain/logging.hpp"
-#include "chain/time.hpp"
+#include "util/logging.hpp"
+#include "util/time.hpp"
 #include <filesystem>
 #include <memory>
 #include <vector>

@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include "chain/block_index.hpp"
 #include "chain/chain.hpp"
-#include "chain/uint.hpp"
+#include "util/uint.hpp"
 #include <map>
 #include <string>
 

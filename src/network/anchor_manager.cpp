@@ -1,7 +1,7 @@
 #include "network/anchor_manager.hpp"
 #include "network/peer_manager.hpp"
 #include "network/peer.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include <nlohmann/json.hpp>
 #include <boost/asio.hpp>
 #include <fstream>

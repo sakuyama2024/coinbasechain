@@ -1,5 +1,5 @@
 #include "network/peer_manager.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include "network/protocol.hpp"
 #include <algorithm>
 #include <boost/asio/ip/address.hpp>

@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <string>
 #include <vector>
-#include "chain/arith_uint256.hpp"
+#include "util/arith_uint256.hpp"
 
 // Forward declarations
 class CBlockHeader;

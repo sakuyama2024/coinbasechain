@@ -2,8 +2,8 @@
 // Distributed under the MIT software license
 
 #include "catch_amalgamated.hpp"
-#include "chain/uint.hpp"
-#include "chain/arith_uint256.hpp"
+#include "util/uint.hpp"
+#include "util/arith_uint256.hpp"
 #include <sstream>
 
 TEST_CASE("uint256 basic operations", "[uint]")

@@ -1,5 +1,5 @@
 #include "catch_amalgamated.hpp"
-#include "chain/files.hpp"
+#include "util/files.hpp"
 #include <filesystem>
 
 using namespace coinbasechain::util;

@@ -2,7 +2,7 @@
 // Distributed under the MIT software license
 
 #include "network/banman.hpp"
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include <ctime>
 #include <fstream>
 #include <nlohmann/json.hpp>

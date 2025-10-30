@@ -1,5 +1,5 @@
 #include "network/message.hpp"
-#include "chain/sha256.hpp"
+#include "util/sha256.hpp"
 #include "chain/block.hpp"
 #include "chain/endian.hpp"
 #include <algorithm>

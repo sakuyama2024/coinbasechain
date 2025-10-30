@@ -7,7 +7,7 @@
 #endif
 
 #include "chain/endian.hpp"
-#include "chain/sha256.hpp"
+#include "util/sha256.hpp"
 
 #include <assert.h>
 #include <string.h>

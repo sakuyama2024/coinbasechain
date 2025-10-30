@@ -2,7 +2,7 @@
 // Distributed under the MIT software license
 // Test logging initialization helpers
 
-#include "chain/logging.hpp"
+#include "util/logging.hpp"
 #include <cstdio>
 #include <string>
 

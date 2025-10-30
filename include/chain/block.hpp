@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include "chain/uint.hpp"
+#include "util/uint.hpp"
 #include <array>
 #include <cstdint>
 #include <span>

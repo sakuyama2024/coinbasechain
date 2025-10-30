@@ -6,7 +6,7 @@
 #include "test_chainstate_manager.hpp"
 #include "chain/chainparams.hpp"
 #include "chain/block.hpp"
-#include "chain/sha256.hpp"
+#include "util/sha256.hpp"
 #include <memory>
 
 using namespace coinbasechain;
