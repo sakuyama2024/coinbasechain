@@ -5,8 +5,7 @@
 #include "chain/arith_uint256.hpp"
 #include <iomanip>
 #include <sstream>
-
-//DCA1
+#include <string>
 
 namespace coinbasechain {
 namespace chain {
@@ -39,6 +38,12 @@ arith_uint256 GetBlockProof(const CBlockIndex &block) {
 
   if (fNegative || fOverflow || bnTarget == 0)
     return arith_uint256(0);
+
+  // Defensive: If bnTarget is MAX (all bits set), then bnTarget + 1 wraps to 0
+  // Division by 0 is undefined behavior. Real networks won't hit this due to
+  // compact encoding limits, but we guard against it anyway.
+  if (bnTarget == ~arith_uint256())  // All bits set (MAX value)
+    return arith_uint256(1);  // 2^256 / 2^256 = 1
 
   // We need to compute 2**256 / (bnTarget+1), but we can't represent 2**256
   // as it's too large for an arith_uint256. However, as 2**256 is at least as
