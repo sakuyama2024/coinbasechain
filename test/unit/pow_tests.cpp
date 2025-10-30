@@ -130,7 +130,7 @@ TEST_CASE("PoW - GetSeedHash deterministic", "[pow][randomx]") {
 }
 
 TEST_CASE("PoW - RandomX initialization and shutdown", "[pow][randomx]") {
-    crypto::InitRandomX(2);
+    crypto::InitRandomX();
 
     // Should be able to get seed hash after init
     uint256 seed = crypto::GetSeedHash(0);
@@ -279,7 +279,7 @@ TEST_CASE("PoW - ASERT difficulty adjustment", "[pow][asert]") {
 }
 
 TEST_CASE("PoW - VM caching works correctly", "[pow][randomx][vm]") {
-    crypto::InitRandomX(2);  // Cache size = 2
+    crypto::InitRandomX();
 
     uint32_t epoch0 = 0;
     uint32_t epoch1 = 1;
@@ -312,7 +312,7 @@ TEST_CASE("PoW - VM caching works correctly", "[pow][randomx][vm]") {
 }
 
 TEST_CASE("PoW - CreateVMForEpoch for parallel verification", "[pow][randomx][vm]") {
-    crypto::InitRandomX(1);
+    crypto::InitRandomX();
 
     uint32_t epoch = 0;
 

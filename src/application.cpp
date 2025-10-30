@@ -284,8 +284,8 @@ bool Application::init_datadir() {
 bool Application::init_randomx() {
   LOG_INFO("Initializing RandomX...");
 
-  // Initialize with default cache size (light mode only)
-  crypto::InitRandomX(crypto::DEFAULT_RANDOMX_VM_CACHE_SIZE);
+  // Initialize RandomX (thread-local VMs and caches)
+  crypto::InitRandomX();
 
   return true;
 }

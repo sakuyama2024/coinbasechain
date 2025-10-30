@@ -132,7 +132,7 @@ uint256 GetRandomXCommitment(const CBlockHeader &block, uint256 *inHash) {
   return uint256(std::vector<unsigned char>(rx_cm, rx_cm + sizeof(rx_cm)));
 }
 
-void InitRandomX(int vmCacheSize) {
+void InitRandomX() {
   std::lock_guard<std::mutex> lock(g_randomx_mutex);
 
   if (g_randomx_initialized) {

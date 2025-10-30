@@ -66,7 +66,7 @@ uint256 GetRandomXCommitment(const CBlockHeader &block,
                              uint256 *inHash = nullptr);
 
 // Initialize RandomX subsystem (call once at startup) 
-void InitRandomX(int vmCacheSize = DEFAULT_RANDOMX_VM_CACHE_SIZE);
+void InitRandomX();
 
 // Shutdown RandomX subsystem (releases all VMs and caches)
 void ShutdownRandomX();
