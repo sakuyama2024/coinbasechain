@@ -158,8 +158,6 @@ bool NetworkManager::start() {
 
   // Start listening if enabled (via transport)
   if (config_.listen_enabled && config_.listen_port > 0) {
-    auto self_weak = std::weak_ptr<NetworkManager>(
-        std::shared_ptr<NetworkManager>(this, [](NetworkManager *) {}));
     bool success = transport_->listen(
         config_.listen_port, [this](TransportConnectionPtr connection) {
           handle_inbound_connection(connection);
