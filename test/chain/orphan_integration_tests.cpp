@@ -2,6 +2,7 @@
 
 #include "catch_amalgamated.hpp"
 #include "test_chainstate_manager.hpp"
+#include "chain/validation.hpp"
 #include "chain/chainparams.hpp"
 #include "chain/block.hpp"
 #include "chain/block_index.hpp"

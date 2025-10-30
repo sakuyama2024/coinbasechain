@@ -1,13 +1,14 @@
 #ifndef COINBASECHAIN_TEST_TEST_ORCHESTRATOR_HPP
 #define COINBASECHAIN_TEST_TEST_ORCHESTRATOR_HPP
 
+#include <chrono>
+#include <functional>
+#include <iostream>
+#include <string>
+#include "catch_amalgamated.hpp"
 #include "infra/simulated_network.hpp"
 #include "infra/simulated_node.hpp"
-#include "catch_amalgamated.hpp"
-#include <functional>
-#include <chrono>
-#include <string>
-#include <iostream>
+#include "network/banman.hpp"
 
 namespace coinbasechain {
 namespace test {

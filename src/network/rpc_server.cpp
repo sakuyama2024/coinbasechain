@@ -16,18 +16,19 @@
  */
 
 #include "network/rpc_server.hpp"
-#include "chain/chainparams.hpp"
-#include "chain/miner.hpp"
-#include "chain/uint.hpp"
-#include "network/network_manager.hpp"
-#include "network/peer_manager.hpp"
-#include "chain/logging.hpp"
-#include "chain/time.hpp"
-#include "chain/chainstate_manager.hpp"
-#include <nlohmann/json.hpp>
 #include <chrono>
 #include <cstring>
 #include <iomanip>
+#include <nlohmann/json.hpp>
+#include "chain/chainparams.hpp"
+#include "chain/chainstate_manager.hpp"
+#include "chain/logging.hpp"
+#include "chain/miner.hpp"
+#include "chain/time.hpp"
+#include "chain/uint.hpp"
+#include "network/banman.hpp"
+#include "network/network_manager.hpp"
+#include "network/peer_manager.hpp"
 #include <sstream>
 #include <sys/socket.h>
 #include <sys/stat.h>

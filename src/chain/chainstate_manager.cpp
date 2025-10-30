@@ -2,19 +2,23 @@
 // Distributed under the MIT software license
 
 #include "chain/chainstate_manager.hpp"
+#include <cassert>
+#include <cmath>
+#include <compare>
+#include <ctime>
+#include <utility>
+#include "chain/arith_uint256.hpp"
+#include "chain/block_index.hpp"
 #include "chain/block_manager.hpp"
+#include "chain/chain.hpp"
 #include "chain/chainparams.hpp"
+#include "chain/logging.hpp"
+#include "chain/notifications.hpp"
 #include "chain/pow.hpp"
 #include "chain/randomx_pow.hpp"
-#include "chain/notifications.hpp"
-#include "chain/logging.hpp"
 #include "chain/time.hpp"
 #include "chain/validation.hpp"
-#include <cassert>
-#include <ctime>
-#include <iostream>
-#include <cmath>
-#include <algorithm>
+#include "network/protocol.hpp"
 
 namespace coinbasechain {
 namespace validation {

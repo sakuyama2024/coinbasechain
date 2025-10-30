@@ -1,23 +1,28 @@
 #include "network/network_manager.hpp"
-#include "network/anchor_manager.hpp"
-#include "network/header_sync_manager.hpp"
-#include "network/block_relay_manager.hpp"
-#include "network/message_router.hpp"
-#include "chain/block_manager.hpp"
-#include "network/message.hpp"
-#include "network/real_transport.hpp"
-#include "network/protocol.hpp"
-#include "chain/block.hpp"
-#include "chain/logging.hpp"
-#include "chain/time.hpp"
-#include "chain/chainstate_manager.hpp"
-#include "chain/validation.hpp"
-#include <cstring>
+#include <algorithm>
+#include <boost/asio/executor_work_guard.hpp>
+#include <boost/asio/post.hpp>
 #include <filesystem>
-#include <fstream>
-#include <nlohmann/json.hpp>
+#include <functional>
 #include <optional>
 #include <random>
+#include <utility>
+#include "chain/block_manager.hpp"
+#include "chain/chainparams.hpp"
+#include "chain/chainstate_manager.hpp"
+#include "chain/logging.hpp"
+#include "chain/time.hpp"
+#include "chain/validation.hpp"
+#include "network/addr_manager.hpp"
+#include "network/anchor_manager.hpp"
+#include "network/banman.hpp"
+#include "network/block_relay_manager.hpp"
+#include "network/connection_types.hpp"
+#include "network/header_sync_manager.hpp"
+#include "network/message.hpp"
+#include "network/message_router.hpp"
+#include "network/nat_manager.hpp"
+#include "network/real_transport.hpp"
 
 namespace coinbasechain {
 namespace network {

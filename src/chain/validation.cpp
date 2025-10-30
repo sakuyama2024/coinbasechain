@@ -2,14 +2,16 @@
 // Distributed under the MIT software license
 
 #include "chain/validation.hpp"
-#include "chain/block_index.hpp"
-#include "chain/block_manager.hpp"
-#include "chain/pow.hpp"
-#include "chain/randomx_pow.hpp"
-#include "chain/logging.hpp"
-#include "chain/timedata.hpp"
 #include <algorithm>
 #include <ctime>
+#include "chain/block.hpp"
+#include "chain/block_index.hpp"
+#include "chain/chainparams.hpp"
+#include "chain/logging.hpp"
+#include "chain/pow.hpp"
+#include "chain/randomx_pow.hpp"
+#include "chain/timedata.hpp"
+#include "chain/uint.hpp"
 
 namespace coinbasechain {
 namespace validation {

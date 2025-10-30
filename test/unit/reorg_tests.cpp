@@ -3,6 +3,7 @@
 // Comprehensive chain reorganization tests
 
 #include "catch_amalgamated.hpp"
+#include "chain/validation.hpp"
 #include "test_chainstate_manager.hpp"
 #include "chain/chainstate_manager.hpp"
 #include "chain/chainparams.hpp"

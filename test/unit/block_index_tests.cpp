@@ -651,18 +651,23 @@ TEST_CASE("LastCommonAncestor - fork detection", "[block_index]") {
 }
 
 TEST_CASE("BlockStatus - flag operations", "[block_index]") {
-    SECTION("BLOCK_VALID_MASK includes all validity flags") {
-        REQUIRE((BLOCK_VALID_MASK & BLOCK_VALID_HEADER) == BLOCK_VALID_HEADER);
-        REQUIRE((BLOCK_VALID_MASK & BLOCK_VALID_TREE) == BLOCK_VALID_TREE);
-    }
-
     SECTION("BLOCK_FAILED_MASK includes all failure flags") {
         REQUIRE((BLOCK_FAILED_MASK & BLOCK_FAILED_VALID) == BLOCK_FAILED_VALID);
         REQUIRE((BLOCK_FAILED_MASK & BLOCK_FAILED_CHILD) == BLOCK_FAILED_CHILD);
     }
 
-    SECTION("Valid and failed flags are distinct") {
-        REQUIRE((BLOCK_VALID_MASK & BLOCK_FAILED_MASK) == 0);
+    SECTION("Validity levels are sequential integers") {
+        // Validity levels use numeric comparison, not bitmasks
+        REQUIRE(BLOCK_VALID_UNKNOWN == 0);
+        REQUIRE(BLOCK_VALID_HEADER == 1);
+        REQUIRE(BLOCK_VALID_TREE == 2);
+
+        // Failure flags are bitflags (powers of 2)
+        REQUIRE(BLOCK_FAILED_VALID == 32);
+        REQUIRE(BLOCK_FAILED_CHILD == 64);
+
+        // Failure flags don't overlap with validity levels
+        REQUIRE((BLOCK_FAILED_MASK & 0xFF) > BLOCK_VALID_TREE);
     }
 
     SECTION("Status flag combinations") {

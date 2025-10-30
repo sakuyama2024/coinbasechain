@@ -3,6 +3,7 @@
 // Adapted from header_sync_tests.cpp to work with new architecture
 
 #include "network_test_helpers.hpp"
+#include "chain/validation.hpp"
 #include "chain/chainparams.hpp"
 #include "network/message.hpp"
 #include "test_orchestrator.hpp"

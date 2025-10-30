@@ -2,6 +2,7 @@
 // Threading tests for ChainstateManager
 
 #include <catch_amalgamated.hpp>
+#include "chain/validation.hpp"
 #include "chain/chainstate_manager.hpp"
 #include "chain/chainparams.hpp"
 #include "chain/block.hpp"

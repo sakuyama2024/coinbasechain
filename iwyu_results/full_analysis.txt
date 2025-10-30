@@ -1,0 +1,2329 @@
+
+/Users/mike/Code/coinbasechain-full/include/chain/arith_uint256.hpp should add these lines:
+#include <_string.h>    // for memcpy, memset, memcmp
+#include <type_traits>  // for is_trivially_copyable_v
+
+/Users/mike/Code/coinbasechain-full/include/chain/arith_uint256.hpp should remove these lines:
+- #include <cstring>  // lines 10-10
+- class arith_uint512;  // lines 231-231
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/arith_uint256.hpp:
+#include <_string.h>    // for memcpy, memset, memcmp
+#include <compare>      // for strong_ordering
+#include <cstdint>      // for uint64_t, uint32_t
+#include <limits>       // for numeric_limits
+#include <stdexcept>    // for runtime_error
+#include <string>       // for string
+#include <type_traits>  // for is_trivially_copyable_v
+class uint256;  // lines 15-15
+---
+
+(/Users/mike/Code/coinbasechain-full/src/chain/arith_uint256.cpp has correct #includes/fwd-decls)
+
+
+/Users/mike/Code/coinbasechain-full/include/chain/arith_uint256.hpp should add these lines:
+#include <_string.h>    // for memcpy, memset, memcmp
+#include <type_traits>  // for is_trivially_copyable_v
+
+/Users/mike/Code/coinbasechain-full/include/chain/arith_uint256.hpp should remove these lines:
+- #include <cstring>  // lines 10-10
+- class arith_uint512;  // lines 231-231
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/arith_uint256.hpp:
+#include <_string.h>    // for memcpy, memset, memcmp
+#include <compare>      // for strong_ordering
+#include <cstdint>      // for uint64_t, uint32_t
+#include <limits>       // for numeric_limits
+#include <stdexcept>    // for runtime_error
+#include <string>       // for string
+#include <type_traits>  // for is_trivially_copyable_v
+class uint256;  // lines 15-15
+---
+
+(/Users/mike/Code/coinbasechain-full/src/chain/arith_uint256.cpp has correct #includes/fwd-decls)
+
+
+/Users/mike/Code/coinbasechain-full/include/chain/block.hpp should add these lines:
+#include <stddef.h>        // for size_t
+
+/Users/mike/Code/coinbasechain-full/include/chain/block.hpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/block.hpp:
+#include <stddef.h>        // for size_t
+#include <array>           // for array
+#include <cstdint>         // for uint8_t, uint32_t, int32_t, int64_t
+#include <span>            // for span
+#include <string>          // for string
+#include <utility>         // for move
+#include <vector>          // for vector
+#include "chain/uint.hpp"  // for uint256, uint160
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/block.cpp should add these lines:
+
+/Users/mike/Code/coinbasechain-full/src/chain/block.cpp should remove these lines:
+- #include <cassert>  // lines 12-12
+- #include <iomanip>  // lines 13-13
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/block.cpp:
+#include "chain/block.hpp"
+#include <algorithm>         // for copy
+#include <sstream>           // for basic_stringstream, operator<<, basic_os...
+#include "chain/endian.hpp"  // for ReadLE32, WriteLE32
+#include "chain/sha256.hpp"  // for CSHA256
+---
+
+
+/Users/mike/Code/coinbasechain-full/include/chain/block.hpp should add these lines:
+#include <stddef.h>        // for size_t
+
+/Users/mike/Code/coinbasechain-full/include/chain/block.hpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/block.hpp:
+#include <stddef.h>        // for size_t
+#include <array>           // for array
+#include <cstdint>         // for uint8_t, uint32_t, int32_t, int64_t
+#include <span>            // for span
+#include <string>          // for string
+#include <utility>         // for move
+#include <vector>          // for vector
+#include "chain/uint.hpp"  // for uint256, uint160
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/block.cpp should add these lines:
+
+/Users/mike/Code/coinbasechain-full/src/chain/block.cpp should remove these lines:
+- #include <cassert>  // lines 12-12
+- #include <iomanip>  // lines 13-13
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/block.cpp:
+#include "chain/block.hpp"
+#include <algorithm>         // for copy
+#include <sstream>           // for basic_stringstream, operator<<, basic_os...
+#include "chain/endian.hpp"  // for ReadLE32, WriteLE32
+#include "chain/sha256.hpp"  // for CSHA256
+---
+
+
+(/Users/mike/Code/coinbasechain-full/include/chain/block_index.hpp has correct #includes/fwd-decls)
+
+(/Users/mike/Code/coinbasechain-full/src/chain/block_index.cpp has correct #includes/fwd-decls)
+
+In file included from /Users/mike/Code/coinbasechain-full/src/chain/block_manager.cpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+(/Users/mike/Code/coinbasechain-full/include/chain/block_manager.hpp has correct #includes/fwd-decls)
+
+/Users/mike/Code/coinbasechain-full/src/chain/block_manager.cpp should add these lines:
+#include <compare>                  // for operator>, strong_ordering
+#include "nlohmann/json_fwd.hpp"    // for json
+
+/Users/mike/Code/coinbasechain-full/src/chain/block_manager.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/block_manager.cpp:
+#include "chain/block_manager.hpp"
+#include <algorithm>                // for max, sort
+#include <cmath>                    // for log
+#include <compare>                  // for operator>, strong_ordering
+#include <cstdint>                  // for uint32_t, int64_t, int32_t
+#include <exception>                // for exception
+#include <fstream>                  // for basic_ifstream, basic_ofstream
+#include <nlohmann/json.hpp>        // for basic_json, operator>>
+#include <type_traits>              // for is_same
+#include <utility>                  // for get, pair
+#include <vector>                   // for vector
+#include "chain/arith_uint256.hpp"  // for arith_uint256, operator+, operato...
+#include "chain/block.hpp"          // for CBlockHeader
+#include "chain/logging.hpp"        // for LOG_CHAIN_ERROR, LOG_CHAIN_TRACE
+#include "nlohmann/json_fwd.hpp"    // for json
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/chain/chain.cpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/chain/chain.hpp should add these lines:
+#include <stdint.h>               // for int64_t
+#include "chain/uint.hpp"         // for uint256
+
+/Users/mike/Code/coinbasechain-full/include/chain/chain.hpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/chain.hpp:
+#include <stdint.h>               // for int64_t
+#include <vector>                 // for vector
+#include "chain/block.hpp"        // for CBlockLocator
+#include "chain/block_index.hpp"  // for CBlockIndex
+#include "chain/uint.hpp"         // for uint256
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/chain.cpp should add these lines:
+#include <string>             // for basic_string
+#include <utility>            // for pair, make_pair
+
+/Users/mike/Code/coinbasechain-full/src/chain/chain.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/chain.cpp:
+#include "chain/chain.hpp"
+#include <algorithm>          // for lower_bound, max
+#include <string>             // for basic_string
+#include <utility>            // for pair, make_pair
+#include "chain/logging.hpp"  // for LOG_CHAIN_TRACE
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/chain/chain_selector.cpp:5:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/chain/chain_selector.hpp should add these lines:
+#include <stddef.h>  // for size_t
+namespace coinbasechain { namespace chain { class BlockManager; } }
+namespace coinbasechain { namespace chain { class CBlockIndex; } }
+
+/Users/mike/Code/coinbasechain-full/include/chain/chain_selector.hpp should remove these lines:
+- #include "chain/block_index.hpp"  // lines 6-6
+- #include "chain/block_manager.hpp"  // lines 7-7
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/chain_selector.hpp:
+#include <stddef.h>  // for size_t
+#include <set>       // for set
+namespace coinbasechain { namespace chain { class BlockManager; } }
+namespace coinbasechain { namespace chain { class CBlockIndex; } }
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/chain_selector.cpp should add these lines:
+#include <cmath>                    // for log
+#include <compare>                  // for operator>, strong_ordering, opera...
+#include <map>                      // for map
+#include <string>                   // for basic_string
+#include <utility>                  // for get
+#include "chain/arith_uint256.hpp"  // for arith_uint256, operator<=>, opera...
+#include "chain/block_index.hpp"    // for CBlockIndex, BlockStatus
+#include "chain/block_manager.hpp"  // for BlockManager
+#include "chain/chain.hpp"          // for CChain
+#include "chain/uint.hpp"           // for uint256, operator<
+
+/Users/mike/Code/coinbasechain-full/src/chain/chain_selector.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/chain_selector.cpp:
+#include "chain/chain_selector.hpp"
+#include <cassert>                  // for assert
+#include <cmath>                    // for log
+#include <compare>                  // for operator>, strong_ordering, opera...
+#include <map>                      // for map
+#include <string>                   // for basic_string
+#include <utility>                  // for get
+#include "chain/arith_uint256.hpp"  // for arith_uint256, operator<=>, opera...
+#include "chain/block_index.hpp"    // for CBlockIndex, BlockStatus
+#include "chain/block_manager.hpp"  // for BlockManager
+#include "chain/chain.hpp"          // for CChain
+#include "chain/logging.hpp"        // for LOG_CHAIN_TRACE
+#include "chain/uint.hpp"           // for uint256, operator<
+---
+
+
+/Users/mike/Code/coinbasechain-full/include/chain/chainparams.hpp should add these lines:
+
+/Users/mike/Code/coinbasechain-full/include/chain/chainparams.hpp should remove these lines:
+- #include <array>  // lines 9-9
+- #include <optional>  // lines 12-12
+- #include "chain/arith_uint256.hpp"  // lines 6-6
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/chainparams.hpp:
+#include <cstdint>          // for int32_t, int64_t, uint32_t, uint16_t
+#include <memory>           // for unique_ptr
+#include <string>           // for basic_string, string
+#include <vector>           // for vector
+#include "chain/block.hpp"  // for CBlockHeader
+#include "chain/uint.hpp"   // for uint256
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/chainparams.cpp should add these lines:
+
+/Users/mike/Code/coinbasechain-full/src/chain/chainparams.cpp should remove these lines:
+- #include "chain/arith_uint256.hpp"  // lines 5-5
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/chainparams.cpp:
+#include "chain/chainparams.hpp"
+#include <cassert>               // for assert
+#include <stdexcept>             // for runtime_error
+#include "network/protocol.hpp"  // for MAINNET, REGTEST, TESTNET
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/chain/chainstate_manager.cpp:10:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/chain/chainstate_manager.hpp should add these lines:
+#include <stddef.h>                  // for size_t
+#include <stdint.h>                  // for int64_t
+#include <map>                       // for map
+#include <string>                    // for string
+#include <vector>                    // for vector
+#include "chain/uint.hpp"            // for uint256, operator<
+namespace coinbasechain { namespace validation { class ValidationState; } }
+
+/Users/mike/Code/coinbasechain-full/include/chain/chainstate_manager.hpp should remove these lines:
+- #include <functional>  // lines 12-12
+- #include <memory>  // lines 13-13
+- #include "chain/validation.hpp"  // lines 9-9
+- #include "network/protocol.hpp"  // lines 10-10
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/chainstate_manager.hpp:
+#include <stddef.h>                  // for size_t
+#include <stdint.h>                  // for int64_t
+#include <atomic>                    // for atomic
+#include <map>                       // for map
+#include <mutex>                     // for recursive_mutex
+#include <set>                       // for set
+#include <string>                    // for string
+#include <vector>                    // for vector
+#include "chain/block.hpp"           // for CBlockHeader, CBlockLocator
+#include "chain/block_manager.hpp"   // for BlockManager
+#include "chain/chain_selector.hpp"  // for ChainSelector
+#include "chain/uint.hpp"            // for uint256, operator<
+namespace coinbasechain { namespace chain { class CBlockIndex; } }  // lines 22-22
+namespace coinbasechain { namespace chain { class ChainParams; } }  // lines 21-21
+namespace coinbasechain { namespace crypto { enum class POWVerifyMode; } }  // lines 26-26
+namespace coinbasechain { namespace validation { class ValidationState; } }
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/chainstate_manager.cpp should add these lines:
+#include <_time.h>                  // for time, gmtime_r, strftime
+#include <compare>                  // for operator>=, strong_ordering, oper...
+#include <utility>                  // for get, make_pair, pair
+#include "chain/arith_uint256.hpp"  // for arith_uint256, operator<=>, UintT...
+#include "chain/block_index.hpp"    // for CBlockIndex, BlockStatus, LastCom...
+#include "chain/chain.hpp"          // for CChain, GetLocator
+#include "network/protocol.hpp"     // for MAX_ORPHAN_HEADERS, MAX_ORPHAN_HE...
+
+/Users/mike/Code/coinbasechain-full/src/chain/chainstate_manager.cpp should remove these lines:
+- #include <algorithm>  // lines 17-17
+- #include <iostream>  // lines 15-15
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/chainstate_manager.cpp:
+#include "chain/chainstate_manager.hpp"
+#include <_time.h>                  // for time, gmtime_r, strftime
+#include <cassert>                  // for assert
+#include <cmath>                    // for log
+#include <compare>                  // for operator>=, strong_ordering, oper...
+#include <ctime>                    // for time_t, time, tm, strftime
+#include <utility>                  // for get, make_pair, pair
+#include "chain/arith_uint256.hpp"  // for arith_uint256, operator<=>, UintT...
+#include "chain/block_index.hpp"    // for CBlockIndex, BlockStatus, LastCom...
+#include "chain/block_manager.hpp"  // for BlockManager
+#include "chain/chain.hpp"          // for CChain, GetLocator
+#include "chain/chainparams.hpp"    // for ChainParams, ConsensusParams
+#include "chain/logging.hpp"        // for LOG_CHAIN_TRACE, LOG_CHAIN_ERROR
+#include "chain/notifications.hpp"  // for Notifications, ChainNotifications
+#include "chain/pow.hpp"            // for CheckProofOfWork
+#include "chain/randomx_pow.hpp"    // for POWVerifyMode
+#include "chain/time.hpp"           // for GetTime
+#include "chain/validation.hpp"     // for ValidationState, CheckBlockHeader
+#include "network/protocol.hpp"     // for MAX_ORPHAN_HEADERS, MAX_ORPHAN_HE...
+---
+
+
+(/Users/mike/Code/coinbasechain-full/include/chain/files.hpp has correct #includes/fwd-decls)
+
+/Users/mike/Code/coinbasechain-full/src/chain/files.cpp should add these lines:
+#include <_stdio.h>      // for fileno, fopen, snprintf
+#include <_stdlib.h>     // for getenv
+#include <cstdio>        // for fopen
+#include <system_error>  // for error_code
+
+/Users/mike/Code/coinbasechain-full/src/chain/files.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/files.cpp:
+#include "chain/files.hpp"
+#include <_stdio.h>      // for fileno, fopen, snprintf
+#include <_stdlib.h>     // for getenv
+#include <fcntl.h>       // for open, O_DIRECTORY, O_RDONLY
+#include <unistd.h>      // for close, fsync
+#include <cstdio>        // for fopen
+#include <cstdlib>       // for getenv
+#include <fstream>       // for basic_ifstream, basic_ofstream, basic_ios, fpos
+#include <random>        // for random_device, uniform_int_distribution, mt1...
+#include <system_error>  // for error_code
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/chain/fs_lock.cpp:5:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/chain/fs_lock.hpp should add these lines:
+
+/Users/mike/Code/coinbasechain-full/include/chain/fs_lock.hpp should remove these lines:
+- #include <map>  // lines 7-7
+- #include <memory>  // lines 8-8
+- #include <mutex>  // lines 9-9
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/fs_lock.hpp:
+#include <filesystem>  // for path
+#include <string>      // for basic_string, string
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/fs_lock.cpp should add these lines:
+#include <_string.h>          // for strerror
+#include <stdio.h>            // for SEEK_SET
+#include <map>                // for map, operator!=
+#include <memory>             // for unique_ptr, make_unique
+#include <mutex>              // for mutex, lock_guard
+#include <utility>            // for move
+
+/Users/mike/Code/coinbasechain-full/src/chain/fs_lock.cpp should remove these lines:
+- #include <sys/file.h>  // lines 12-12
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/fs_lock.cpp:
+#include "chain/fs_lock.hpp"
+#include <_string.h>          // for strerror
+#include <fcntl.h>            // for flock, fcntl, open, F_SETLK, F_WRLCK
+#include <stdio.h>            // for SEEK_SET
+#include <unistd.h>           // for close
+#include <cerrno>             // for errno
+#include <cstring>            // for strerror
+#include <fstream>            // for basic_ofstream, basic_ios, ios, ofstream
+#include <map>                // for map, operator!=
+#include <memory>             // for unique_ptr, make_unique
+#include <mutex>              // for mutex, lock_guard
+#include <utility>            // for move
+#include "chain/logging.hpp"  // for LOG_CHAIN_ERROR
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/chain/logging.cpp:4:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/chain/logging.hpp should add these lines:
+#include "fmt/core.h"       // for make_format_args, vformat_to
+#include "fmt/format.h"     // for vformat_to
+#include "spdlog/logger.h"  // for logger
+
+/Users/mike/Code/coinbasechain-full/include/chain/logging.hpp should remove these lines:
+- #include <spdlog/spdlog.h>  // lines 7-7
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:
+#include <memory>           // for shared_ptr
+#include <string>           // for basic_string, string
+#include "fmt/core.h"       // for make_format_args, vformat_to
+#include "fmt/format.h"     // for vformat_to
+#include "spdlog/logger.h"  // for logger
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/logging.cpp should add these lines:
+#include <utility>                            // for get
+#include "spdlog/common.h"                    // for from_str, level_enum
+#include "spdlog/sinks/ansicolor_sink.h"      // for ansicolor_stdout_sink
+#include "spdlog/spdlog.h"                    // for default_logger, registe...
+
+/Users/mike/Code/coinbasechain-full/src/chain/logging.cpp should remove these lines:
+- #include <spdlog/sinks/rotating_file_sink.h>  // lines 8-8
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/logging.cpp:
+#include "chain/logging.hpp"
+#include <spdlog/sinks/basic_file_sink.h>     // for basic_file_sink, basic_...
+#include <spdlog/sinks/stdout_color_sinks.h>  // for stdout_color_sink_mt
+#include <iostream>                           // for basic_ostream, operator<<
+#include <map>                                // for map, operator!=
+#include <utility>                            // for get
+#include <vector>                             // for vector
+#include "spdlog/common.h"                    // for from_str, level_enum
+#include "spdlog/sinks/ansicolor_sink.h"      // for ansicolor_stdout_sink
+#include "spdlog/spdlog.h"                    // for default_logger, registe...
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/chain/logging.cpp:4:
+In file included from /Users/mike/Code/coinbasechain-full/tools/genesis_miner/../../include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/chain/logging.hpp should add these lines:
+#include "fmt/core.h"       // for make_format_args, vformat_to
+#include "fmt/format.h"     // for vformat_to
+#include "spdlog/logger.h"  // for logger
+
+/Users/mike/Code/coinbasechain-full/include/chain/logging.hpp should remove these lines:
+- #include <spdlog/spdlog.h>  // lines 7-7
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:
+#include <memory>           // for shared_ptr
+#include <string>           // for basic_string, string
+#include "fmt/core.h"       // for make_format_args, vformat_to
+#include "fmt/format.h"     // for vformat_to
+#include "spdlog/logger.h"  // for logger
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/logging.cpp should add these lines:
+#include <utility>                            // for get
+#include "spdlog/common.h"                    // for from_str, level_enum
+#include "spdlog/sinks/ansicolor_sink.h"      // for ansicolor_stdout_sink
+#include "spdlog/spdlog.h"                    // for default_logger, registe...
+
+/Users/mike/Code/coinbasechain-full/src/chain/logging.cpp should remove these lines:
+- #include <spdlog/sinks/rotating_file_sink.h>  // lines 8-8
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/logging.cpp:
+#include "chain/logging.hpp"
+#include <spdlog/sinks/basic_file_sink.h>     // for basic_file_sink, basic_...
+#include <spdlog/sinks/stdout_color_sinks.h>  // for stdout_color_sink_mt
+#include <iostream>                           // for basic_ostream, operator<<
+#include <map>                                // for map, operator!=
+#include <utility>                            // for get
+#include <vector>                             // for vector
+#include "spdlog/common.h"                    // for from_str, level_enum
+#include "spdlog/sinks/ansicolor_sink.h"      // for ansicolor_stdout_sink
+#include "spdlog/spdlog.h"                    // for default_logger, registe...
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/chain/miner.cpp:13:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/chain/miner.hpp should add these lines:
+#include <stdint.h>         // for uint64_t, uint32_t
+#include <chrono>           // for steady_clock
+namespace coinbasechain { namespace chain { class ChainParams; } }
+
+/Users/mike/Code/coinbasechain-full/include/chain/miner.hpp should remove these lines:
+- #include <functional>  // lines 10-10
+- #include <memory>  // lines 11-11
+- #include <vector>  // lines 14-14
+- #include "chain/chainparams.hpp"  // lines 6-6
+- namespace coinbasechain { namespace chain { class BlockManager; } }  // lines 20-20
+- namespace coinbasechain { namespace chain { class CBlockIndex; } }  // lines 21-21
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/miner.hpp:
+#include <stdint.h>         // for uint64_t, uint32_t
+#include <atomic>           // for atomic
+#include <chrono>           // for steady_clock
+#include <mutex>            // for mutex, lock_guard
+#include <thread>           // for thread
+#include "chain/block.hpp"  // for CBlockHeader
+#include "chain/uint.hpp"   // for uint160, uint256
+namespace coinbasechain { namespace chain { class ChainParams; } }
+namespace coinbasechain { namespace validation { class ChainstateManager; } }  // lines 25-25
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/miner.cpp should add these lines:
+#include <_time.h>                       // for time
+#include <string>                        // for basic_string, to_string
+#include "chain/block_index.hpp"         // for CBlockIndex
+#include "chain/chainparams.hpp"         // for ChainParams
+#include "chain/validation.hpp"          // for ValidationState
+
+/Users/mike/Code/coinbasechain-full/src/chain/miner.cpp should remove these lines:
+- #include "chain/arith_uint256.hpp"  // lines 9-9
+- #include "randomx.h"  // lines 12-12
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/miner.cpp:
+#include "chain/miner.hpp"
+#include <_time.h>                       // for time
+#include <ctime>                         // for time
+#include <string>                        // for basic_string, to_string
+#include <thread>                        // for thread
+#include "chain/block_index.hpp"         // for CBlockIndex
+#include "chain/chainparams.hpp"         // for ChainParams
+#include "chain/chainstate_manager.hpp"  // for ChainstateManager
+#include "chain/logging.hpp"             // for LOG_CHAIN_TRACE, LOG_CHAIN_E...
+#include "chain/pow.hpp"                 // for CheckProofOfWork, GetNextWor...
+#include "chain/randomx_pow.hpp"         // for POWVerifyMode
+#include "chain/validation.hpp"          // for ValidationState
+---
+
+
+/Users/mike/Code/coinbasechain-full/include/chain/notifications.hpp should add these lines:
+#include <stddef.h>         // for size_t
+
+/Users/mike/Code/coinbasechain-full/include/chain/notifications.hpp should remove these lines:
+- #include <concepts>  // lines 7-7
+- #include <memory>  // lines 9-9
+- namespace coinbasechain { namespace sync { class HeaderSync; } }  // lines 20-20
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/notifications.hpp:
+#include <stddef.h>         // for size_t
+#include <functional>       // for function
+#include <mutex>            // for mutex
+#include <vector>           // for vector
+#include "chain/block.hpp"  // for CBlockHeader
+namespace coinbasechain { namespace chain { class CBlockIndex; } }  // lines 17-17
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/notifications.cpp should add these lines:
+#include <utility>    // for move
+
+/Users/mike/Code/coinbasechain-full/src/chain/notifications.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/notifications.cpp:
+#include "chain/notifications.hpp"
+#include <algorithm>  // for find_if
+#include <utility>    // for move
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/chain/pow.cpp:8:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/chain/pow.hpp should add these lines:
+class CBlockHeader;
+class uint256;
+
+/Users/mike/Code/coinbasechain-full/include/chain/pow.hpp should remove these lines:
+- #include "chain/block.hpp"  // lines 7-7
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/pow.hpp:
+#include <cstdint>                  // for uint32_t
+#include "chain/arith_uint256.hpp"  // for arith_uint256
+class CBlockHeader;
+class uint256;
+namespace coinbasechain { namespace chain { class CBlockIndex; } }  // lines 14-14
+namespace coinbasechain { namespace chain { class ChainParams; } }  // lines 15-15
+namespace coinbasechain { namespace crypto { enum class POWVerifyMode; } }  // lines 19-19
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/pow.cpp should add these lines:
+#include <_string.h>              // for memcmp
+#include <compare>                // for operator>, strong_ordering
+#include <memory>                 // for shared_ptr
+#include <span>                   // for span
+#include <stdexcept>              // for runtime_error
+#include <string>                 // for basic_string
+#include <vector>                 // for vector
+#include "chain/block.hpp"        // for CBlockHeader
+#include "chain/uint.hpp"         // for uint256
+
+/Users/mike/Code/coinbasechain-full/src/chain/pow.cpp should remove these lines:
+- #include <cstdlib>  // lines 11-11
+- #include <cstring>  // lines 12-12
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/pow.cpp:
+#include "chain/pow.hpp"
+#include <_string.h>              // for memcmp
+#include <randomx.h>              // for RANDOMX_HASH_SIZE, randomx_calculat...
+#include <cassert>                // for assert
+#include <compare>                // for operator>, strong_ordering
+#include <memory>                 // for shared_ptr
+#include <span>                   // for span
+#include <stdexcept>              // for runtime_error
+#include <string>                 // for basic_string
+#include <vector>                 // for vector
+#include "chain/block.hpp"        // for CBlockHeader
+#include "chain/block_index.hpp"  // for CBlockIndex
+#include "chain/chainparams.hpp"  // for ConsensusParams, ChainParams, Chain...
+#include "chain/logging.hpp"      // for LOG_CHAIN_TRACE
+#include "chain/randomx_pow.hpp"  // for POWVerifyMode, GetRandomXCommitment
+#include "chain/uint.hpp"         // for uint256
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/chain/randomx_pow.cpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/chain/randomx_pow.hpp should add these lines:
+#include "chain/uint.hpp"  // for uint256
+class CBlockHeader;
+
+/Users/mike/Code/coinbasechain-full/include/chain/randomx_pow.hpp should remove these lines:
+- #include <mutex>  // lines 10-10
+- #include "chain/block.hpp"  // lines 7-7
+- namespace coinbasechain { namespace crypto { class ChainParams; } }  // lines 17-17
+- namespace coinbasechain { namespace crypto { namespace chain { struct ConsensusParams; } } }  // lines 19-19
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/randomx_pow.hpp:
+#include <randomx.h>       // for randomx_vm, randomx_destroy_vm
+#include <cstdint>         // for uint32_t
+#include <memory>          // for shared_ptr
+#include "chain/uint.hpp"  // for uint256
+class CBlockHeader;
+namespace coinbasechain { namespace crypto { struct RandomXCacheWrapper; } }  // lines 32-32
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/randomx_pow.cpp should add these lines:
+#include <_stdio.h>           // for snprintf
+#include <span>               // for span
+#include <stdexcept>          // for runtime_error
+#include <string>             // for basic_string, string
+#include <vector>             // for vector
+#include "chain/block.hpp"    // for CBlockHeader
+#include "randomx.h"          // for randomx_alloc_cache, randomx_cache, ran...
+
+/Users/mike/Code/coinbasechain-full/src/chain/randomx_pow.cpp should remove these lines:
+- #include <cstring>  // lines 8-8
+- #include "chain/arith_uint256.hpp"  // lines 5-5
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/randomx_pow.cpp:
+#include "chain/randomx_pow.hpp"
+#include <_stdio.h>           // for snprintf
+#include <map>                // for map, operator!=
+#include <memory>             // for shared_ptr, make_shared
+#include <mutex>              // for mutex, lock_guard
+#include <span>               // for span
+#include <stdexcept>          // for runtime_error
+#include <string>             // for basic_string, string
+#include <vector>             // for vector
+#include "chain/block.hpp"    // for CBlockHeader
+#include "chain/logging.hpp"  // for LOG_CRYPTO_INFO
+#include "chain/sha256.hpp"   // for CSHA256
+#include "randomx.h"          // for randomx_alloc_cache, randomx_cache, ran...
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/chain/randomx_pow.cpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/tools/genesis_miner/../../include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/chain/randomx_pow.hpp should add these lines:
+#include "chain/uint.hpp"  // for uint256
+class CBlockHeader;
+
+/Users/mike/Code/coinbasechain-full/include/chain/randomx_pow.hpp should remove these lines:
+- #include <mutex>  // lines 10-10
+- #include "chain/block.hpp"  // lines 7-7
+- namespace coinbasechain { namespace crypto { class ChainParams; } }  // lines 17-17
+- namespace coinbasechain { namespace crypto { namespace chain { struct ConsensusParams; } } }  // lines 19-19
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/randomx_pow.hpp:
+#include <randomx.h>       // for randomx_vm, randomx_destroy_vm
+#include <cstdint>         // for uint32_t
+#include <memory>          // for shared_ptr
+#include "chain/uint.hpp"  // for uint256
+class CBlockHeader;
+namespace coinbasechain { namespace crypto { struct RandomXCacheWrapper; } }  // lines 32-32
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/randomx_pow.cpp should add these lines:
+#include <_stdio.h>           // for snprintf
+#include <span>               // for span
+#include <stdexcept>          // for runtime_error
+#include <string>             // for basic_string, string
+#include <vector>             // for vector
+#include "chain/block.hpp"    // for CBlockHeader
+#include "randomx.h"          // for randomx_alloc_cache, randomx_cache, ran...
+
+/Users/mike/Code/coinbasechain-full/src/chain/randomx_pow.cpp should remove these lines:
+- #include <cstring>  // lines 8-8
+- #include "chain/arith_uint256.hpp"  // lines 5-5
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/randomx_pow.cpp:
+#include "chain/randomx_pow.hpp"
+#include <_stdio.h>           // for snprintf
+#include <map>                // for map, operator!=
+#include <memory>             // for shared_ptr, make_shared
+#include <mutex>              // for mutex, lock_guard
+#include <span>               // for span
+#include <stdexcept>          // for runtime_error
+#include <string>             // for basic_string, string
+#include <vector>             // for vector
+#include "chain/block.hpp"    // for CBlockHeader
+#include "chain/logging.hpp"  // for LOG_CRYPTO_INFO
+#include "chain/sha256.hpp"   // for CSHA256
+#include "randomx.h"          // for randomx_alloc_cache, randomx_cache, ran...
+---
+
+
+(/Users/mike/Code/coinbasechain-full/include/chain/sha256.hpp has correct #includes/fwd-decls)
+
+/Users/mike/Code/coinbasechain-full/src/chain/sha256.cpp should add these lines:
+#include <_string.h>         // for memcpy
+#include <algorithm>         // for equal, copy
+
+/Users/mike/Code/coinbasechain-full/src/chain/sha256.cpp should remove these lines:
+- #include <string.h>  // lines 13-13
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/sha256.cpp:
+#include "chain/sha256.hpp"
+#include <_string.h>         // for memcpy
+#include <assert.h>          // for assert
+#include <algorithm>         // for equal, copy
+#include "chain/endian.hpp"  // for ReadBE32, WriteBE32, WriteBE64
+---
+
+
+(/Users/mike/Code/coinbasechain-full/include/chain/sha256.hpp has correct #includes/fwd-decls)
+
+/Users/mike/Code/coinbasechain-full/src/chain/sha256.cpp should add these lines:
+#include <_string.h>         // for memcpy
+#include <algorithm>         // for equal, copy
+
+/Users/mike/Code/coinbasechain-full/src/chain/sha256.cpp should remove these lines:
+- #include <string.h>  // lines 13-13
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/sha256.cpp:
+#include "chain/sha256.hpp"
+#include <_string.h>         // for memcpy
+#include <assert.h>          // for assert
+#include <algorithm>         // for equal, copy
+#include "chain/endian.hpp"  // for ReadBE32, WriteBE32, WriteBE64
+---
+
+
+/Users/mike/Code/coinbasechain-full/include/chain/threadpool.hpp should add these lines:
+#include <stddef.h>            // for size_t
+#include <memory>              // for make_shared
+#include <type_traits>         // for invoke_result
+#include <utility>             // for forward
+
+/Users/mike/Code/coinbasechain-full/include/chain/threadpool.hpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/threadpool.hpp:
+#include <stddef.h>            // for size_t
+#include <condition_variable>  // for condition_variable
+#include <functional>          // for bind, function
+#include <future>              // for future, packaged_task
+#include <memory>              // for make_shared
+#include <mutex>               // for mutex, unique_lock
+#include <queue>               // for queue
+#include <stdexcept>           // for runtime_error
+#include <thread>              // for thread
+#include <type_traits>         // for invoke_result
+#include <utility>             // for forward
+#include <vector>              // for vector
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/threadpool.cpp should add these lines:
+
+/Users/mike/Code/coinbasechain-full/src/chain/threadpool.cpp should remove these lines:
+- #include <algorithm>  // lines 5-5
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/threadpool.cpp:
+#include "chain/threadpool.hpp"
+---
+
+
+/Users/mike/Code/coinbasechain-full/include/chain/time.hpp should add these lines:
+#include <string>   // for string
+
+/Users/mike/Code/coinbasechain-full/include/chain/time.hpp should remove these lines:
+- #include <atomic>  // lines 6-6
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/time.hpp:
+#include <chrono>   // for steady_clock
+#include <cstdint>  // for int64_t, uint32_t
+#include <string>   // for string
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/time.cpp should add these lines:
+#include <_time.h>  // for gmtime, tm (ptr only)
+#include <cwchar>   // for tm
+
+/Users/mike/Code/coinbasechain-full/src/chain/time.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/time.cpp:
+#include "chain/time.hpp"
+#include <_time.h>  // for gmtime, tm (ptr only)
+#include <atomic>   // for atomic, memory_order_relaxed, memory_order_release
+#include <ctime>    // for time_t, gmtime
+#include <cwchar>   // for tm
+#include <iomanip>  // for operator<<, put_time
+#include <sstream>  // for basic_ostringstream, ostringstream
+#include <string>   // for char_traits, basic_string, allocator, string
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/chain/timedata.cpp:6:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+(/Users/mike/Code/coinbasechain-full/include/chain/timedata.hpp has correct #includes/fwd-decls)
+
+/Users/mike/Code/coinbasechain-full/src/chain/timedata.cpp should add these lines:
+#include <utility>            // for pair
+
+/Users/mike/Code/coinbasechain-full/src/chain/timedata.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/timedata.cpp:
+#include "chain/timedata.hpp"
+#include <ctime>              // for size_t
+#include <mutex>              // for mutex, lock_guard
+#include <set>                // for set
+#include <utility>            // for pair
+#include "chain/logging.hpp"  // for LOG_CHAIN_TRACE, LOG_CHAIN_ERROR
+---
+
+
+/Users/mike/Code/coinbasechain-full/include/chain/uint.hpp should add these lines:
+#include <_string.h>         // for memcmp
+
+/Users/mike/Code/coinbasechain-full/include/chain/uint.hpp should remove these lines:
+- #include <optional>  // lines 15-15
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/uint.hpp:
+#include <_string.h>         // for memcmp
+#include <algorithm>         // for copy, all_of, fill
+#include <array>             // for array
+#include <cassert>           // for assert
+#include <cstdint>           // for uint8_t, uint32_t, uint64_t
+#include <cstring>           // for memcmp
+#include <span>              // for span
+#include <string>            // for string
+#include <string_view>       // for basic_string_view, string_view
+#include "chain/endian.hpp"  // for ReadLE32, ReadLE64
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/uint.cpp should add these lines:
+
+/Users/mike/Code/coinbasechain-full/src/chain/uint.cpp should remove these lines:
+- #include <algorithm>  // lines 8-8
+- #include <cctype>  // lines 9-9
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/uint.cpp:
+#include "chain/uint.hpp"
+#include <iomanip>  // for operator<<, setfill, setw
+#include <sstream>  // for basic_stringstream, basic_ostream, hex, stringstream
+---
+
+
+/Users/mike/Code/coinbasechain-full/include/chain/uint.hpp should add these lines:
+#include <_string.h>         // for memcmp
+
+/Users/mike/Code/coinbasechain-full/include/chain/uint.hpp should remove these lines:
+- #include <optional>  // lines 15-15
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/uint.hpp:
+#include <_string.h>         // for memcmp
+#include <algorithm>         // for copy, all_of, fill
+#include <array>             // for array
+#include <cassert>           // for assert
+#include <cstdint>           // for uint8_t, uint32_t, uint64_t
+#include <cstring>           // for memcmp
+#include <span>              // for span
+#include <string>            // for string
+#include <string_view>       // for basic_string_view, string_view
+#include "chain/endian.hpp"  // for ReadLE32, ReadLE64
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/uint.cpp should add these lines:
+
+/Users/mike/Code/coinbasechain-full/src/chain/uint.cpp should remove these lines:
+- #include <algorithm>  // lines 8-8
+- #include <cctype>  // lines 9-9
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/uint.cpp:
+#include "chain/uint.hpp"
+#include <iomanip>  // for operator<<, setfill, setw
+#include <sstream>  // for basic_stringstream, basic_ostream, hex, stringstream
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/chain/validation.cpp:9:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/chain/validation.hpp should add these lines:
+#include <stdint.h>                 // for int64_t
+#include <vector>                   // for vector
+#include "chain/arith_uint256.hpp"  // for arith_uint256
+class CBlockHeader;
+
+/Users/mike/Code/coinbasechain-full/include/chain/validation.hpp should remove these lines:
+- #include "chain/block.hpp"  // lines 8-8
+- #include "chain/block_index.hpp"  // lines 6-6
+- #include "chain/chainparams.hpp"  // lines 7-7
+- namespace coinbasechain { namespace chain { class BlockManager; } }  // lines 15-15
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/chain/validation.hpp:
+#include <stdint.h>                 // for int64_t
+#include <string>                   // for basic_string, string
+#include <vector>                   // for vector
+#include "chain/arith_uint256.hpp"  // for arith_uint256
+class CBlockHeader;
+namespace coinbasechain { namespace chain { class CBlockIndex; } }  // lines 17-17
+namespace coinbasechain { namespace chain { class ChainParams; } }  // lines 16-16
+---
+
+/Users/mike/Code/coinbasechain-full/src/chain/validation.cpp should add these lines:
+#include <_time.h>                // for time
+#include "chain/block.hpp"        // for CBlockHeader
+#include "chain/chainparams.hpp"  // for ConsensusParams, ChainParams
+#include "chain/uint.hpp"         // for uint256, operator!=
+
+/Users/mike/Code/coinbasechain-full/src/chain/validation.cpp should remove these lines:
+- #include "chain/block_manager.hpp"  // lines 6-6
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/chain/validation.cpp:
+#include "chain/validation.hpp"
+#include <_time.h>                // for time
+#include <algorithm>              // for max, min
+#include <ctime>                  // for size_t, time
+#include "chain/block.hpp"        // for CBlockHeader
+#include "chain/block_index.hpp"  // for CBlockIndex, GetBlockProof
+#include "chain/chainparams.hpp"  // for ConsensusParams, ChainParams
+#include "chain/logging.hpp"      // for LOG_CHAIN_TRACE, LOG_CHAIN_WARN
+#include "chain/pow.hpp"          // for CheckProofOfWork, GetNextWorkRequired
+#include "chain/randomx_pow.hpp"  // for POWVerifyMode
+#include "chain/timedata.hpp"     // for GetTimeOffset
+#include "chain/uint.hpp"         // for uint256, operator!=
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/network/addr_manager.cpp:2:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/network/addr_manager.hpp should add these lines:
+#include <stddef.h>              // for size_t
+#include <stdint.h>              // for uint32_t
+#include <string>                // for basic_string, string
+
+/Users/mike/Code/coinbasechain-full/include/network/addr_manager.hpp should remove these lines:
+- #include <chrono>  // lines 4-4
+- #include <set>  // lines 9-9
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/network/addr_manager.hpp:
+#include <stddef.h>              // for size_t
+#include <stdint.h>              // for uint32_t
+#include <map>                   // for map
+#include <mutex>                 // for mutex
+#include <optional>              // for optional
+#include <random>                // for mt19937
+#include <string>                // for basic_string, string
+#include <vector>                // for vector
+#include "network/protocol.hpp"  // for NetworkAddress, MAX_ADDR_SIZE, Times...
+---
+
+/Users/mike/Code/coinbasechain-full/src/network/addr_manager.cpp should add these lines:
+#include <array>                  // for array
+#include <chrono>                 // for duration, system_clock
+#include <exception>              // for exception
+#include <iterator>               // for advance
+#include <utility>                // for get
+#include "nlohmann/json_fwd.hpp"  // for json
+
+/Users/mike/Code/coinbasechain-full/src/network/addr_manager.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/addr_manager.cpp:
+#include "network/addr_manager.hpp"
+#include <algorithm>              // for min, shuffle
+#include <array>                  // for array
+#include <chrono>                 // for duration, system_clock
+#include <exception>              // for exception
+#include <fstream>                // for basic_ifstream, basic_ofstream, bas...
+#include <iomanip>                // for operator<<, setfill, setw
+#include <iterator>               // for advance
+#include <nlohmann/json.hpp>      // for basic_json, operator>>
+#include <sstream>                // for basic_stringstream
+#include <utility>                // for get
+#include "chain/logging.hpp"      // for LOG_NET_TRACE, LOG_NET_ERROR, LOG_N...
+#include "nlohmann/json_fwd.hpp"  // for json
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/network/anchor_manager.cpp:4:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+(/Users/mike/Code/coinbasechain-full/include/network/anchor_manager.hpp has correct #includes/fwd-decls)
+
+/Users/mike/Code/coinbasechain-full/src/network/anchor_manager.cpp should add these lines:
+#include <stddef.h>                            // for size_t
+#include <stdint.h>                            // for uint16_t, uint64_t
+#include <array>                               // for array
+#include <boost/asio/ip/address.hpp>           // for address
+#include <boost/asio/ip/address_v6.hpp>        // for address_v6, v4_mapped_t
+#include <boost/asio/ip/impl/address.ipp>      // for make_address, address:...
+#include <boost/asio/ip/impl/address_v6.ipp>   // for address_v6::to_bytes
+#include <boost/system/detail/error_code.hpp>  // for error_code
+#include <exception>                           // for exception
+#include <iterator>                            // for back_insert_iterator
+#include <map>                                 // for operator==
+#include <memory>                              // for shared_ptr
+#include <system_error>                        // for error_code
+#include <utility>                             // for move
+#include "nlohmann/json_fwd.hpp"               // for json
+
+/Users/mike/Code/coinbasechain-full/src/network/anchor_manager.cpp should remove these lines:
+- #include <boost/asio.hpp>  // lines 6-6
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/anchor_manager.cpp:
+#include "network/anchor_manager.hpp"
+#include <stddef.h>                            // for size_t
+#include <stdint.h>                            // for uint16_t, uint64_t
+#include <algorithm>                           // for copy, copy_if, min
+#include <array>                               // for array
+#include <boost/asio/ip/address.hpp>           // for address
+#include <boost/asio/ip/address_v6.hpp>        // for address_v6, v4_mapped_t
+#include <boost/asio/ip/impl/address.ipp>      // for make_address, address:...
+#include <boost/asio/ip/impl/address_v6.ipp>   // for address_v6::to_bytes
+#include <boost/system/detail/error_code.hpp>  // for error_code
+#include <exception>                           // for exception
+#include <filesystem>                          // for remove, path, rename
+#include <fstream>                             // for basic_ofstream, basic_...
+#include <iterator>                            // for back_insert_iterator
+#include <map>                                 // for operator==
+#include <memory>                              // for shared_ptr
+#include <nlohmann/json.hpp>                   // for basic_json, operator!=
+#include <system_error>                        // for error_code
+#include <utility>                             // for move
+#include "chain/logging.hpp"                   // for LOG_NET_DEBUG, LOG_NET...
+#include "network/peer.hpp"                    // for Peer, PeerPtr, PeerState
+#include "network/peer_manager.hpp"            // for PeerManager
+#include "nlohmann/json_fwd.hpp"               // for json
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/network/banman.cpp:5:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+(/Users/mike/Code/coinbasechain-full/include/network/banman.hpp has correct #includes/fwd-decls)
+
+/Users/mike/Code/coinbasechain-full/src/network/banman.cpp should add these lines:
+#include <_time.h>                                        // for time
+#include <exception>                                      // for exception
+#include <utility>                                        // for get
+#include "nlohmann/detail/iterators/iter_impl.hpp"        // for iter_impl
+#include "nlohmann/detail/iterators/iteration_proxy.hpp"  // for get, iterat...
+#include "nlohmann/detail/json_ref.hpp"                   // for json_ref
+#include "nlohmann/json_fwd.hpp"                          // for json
+
+/Users/mike/Code/coinbasechain-full/src/network/banman.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/banman.cpp:
+#include "network/banman.hpp"
+#include <_time.h>                                        // for time
+#include <ctime>                                          // for time, size_t
+#include <exception>                                      // for exception
+#include <fstream>                                        // for basic_ifstream
+#include <nlohmann/json.hpp>                              // for basic_json
+#include <utility>                                        // for get
+#include "chain/logging.hpp"                              // for LOG_NET_TRACE
+#include "nlohmann/detail/iterators/iter_impl.hpp"        // for iter_impl
+#include "nlohmann/detail/iterators/iteration_proxy.hpp"  // for get, iterat...
+#include "nlohmann/detail/json_ref.hpp"                   // for json_ref
+#include "nlohmann/json_fwd.hpp"                          // for json
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/network/block_relay_manager.cpp:5:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/network/block_relay_manager.hpp should add these lines:
+#include <stdint.h>          // for int64_t
+namespace coinbasechain { namespace message { class InvMessage; } }
+namespace coinbasechain { namespace network { class PeerManager; } }
+
+/Users/mike/Code/coinbasechain-full/include/network/block_relay_manager.hpp should remove these lines:
+- #include <memory>  // lines 7-7
+- #include "network/message.hpp"  // lines 5-5
+- #include "network/peer_manager.hpp"  // lines 4-4
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/network/block_relay_manager.hpp:
+#include <stdint.h>          // for int64_t
+#include <mutex>             // for mutex
+#include <unordered_map>     // for unordered_map
+#include "chain/uint.hpp"    // for uint256
+#include "network/peer.hpp"  // for Peer (ptr only), PeerPtr
+namespace coinbasechain { namespace message { class InvMessage; } }
+namespace coinbasechain { namespace network { class HeaderSyncManager; } }  // lines 21-21
+namespace coinbasechain { namespace network { class PeerManager; } }
+namespace coinbasechain { namespace validation { class ChainstateManager; } }  // lines 15-15
+---
+
+/Users/mike/Code/coinbasechain-full/src/network/block_relay_manager.cpp should add these lines:
+#include <_string.h>                        // for memcpy
+#include <array>                            // for array
+#include <memory>                           // for shared_ptr, make_unique
+#include <string>                           // for basic_string
+#include <utility>                          // for move
+#include <vector>                           // for vector
+#include "chain/block_index.hpp"            // for CBlockIndex
+#include "network/message.hpp"              // for InvMessage, Message
+
+/Users/mike/Code/coinbasechain-full/src/network/block_relay_manager.cpp should remove these lines:
+- #include <chrono>  // lines 10-10
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/block_relay_manager.cpp:
+#include "network/block_relay_manager.hpp"
+#include <_string.h>                        // for memcpy
+#include <algorithm>                        // for find, move
+#include <array>                            // for array
+#include <cstring>                          // for memcpy
+#include <memory>                           // for shared_ptr, make_unique
+#include <string>                           // for basic_string
+#include <utility>                          // for move
+#include <vector>                           // for vector
+#include "chain/block_index.hpp"            // for CBlockIndex
+#include "chain/chainstate_manager.hpp"     // for ChainstateManager
+#include "chain/logging.hpp"                // for LOG_NET_DEBUG, LOG_NET_TRACE
+#include "chain/time.hpp"                   // for GetTime
+#include "network/header_sync_manager.hpp"  // for HeaderSyncManager
+#include "network/message.hpp"              // for InvMessage, Message
+#include "network/peer_manager.hpp"         // for PeerManager
+#include "network/protocol.hpp"             // for InventoryVector, Inventor...
+---
+
+
+(/Users/mike/Code/coinbasechain-full/include/network/connection_types.hpp has correct #includes/fwd-decls)
+
+(/Users/mike/Code/coinbasechain-full/src/network/connection_types.cpp has correct #includes/fwd-decls)
+
+In file included from /Users/mike/Code/coinbasechain-full/src/network/header_sync_manager.cpp:9:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/network/header_sync_manager.hpp should add these lines:
+#include <stddef.h>          // for size_t
+namespace coinbasechain { namespace message { class GetHeadersMessage; } }
+namespace coinbasechain { namespace message { class HeadersMessage; } }
+
+/Users/mike/Code/coinbasechain-full/include/network/header_sync_manager.hpp should remove these lines:
+- #include <memory>  // lines 8-8
+- #include "network/message.hpp"  // lines 5-5
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/network/header_sync_manager.hpp:
+#include <stddef.h>          // for size_t
+#include <cstdint>           // for uint64_t, int64_t
+#include <limits>            // for numeric_limits
+#include <mutex>             // for mutex
+#include "chain/block.hpp"   // for CBlockLocator
+#include "network/peer.hpp"  // for PeerPtr
+namespace coinbasechain { namespace message { class GetHeadersMessage; } }
+namespace coinbasechain { namespace message { class HeadersMessage; } }
+namespace coinbasechain { namespace network { class BanMan; } }  // lines 22-22
+namespace coinbasechain { namespace network { class PeerManager; } }  // lines 21-21
+namespace coinbasechain { namespace validation { class ChainstateManager; } }  // lines 15-15
+---
+
+/Users/mike/Code/coinbasechain-full/src/network/header_sync_manager.cpp should add these lines:
+#include <_string.h>                     // for memcpy
+#include <array>                         // for array
+#include <cmath>                         // for log
+#include <compare>                       // for operator<, operator>, strong...
+#include <memory>                        // for shared_ptr, make_unique, uni...
+#include <string>                        // for basic_string, operator==
+#include <utility>                       // for move
+#include <vector>                        // for vector
+#include "chain/arith_uint256.hpp"       // for arith_uint256, operator<=>
+#include "chain/block_index.hpp"         // for CBlockIndex
+#include "chain/uint.hpp"                // for uint256, operator==
+#include "network/message.hpp"           // for GetHeadersMessage, HeadersMe...
+
+/Users/mike/Code/coinbasechain-full/src/network/header_sync_manager.cpp should remove these lines:
+- #include <chrono>  // lines 12-12
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/header_sync_manager.cpp:
+#include "network/header_sync_manager.hpp"
+#include <_string.h>                     // for memcpy
+#include <array>                         // for array
+#include <cmath>                         // for log
+#include <compare>                       // for operator<, operator>, strong...
+#include <cstring>                       // for memcpy
+#include <memory>                        // for shared_ptr, make_unique, uni...
+#include <string>                        // for basic_string, operator==
+#include <utility>                       // for move
+#include <vector>                        // for vector
+#include "chain/arith_uint256.hpp"       // for arith_uint256, operator<=>
+#include "chain/block.hpp"               // for CBlockHeader, CBlockLocator
+#include "chain/block_index.hpp"         // for CBlockIndex
+#include "chain/chainstate_manager.hpp"  // for ChainstateManager
+#include "chain/logging.hpp"             // for LOG_NET_TRACE, LOG_NET_DEBUG
+#include "chain/time.hpp"                // for GetTime
+#include "chain/uint.hpp"                // for uint256, operator==
+#include "chain/validation.hpp"          // for ValidationState, CalculateHe...
+#include "network/banman.hpp"            // for BanMan
+#include "network/message.hpp"           // for GetHeadersMessage, HeadersMe...
+#include "network/peer.hpp"              // for Peer, PeerPtr
+#include "network/peer_manager.hpp"      // for PeerManager
+#include "network/protocol.hpp"          // for MAX_HEADERS_SIZE, PROTOCOL_V...
+---
+
+
+/Users/mike/Code/coinbasechain-full/include/network/message.hpp should add these lines:
+#include <stddef.h>              // for size_t
+
+/Users/mike/Code/coinbasechain-full/include/network/message.hpp should remove these lines:
+- namespace coinbasechain { namespace message { class MessageDeserializer; } }  // lines 16-16
+- namespace coinbasechain { namespace message { class MessageSerializer; } }  // lines 15-15
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/network/message.hpp:
+#include <stddef.h>              // for size_t
+#include <array>                 // for array
+#include <cstdint>               // for uint8_t, uint64_t, int32_t, uint32_t
+#include <memory>                // for unique_ptr
+#include <string>                // for basic_string, string
+#include <vector>                // for vector
+#include "chain/block.hpp"       // for CBlockHeader
+#include "network/protocol.hpp"  // for InventoryVector, TimestampedAddress
+---
+
+/Users/mike/Code/coinbasechain-full/src/network/message.cpp should add these lines:
+#include <_string.h>         // for memcpy
+
+/Users/mike/Code/coinbasechain-full/src/network/message.cpp should remove these lines:
+- #include <stdexcept>  // lines 7-7
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/message.cpp:
+#include "network/message.hpp"
+#include <_string.h>         // for memcpy
+#include <algorithm>         // for min
+#include <cstring>           // for memcpy
+#include "chain/block.hpp"   // for CBlockHeader
+#include "chain/endian.hpp"  // for ReadLE32, WriteLE32, ReadLE16, ReadLE64
+#include "chain/sha256.hpp"  // for CSHA256
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/network/message_router.cpp:6:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/network/message_router.hpp should add these lines:
+#include <stddef.h>              // for size_t
+#include <stdint.h>              // for int64_t
+#include <string>                // for basic_string, string
+#include "network/protocol.hpp"  // for TimestampedAddress
+namespace coinbasechain { namespace message { class AddrMessage; } }
+namespace coinbasechain { namespace message { class GetHeadersMessage; } }
+namespace coinbasechain { namespace message { class HeadersMessage; } }
+namespace coinbasechain { namespace message { class InvMessage; } }
+namespace coinbasechain { namespace message { class Message; } }
+
+/Users/mike/Code/coinbasechain-full/include/network/message_router.hpp should remove these lines:
+- #include "network/message.hpp"  // lines 4-4
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/network/message_router.hpp:
+#include <stddef.h>              // for size_t
+#include <stdint.h>              // for int64_t
+#include <memory>                // for unique_ptr
+#include <mutex>                 // for mutex
+#include <string>                // for basic_string, string
+#include <unordered_map>         // for unordered_map
+#include <vector>                // for vector
+#include "network/peer.hpp"      // for PeerPtr
+#include "network/protocol.hpp"  // for TimestampedAddress
+namespace coinbasechain { namespace message { class AddrMessage; } }
+namespace coinbasechain { namespace message { class GetHeadersMessage; } }
+namespace coinbasechain { namespace message { class HeadersMessage; } }
+namespace coinbasechain { namespace message { class InvMessage; } }
+namespace coinbasechain { namespace message { class Message; } }
+namespace coinbasechain { namespace network { class AddressManager; } }  // lines 14-14
+namespace coinbasechain { namespace network { class BlockRelayManager; } }  // lines 16-16
+namespace coinbasechain { namespace network { class HeaderSyncManager; } }  // lines 15-15
+---
+
+/Users/mike/Code/coinbasechain-full/src/network/message_router.cpp should add these lines:
+#include <__hash_table>                     // for operator!=
+#include <array>                            // for array
+#include <utility>                          // for move
+#include "network/message.hpp"              // for AddrMessage, Message, Get...
+
+/Users/mike/Code/coinbasechain-full/src/network/message_router.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/message_router.cpp:
+#include "network/message_router.hpp"
+#include <__hash_table>                     // for operator!=
+#include <array>                            // for array
+#include <iomanip>                          // for operator<<, setfill, setw
+#include <sstream>                          // for basic_ostringstream, basi...
+#include <unordered_set>                    // for unordered_set
+#include <utility>                          // for move
+#include "chain/logging.hpp"                // for LOG_NET_TRACE, LOG_NET_DEBUG
+#include "chain/time.hpp"                   // for GetTime
+#include "network/addr_manager.hpp"         // for AddressManager
+#include "network/block_relay_manager.hpp"  // for BlockRelayManager
+#include "network/header_sync_manager.hpp"  // for HeaderSyncManager
+#include "network/message.hpp"              // for AddrMessage, Message, Get...
+#include "network/protocol.hpp"             // for TimestampedAddress, Netwo...
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/network/nat_manager.cpp:5:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/network/nat_manager.hpp should add these lines:
+#include <stdint.h>            // for uint16_t
+
+/Users/mike/Code/coinbasechain-full/include/network/nat_manager.hpp should remove these lines:
+- #include <memory>  // lines 7-7
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/network/nat_manager.hpp:
+#include <stdint.h>            // for uint16_t
+#include <atomic>              // for atomic
+#include <condition_variable>  // for condition_variable
+#include <mutex>               // for mutex
+#include <string>              // for string, basic_string
+#include <thread>              // for thread
+---
+
+/Users/mike/Code/coinbasechain-full/src/network/nat_manager.cpp should add these lines:
+#include <_stdio.h>                    // for snprintf
+#include <miniupnpc/igd_desc_parse.h>  // for IGDdatas, IGDdatas_service
+#include <miniupnpc/upnpdev.h>         // for freeUPNPDevlist, UPNPDev (ptr ...
+
+/Users/mike/Code/coinbasechain-full/src/network/nat_manager.cpp should remove these lines:
+- #include <cstring>  // lines 7-7
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/nat_manager.cpp:
+#include "network/nat_manager.hpp"
+#include <_stdio.h>                    // for snprintf
+#include <miniupnpc/igd_desc_parse.h>  // for IGDdatas, IGDdatas_service
+#include <miniupnpc/miniupnpc.h>       // for UPNPUrls, FreeUPNPUrls, UPNP_G...
+#include <miniupnpc/upnpcommands.h>    // for UPNPCOMMAND_SUCCESS, UPNP_AddP...
+#include <miniupnpc/upnpdev.h>         // for freeUPNPDevlist, UPNPDev (ptr ...
+#include <chrono>                      // for seconds
+#include "chain/logging.hpp"           // for LOG_NET_TRACE, LOG_NET_ERROR
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/network/network_manager.cpp:11:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/network/network_manager.hpp should add these lines:
+#include <stddef.h>                     // for size_t
+#include <stdint.h>                     // for uint64_t, uint16_t, int64_t
+#include <boost/asio/io_context.hpp>    // for io_context
+#include <boost/asio/steady_timer.hpp>  // for steady_timer
+#include <memory>                       // for unique_ptr, shared_ptr
+#include <optional>                     // for optional
+#include <string>                       // for string, basic_string
+#include <vector>                       // for vector
+#include "network/peer.hpp"             // for PeerPtr, Peer (ptr only)
+#include "network/protocol.hpp"         // for NetworkAddress
+class uint256;
+namespace boost { namespace asio { template <typename Executor, typename = void, typename = void> class executor_work_guard; } }
+namespace coinbasechain { namespace chain { class ChainParams; } }
+namespace coinbasechain { namespace message { class GetHeadersMessage; } }
+namespace coinbasechain { namespace message { class HeadersMessage; } }
+namespace coinbasechain { namespace message { class InvMessage; } }
+namespace coinbasechain { namespace message { class Message; } }
+namespace coinbasechain { namespace network { class AddressManager; } }
+namespace coinbasechain { namespace network { class BanMan; } }
+namespace coinbasechain { namespace network { class NATManager; } }
+
+/Users/mike/Code/coinbasechain-full/include/network/network_manager.hpp should remove these lines:
+- #include <boost/asio.hpp>  // lines 11-11
+- #include "chain/block.hpp"  // lines 4-4
+- #include "chain/chainparams.hpp"  // lines 3-3
+- #include "network/addr_manager.hpp"  // lines 5-5
+- #include "network/banman.hpp"  // lines 9-9
+- #include "network/nat_manager.hpp"  // lines 6-6
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/network/network_manager.hpp:
+#include <stddef.h>                     // for size_t
+#include <stdint.h>                     // for uint64_t, uint16_t, int64_t
+#include <atomic>                       // for atomic
+#include <boost/asio/io_context.hpp>    // for io_context
+#include <boost/asio/steady_timer.hpp>  // for steady_timer
+#include <chrono>                       // for seconds, minutes
+#include <memory>                       // for unique_ptr, shared_ptr
+#include <mutex>                        // for mutex
+#include <optional>                     // for optional
+#include <string>                       // for string, basic_string
+#include <thread>                       // for thread
+#include <vector>                       // for vector
+#include "network/peer.hpp"             // for PeerPtr, Peer (ptr only)
+#include "network/peer_manager.hpp"     // for NetPermissionFlags, PeerManag...
+#include "network/protocol.hpp"         // for NetworkAddress
+#include "network/transport.hpp"        // for Transport, TransportConnectio...
+class uint256;
+namespace boost { namespace asio { template <typename Executor, typename = void, typename = void> class executor_work_guard; } }
+namespace coinbasechain { namespace chain { class ChainParams; } }
+namespace coinbasechain { namespace message { class GetHeadersMessage; } }
+namespace coinbasechain { namespace message { class HeadersMessage; } }
+namespace coinbasechain { namespace message { class InvMessage; } }
+namespace coinbasechain { namespace message { class Message; } }
+namespace coinbasechain { namespace network { class AddressManager; } }
+namespace coinbasechain { namespace network { class AnchorManager; } }  // lines 26-26
+namespace coinbasechain { namespace network { class BanMan; } }
+namespace coinbasechain { namespace network { class BlockRelayManager; } }  // lines 28-28
+namespace coinbasechain { namespace network { class HeaderSyncManager; } }  // lines 27-27
+namespace coinbasechain { namespace network { class MessageRouter; } }  // lines 29-29
+namespace coinbasechain { namespace network { class NATManager; } }
+namespace coinbasechain { namespace validation { class ChainstateManager; } }  // lines 20-20
+---
+
+/Users/mike/Code/coinbasechain-full/src/network/network_manager.cpp should add these lines:
+#include <algorithm>                                    // for copy, max
+#include <array>                                        // for array
+#include <boost/asio/async_result.hpp>                  // for async_initiate
+#include <boost/asio/basic_waitable_timer.hpp>          // for basic_waitabl...
+#include <boost/asio/detail/bind_handler.hpp>           // for bind_handler
+#include <boost/asio/detail/impl/kqueue_reactor.hpp>    // for kqueue_reacto...
+#include <boost/asio/detail/impl/scheduler.ipp>         // for scheduler::ca...
+#include <boost/asio/detail/impl/service_registry.hpp>  // for service_regis...
+#include <boost/asio/execution/context_as.hpp>          // for query
+#include <boost/asio/execution/prefer_only.hpp>         // for prefer, query
+#include <boost/asio/executor_work_guard.hpp>           // for executor_work...
+#include <boost/asio/impl/any_io_executor.ipp>          // for any_io_execut...
+#include <boost/asio/impl/io_context.hpp>               // for io_context::b...
+#include <boost/asio/impl/io_context.ipp>               // for io_context::~...
+#include <boost/asio/ip/address.hpp>                    // for address
+#include <boost/asio/ip/address_v4.hpp>                 // for address_v4
+#include <boost/asio/ip/address_v6.hpp>                 // for address_v6
+#include <boost/asio/ip/impl/address.ipp>               // for make_address
+#include <boost/asio/ip/impl/address_v4.ipp>            // for address_v4::t...
+#include <boost/asio/ip/impl/address_v6.ipp>            // for address_v6::t...
+#include <boost/asio/post.hpp>                          // for post
+#include <boost/system/detail/error_code.hpp>           // for error_code
+#include <exception>                                    // for exception
+#include <functional>                                   // for function
+#include <new>                                          // for operator new
+#include <utility>                                      // for declval, move
+#include "chain/chainparams.hpp"                        // for ChainParams
+#include "network/addr_manager.hpp"                     // for AddressManager
+#include "network/banman.hpp"                           // for BanMan
+#include "network/connection_types.hpp"                 // for ConnectionType
+#include "network/nat_manager.hpp"                      // for NATManager
+class uint256;
+
+/Users/mike/Code/coinbasechain-full/src/network/network_manager.cpp should remove these lines:
+- #include <cstring>  // lines 15-15
+- #include <fstream>  // lines 17-17
+- #include <nlohmann/json.hpp>  // lines 18-18
+- #include "chain/block.hpp"  // lines 10-10
+- #include "chain/block_manager.hpp"  // lines 6-6
+- #include "chain/time.hpp"  // lines 12-12
+- #include "chain/validation.hpp"  // lines 14-14
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/network_manager.cpp:
+#include "network/network_manager.hpp"
+#include <algorithm>                                    // for copy, max
+#include <array>                                        // for array
+#include <boost/asio/async_result.hpp>                  // for async_initiate
+#include <boost/asio/basic_waitable_timer.hpp>          // for basic_waitabl...
+#include <boost/asio/detail/bind_handler.hpp>           // for bind_handler
+#include <boost/asio/detail/impl/kqueue_reactor.hpp>    // for kqueue_reacto...
+#include <boost/asio/detail/impl/scheduler.ipp>         // for scheduler::ca...
+#include <boost/asio/detail/impl/service_registry.hpp>  // for service_regis...
+#include <boost/asio/execution/context_as.hpp>          // for query
+#include <boost/asio/execution/prefer_only.hpp>         // for prefer, query
+#include <boost/asio/executor_work_guard.hpp>           // for executor_work...
+#include <boost/asio/impl/any_io_executor.ipp>          // for any_io_execut...
+#include <boost/asio/impl/io_context.hpp>               // for io_context::b...
+#include <boost/asio/impl/io_context.ipp>               // for io_context::~...
+#include <boost/asio/ip/address.hpp>                    // for address
+#include <boost/asio/ip/address_v4.hpp>                 // for address_v4
+#include <boost/asio/ip/address_v6.hpp>                 // for address_v6
+#include <boost/asio/ip/impl/address.ipp>               // for make_address
+#include <boost/asio/ip/impl/address_v4.ipp>            // for address_v4::t...
+#include <boost/asio/ip/impl/address_v6.ipp>            // for address_v6::t...
+#include <boost/asio/post.hpp>                          // for post
+#include <boost/system/detail/error_code.hpp>           // for error_code
+#include <exception>                                    // for exception
+#include <filesystem>                                   // for exists, path
+#include <functional>                                   // for function
+#include <new>                                          // for operator new
+#include <optional>                                     // for optional, nul...
+#include <random>                                       // for random_device
+#include <utility>                                      // for declval, move
+#include "chain/chainparams.hpp"                        // for ChainParams
+#include "chain/chainstate_manager.hpp"                 // for ChainstateMan...
+#include "chain/logging.hpp"                            // for LOG_NET_TRACE
+#include "network/addr_manager.hpp"                     // for AddressManager
+#include "network/anchor_manager.hpp"                   // for AnchorManager
+#include "network/banman.hpp"                           // for BanMan
+#include "network/block_relay_manager.hpp"              // for BlockRelayMan...
+#include "network/connection_types.hpp"                 // for ConnectionType
+#include "network/header_sync_manager.hpp"              // for HeaderSyncMan...
+#include "network/message.hpp"                          // for Message, Vers...
+#include "network/message_router.hpp"                   // for MessageRouter
+#include "network/nat_manager.hpp"                      // for NATManager
+#include "network/protocol.hpp"                         // for NetworkAddress
+#include "network/real_transport.hpp"                   // for RealTransport
+class uint256;
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/network/peer.cpp:2:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/network/peer.hpp should add these lines:
+#include <stdint.h>                      // for uint64_t, int32_t, uint16_t
+#include <boost/asio/steady_timer.hpp>   // for steady_timer
+#include <string>                        // for string, basic_string
+#include <vector>                        // for vector
+#include "chain/uint.hpp"                // for uint256
+namespace boost { namespace asio { class io_context; } }
+namespace coinbasechain { namespace protocol { struct MessageHeader; } }
+
+/Users/mike/Code/coinbasechain-full/include/network/peer.hpp should remove these lines:
+- #include <atomic>  // lines 7-7
+- #include <boost/asio.hpp>  // lines 8-8
+- #include <queue>  // lines 13-13
+- #include "network/protocol.hpp"  // lines 5-5
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/network/peer.hpp:
+#include <stdint.h>                      // for uint64_t, int32_t, uint16_t
+#include <boost/asio/steady_timer.hpp>   // for steady_timer
+#include <chrono>                        // for steady_clock
+#include <functional>                    // for function
+#include <memory>                        // for unique_ptr, shared_ptr, enab...
+#include <mutex>                         // for mutex, lock_guard
+#include <string>                        // for string, basic_string
+#include <vector>                        // for vector
+#include "chain/uint.hpp"                // for uint256
+#include "network/connection_types.hpp"  // for ConnectionType
+#include "network/message.hpp"           // for Message, PongMessage (ptr only)
+#include "network/transport.hpp"         // for TransportConnectionPtr
+namespace boost { namespace asio { class io_context; } }
+namespace coinbasechain { namespace network { class Peer; } }  // lines 19-19
+namespace coinbasechain { namespace protocol { struct MessageHeader; } }
+---
+
+/Users/mike/Code/coinbasechain-full/src/network/peer.cpp should add these lines:
+#include <stddef.h>                                     // for size_t
+#include <algorithm>                                    // for max
+#include <array>                                        // for operator==
+#include <boost/asio/async_result.hpp>                  // for async_initiate
+#include <boost/asio/detail/impl/kqueue_reactor.hpp>    // for kqueue_reacto...
+#include <boost/asio/detail/impl/scheduler.ipp>         // for scheduler::ca...
+#include <boost/asio/detail/impl/service_registry.hpp>  // for service_regis...
+#include <boost/asio/execution/context_as.hpp>          // for query
+#include <boost/asio/execution/prefer_only.hpp>         // for prefer, query
+#include <boost/asio/impl/any_io_executor.ipp>          // for any_io_execut...
+#include <boost/asio/impl/io_context.hpp>               // for io_context::b...
+#include <boost/asio/io_context.hpp>                    // for io_context
+#include <boost/system/detail/error_code.hpp>           // for error_code
+#include <new>                                          // for operator new
+#include <utility>                                      // for move
+#include "network/protocol.hpp"                         // for MessageHeader
+
+/Users/mike/Code/coinbasechain-full/src/network/peer.cpp should remove these lines:
+- #include <boost/asio/ip/address.hpp>  // lines 5-5
+- #include <boost/asio/ip/address_v6.hpp>  // lines 6-6
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/peer.cpp:
+#include "network/peer.hpp"
+#include <stddef.h>                                     // for size_t
+#include <algorithm>                                    // for max
+#include <array>                                        // for operator==
+#include <boost/asio/async_result.hpp>                  // for async_initiate
+#include <boost/asio/detail/impl/kqueue_reactor.hpp>    // for kqueue_reacto...
+#include <boost/asio/detail/impl/scheduler.ipp>         // for scheduler::ca...
+#include <boost/asio/detail/impl/service_registry.hpp>  // for service_regis...
+#include <boost/asio/execution/context_as.hpp>          // for query
+#include <boost/asio/execution/prefer_only.hpp>         // for prefer, query
+#include <boost/asio/impl/any_io_executor.ipp>          // for any_io_execut...
+#include <boost/asio/impl/io_context.hpp>               // for io_context::b...
+#include <boost/asio/io_context.hpp>                    // for io_context
+#include <boost/system/detail/error_code.hpp>           // for error_code
+#include <new>                                          // for operator new
+#include <random>                                       // for random_device
+#include <utility>                                      // for move
+#include "chain/logging.hpp"                            // for LOG_NET_TRACE
+#include "chain/time.hpp"                               // for GetSteadyTime
+#include "chain/timedata.hpp"                           // for AddTimeData
+#include "network/protocol.hpp"                         // for MessageHeader
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/network/peer_manager.cpp:2:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/network/peer_manager.hpp should add these lines:
+#include <stddef.h>              // for size_t
+#include <stdint.h>              // for uint32_t, uint16_t
+#include <string>                // for basic_string, string
+#include <utility>               // for move
+#include <vector>                // for vector
+#include "network/protocol.hpp"  // for DEFAULT_MAX_OUTBOUND_CONNECTIONS
+class uint256;
+namespace boost { namespace asio { class io_context; } }
+namespace coinbasechain { namespace network { class AddressManager; } }
+
+/Users/mike/Code/coinbasechain-full/include/network/peer_manager.hpp should remove these lines:
+- #include <memory>  // lines 7-7
+- #include "network/addr_manager.hpp"  // lines 3-3
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/network/peer_manager.hpp:
+#include <stddef.h>              // for size_t
+#include <stdint.h>              // for uint32_t, uint16_t
+#include <functional>            // for function
+#include <map>                   // for map
+#include <mutex>                 // for mutex
+#include <string>                // for basic_string, string
+#include <unordered_set>         // for unordered_set
+#include <utility>               // for move
+#include <vector>                // for vector
+#include "network/peer.hpp"      // for PeerPtr
+#include "network/protocol.hpp"  // for DEFAULT_MAX_OUTBOUND_CONNECTIONS
+class uint256;
+namespace boost { namespace asio { class io_context; } }
+namespace coinbasechain { namespace network { class AddressManager; } }
+---
+
+/Users/mike/Code/coinbasechain-full/src/network/peer_manager.cpp should add these lines:
+#include <__hash_table>                        // for operator!=
+#include <boost/asio/ip/address_v4.hpp>        // for address_v4
+#include <boost/asio/ip/address_v6.hpp>        // for address_v6, v4_mapped_t
+#include <boost/asio/ip/impl/address.ipp>      // for address::to_v6, make_a...
+#include <boost/asio/ip/impl/address_v4.ipp>   // for address_v4::to_string
+#include <boost/asio/ip/impl/address_v6.ipp>   // for make_address_v4, addre...
+#include <boost/system/detail/error_code.hpp>  // for error_code
+#include <chrono>                              // for steady_clock, time_point
+#include <compare>                             // for operator<, strong_orde...
+#include <exception>                           // for exception
+#include <memory>                              // for shared_ptr
+#include "chain/uint.hpp"                      // for uint256
+#include "network/addr_manager.hpp"            // for AddressManager
+namespace boost { namespace asio { class io_context; } }
+
+/Users/mike/Code/coinbasechain-full/src/network/peer_manager.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/peer_manager.cpp:
+#include "network/peer_manager.hpp"
+#include <__hash_table>                        // for operator!=
+#include <algorithm>                           // for find
+#include <boost/asio/ip/address.hpp>           // for address
+#include <boost/asio/ip/address_v4.hpp>        // for address_v4
+#include <boost/asio/ip/address_v6.hpp>        // for address_v6, v4_mapped_t
+#include <boost/asio/ip/impl/address.ipp>      // for address::to_v6, make_a...
+#include <boost/asio/ip/impl/address_v4.ipp>   // for address_v4::to_string
+#include <boost/asio/ip/impl/address_v6.ipp>   // for make_address_v4, addre...
+#include <boost/system/detail/error_code.hpp>  // for error_code
+#include <chrono>                              // for steady_clock, time_point
+#include <compare>                             // for operator<, strong_orde...
+#include <exception>                           // for exception
+#include <memory>                              // for shared_ptr
+#include "chain/logging.hpp"                   // for LOG_NET_TRACE, LOG_NET...
+#include "chain/uint.hpp"                      // for uint256
+#include "network/addr_manager.hpp"            // for AddressManager
+#include "network/protocol.hpp"                // for NetworkAddress
+namespace boost { namespace asio { class io_context; } }
+---
+
+
+/Users/mike/Code/coinbasechain-full/include/network/protocol.hpp should add these lines:
+#include <stddef.h>     // for size_t
+
+/Users/mike/Code/coinbasechain-full/include/network/protocol.hpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/network/protocol.hpp:
+#include <stddef.h>     // for size_t
+#include <array>        // for array
+#include <cstdint>      // for uint32_t, uint16_t, uint64_t, uint8_t, int64_t
+#include <string>       // for string, basic_string
+#include "version.hpp"  // for GetUserAgent
+---
+
+/Users/mike/Code/coinbasechain-full/src/network/protocol.cpp should add these lines:
+#include <_string.h>                           // for memcpy
+#include <boost/asio/ip/impl/address.ipp>      // for make_address, address:...
+#include <boost/asio/ip/impl/address_v6.ipp>   // for address_v6::to_bytes
+#include <boost/system/detail/error_code.hpp>  // for error_code
+
+/Users/mike/Code/coinbasechain-full/src/network/protocol.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/protocol.cpp:
+#include "network/protocol.hpp"
+#include <_string.h>                           // for memcpy
+#include <algorithm>                           // for copy, find, min
+#include <boost/asio/ip/address.hpp>           // for address
+#include <boost/asio/ip/address_v6.hpp>        // for address_v6, v4_mapped_t
+#include <boost/asio/ip/impl/address.ipp>      // for make_address, address:...
+#include <boost/asio/ip/impl/address_v6.ipp>   // for address_v6::to_bytes
+#include <boost/system/detail/error_code.hpp>  // for error_code
+#include <cstring>                             // for memcpy
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/network/real_transport.cpp:5:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/network/real_transport.hpp should add these lines:
+#include <stddef.h>
+#include <stdint.h>
+#include <boost/asio/detail/impl/reactive_socket_service_base.ipp>
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/ip/tcp.hpp>                                    // for tcp
+#include <boost/system/detail/error_code.hpp>
+#include <functional>
+#include <string>
+#include <thread>
+#include <vector>
+namespace boost { namespace asio { template <typename Executor, typename = void, typename = void> class executor_work_guard; } }
+
+/Users/mike/Code/coinbasechain-full/include/network/real_transport.hpp should remove these lines:
+- #include <boost/asio.hpp>  // lines 5-5
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/network/real_transport.hpp:
+#include <stddef.h>
+#include <stdint.h>
+#include <atomic>
+#include <boost/asio/detail/impl/reactive_socket_service_base.ipp>
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/ip/tcp.hpp>                                    // for tcp
+#include <boost/system/detail/error_code.hpp>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <queue>
+#include <string>
+#include <thread>
+#include <vector>
+#include "network/transport.hpp"
+namespace boost { namespace asio { template <typename Executor, typename = void, typename = void> class executor_work_guard; } }
+---
+
+/Users/mike/Code/coinbasechain-full/src/network/real_transport.cpp should add these lines:
+#include <boost/asio/any_io_executor.hpp>                    // for any_io_e...
+#include <boost/asio/associated_cancellation_slot.hpp>       // for get_asso...
+#include <boost/asio/async_result.hpp>                       // for async_in...
+#include <boost/asio/basic_socket_acceptor.hpp>              // for basic_so...
+#include <boost/asio/buffer.hpp>                             // for mutable_...
+#include <boost/asio/connect.hpp>                            // for async_co...
+#include <boost/asio/detail/bind_handler.hpp>                // for bind_han...
+#include <boost/asio/detail/handler_cont_helpers.hpp>        // for is_conti...
+#include <boost/asio/detail/impl/resolver_service_base.ipp>  // for resolver...
+#include <boost/asio/detail/impl/scheduler.ipp>              // for schedule...
+#include <boost/asio/detail/impl/service_registry.hpp>       // for service_...
+#include <boost/asio/error.hpp>                              // for make_err...
+#include <boost/asio/execution/context_as.hpp>               // for query
+#include <boost/asio/execution/prefer_only.hpp>              // for prefer
+#include <boost/asio/executor_work_guard.hpp>                // for executor...
+#include <boost/asio/impl/any_io_executor.ipp>               // for any_io_e...
+#include <boost/asio/impl/execution_context.hpp>             // for use_service
+#include <boost/asio/impl/io_context.hpp>                    // for io_conte...
+#include <boost/asio/impl/io_context.ipp>                    // for io_conte...
+#include <boost/asio/ip/address.hpp>                         // for address
+#include <boost/asio/ip/basic_resolver.hpp>                  // for basic_re...
+#include <boost/asio/ip/basic_resolver_iterator.hpp>         // for operator!=
+#include <boost/asio/ip/detail/impl/endpoint.ipp>            // for endpoint...
+#include <boost/asio/ip/impl/address.ipp>                    // for address:...
+#include <boost/asio/post.hpp>                               // for post
+#include <boost/asio/write.hpp>                              // for async_write
+#include <exception>                                         // for exception
+#include <new>                                               // for operator...
+#include <utility>                                           // for declval
+
+/Users/mike/Code/coinbasechain-full/src/network/real_transport.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/real_transport.cpp:
+#include "network/real_transport.hpp"
+#include <boost/asio/any_io_executor.hpp>                    // for any_io_e...
+#include <boost/asio/associated_cancellation_slot.hpp>       // for get_asso...
+#include <boost/asio/async_result.hpp>                       // for async_in...
+#include <boost/asio/basic_socket_acceptor.hpp>              // for basic_so...
+#include <boost/asio/buffer.hpp>                             // for mutable_...
+#include <boost/asio/connect.hpp>                            // for async_co...
+#include <boost/asio/detail/bind_handler.hpp>                // for bind_han...
+#include <boost/asio/detail/handler_cont_helpers.hpp>        // for is_conti...
+#include <boost/asio/detail/impl/resolver_service_base.ipp>  // for resolver...
+#include <boost/asio/detail/impl/scheduler.ipp>              // for schedule...
+#include <boost/asio/detail/impl/service_registry.hpp>       // for service_...
+#include <boost/asio/error.hpp>                              // for make_err...
+#include <boost/asio/execution/context_as.hpp>               // for query
+#include <boost/asio/execution/prefer_only.hpp>              // for prefer
+#include <boost/asio/executor_work_guard.hpp>                // for executor...
+#include <boost/asio/impl/any_io_executor.ipp>               // for any_io_e...
+#include <boost/asio/impl/execution_context.hpp>             // for use_service
+#include <boost/asio/impl/io_context.hpp>                    // for io_conte...
+#include <boost/asio/impl/io_context.ipp>                    // for io_conte...
+#include <boost/asio/ip/address.hpp>                         // for address
+#include <boost/asio/ip/basic_resolver.hpp>                  // for basic_re...
+#include <boost/asio/ip/basic_resolver_iterator.hpp>         // for operator!=
+#include <boost/asio/ip/detail/impl/endpoint.ipp>            // for endpoint...
+#include <boost/asio/ip/impl/address.ipp>                    // for address:...
+#include <boost/asio/post.hpp>                               // for post
+#include <boost/asio/write.hpp>                              // for async_write
+#include <exception>                                         // for exception
+#include <new>                                               // for operator...
+#include <thread>                                            // for thread
+#include <utility>                                           // for declval
+#include "chain/logging.hpp"                                 // for LOG_NET_...
+---
+
+
+/Users/mike/Code/coinbasechain-full/include/network/rpc_client.hpp should add these lines:
+
+/Users/mike/Code/coinbasechain-full/include/network/rpc_client.hpp should remove these lines:
+- #include <memory>  // lines 6-6
+- #include <optional>  // lines 7-7
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/network/rpc_client.hpp:
+#include <string>  // for basic_string, string
+#include <vector>  // for vector
+---
+
+/Users/mike/Code/coinbasechain-full/src/network/rpc_client.cpp should add these lines:
+#include <_string.h>     // for memset, strncpy
+#include <sys/types.h>   // for ssize_t
+
+/Users/mike/Code/coinbasechain-full/src/network/rpc_client.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/rpc_client.cpp:
+#include "network/rpc_client.hpp"
+#include <_string.h>     // for memset, strncpy
+#include <sys/socket.h>  // for AF_UNIX, connect, recv, send, socket, SOCK_S...
+#include <sys/types.h>   // for ssize_t
+#include <sys/un.h>      // for sockaddr_un
+#include <unistd.h>      // for close
+#include <cstring>       // for memset, size_t, strncpy
+#include <sstream>       // for basic_ostringstream, operator<<, basic_ostream
+#include <stdexcept>     // for runtime_error
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/network/rpc_server.cpp:24:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/network/rpc_server.hpp should add these lines:
+#include <stdint.h>        // for uint16_t
+
+/Users/mike/Code/coinbasechain-full/include/network/rpc_server.hpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/network/rpc_server.hpp:
+#include <stdint.h>        // for uint16_t
+#include <atomic>          // for atomic
+#include <functional>      // for function
+#include <map>             // for map
+#include <optional>        // for optional
+#include <string>          // for basic_string, string
+#include <thread>          // for thread
+#include <vector>          // for vector
+#include "chain/uint.hpp"  // for uint256
+namespace coinbasechain { namespace chain { class ChainParams; } }  // lines 19-19
+namespace coinbasechain { namespace mining { class CPUMiner; } }  // lines 25-25
+namespace coinbasechain { namespace network { class NetworkManager; } }  // lines 22-22
+namespace coinbasechain { namespace validation { class ChainstateManager; } }  // lines 28-28
+---
+
+/Users/mike/Code/coinbasechain-full/src/network/rpc_server.cpp should add these lines:
+#include <_ctype.h>                            // for isxdigit
+#include <_string.h>                           // for memset, strncpy
+#include <sys/types.h>                         // for ssize_t, mode_t
+#include <algorithm>                           // for copy, min
+#include <array>                               // for array
+#include <boost/asio/ip/address.hpp>           // for address
+#include <boost/asio/ip/address_v6.hpp>        // for address_v6, v4_mapped_t
+#include <boost/asio/ip/impl/address.ipp>      // for make_address, address:...
+#include <boost/asio/ip/impl/address_v6.ipp>   // for address_v6::to_bytes
+#include <boost/system/detail/error_code.hpp>  // for error_code
+#include <cctype>                              // for isxdigit
+#include <cmath>                               // for log
+#include <exception>                           // for exception
+#include <memory>                              // for shared_ptr
+#include <utility>                             // for get
+#include "chain/arith_uint256.hpp"             // for arith_uint256, operator-
+#include "chain/block_index.hpp"               // for CBlockIndex
+#include "network/addr_manager.hpp"            // for AddressManager
+#include "network/banman.hpp"                  // for CBanEntry, BanMan
+#include "network/peer.hpp"                    // for Peer, PeerStats
+#include "network/protocol.hpp"                // for NetworkAddress, DEFAUL...
+#include "nlohmann/json_fwd.hpp"               // for json
+
+/Users/mike/Code/coinbasechain-full/src/network/rpc_server.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/network/rpc_server.cpp:
+#include "network/rpc_server.hpp"
+#include <_ctype.h>                            // for isxdigit
+#include <_string.h>                           // for memset, strncpy
+#include <sys/socket.h>                        // for send, AF_UNIX, accept
+#include <sys/stat.h>                          // for umask, chmod
+#include <sys/types.h>                         // for ssize_t, mode_t
+#include <sys/un.h>                            // for sockaddr_un
+#include <unistd.h>                            // for close, unlink
+#include <algorithm>                           // for copy, min
+#include <array>                               // for array
+#include <boost/asio/ip/address.hpp>           // for address
+#include <boost/asio/ip/address_v6.hpp>        // for address_v6, v4_mapped_t
+#include <boost/asio/ip/impl/address.ipp>      // for make_address, address:...
+#include <boost/asio/ip/impl/address_v6.ipp>   // for address_v6::to_bytes
+#include <boost/system/detail/error_code.hpp>  // for error_code
+#include <cctype>                              // for isxdigit
+#include <chrono>                              // for duration_cast, millise...
+#include <cmath>                               // for log
+#include <cstring>                             // for size_t, memset, strncpy
+#include <exception>                           // for exception
+#include <iomanip>                             // for operator<<, setprecision
+#include <memory>                              // for shared_ptr
+#include <nlohmann/json.hpp>                   // for basic_json
+#include <sstream>                             // for basic_ostream, operator<<
+#include <thread>                              // for thread, sleep_for
+#include <utility>                             // for get
+#include "chain/arith_uint256.hpp"             // for arith_uint256, operator-
+#include "chain/block_index.hpp"               // for CBlockIndex
+#include "chain/chainparams.hpp"               // for ChainParams, Consensus...
+#include "chain/chainstate_manager.hpp"        // for ChainstateManager
+#include "chain/logging.hpp"                   // for LOG_INFO, LOG_ERROR
+#include "chain/miner.hpp"                     // for CPUMiner
+#include "chain/time.hpp"                      // for FormatTime, SetMockTime
+#include "chain/uint.hpp"                      // for uint256, uint160
+#include "network/addr_manager.hpp"            // for AddressManager
+#include "network/banman.hpp"                  // for CBanEntry, BanMan
+#include "network/network_manager.hpp"         // for NetworkManager
+#include "network/peer.hpp"                    // for Peer, PeerStats
+#include "network/peer_manager.hpp"            // for PeerManager
+#include "network/protocol.hpp"                // for NetworkAddress, DEFAUL...
+#include "nlohmann/json_fwd.hpp"               // for json
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/application.cpp:4:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/include/application.hpp should add these lines:
+#include "network/protocol.hpp"         // for MAINNET
+namespace coinbasechain { namespace mining { class CPUMiner; } }
+namespace coinbasechain { namespace rpc { class RPCServer; } }
+namespace coinbasechain { namespace validation { class ChainstateManager; } }
+
+/Users/mike/Code/coinbasechain-full/include/application.hpp should remove these lines:
+- #include <chrono>  // lines 12-12
+- #include <csignal>  // lines 13-13
+- #include <string>  // lines 16-16
+- #include "chain/block_manager.hpp"  // lines 3-3
+- #include "chain/chainstate_manager.hpp"  // lines 10-10
+- #include "chain/miner.hpp"  // lines 5-5
+- #include "network/rpc_server.hpp"  // lines 8-8
+
+The full include-list for /Users/mike/Code/coinbasechain-full/include/application.hpp:
+#include <atomic>                       // for atomic
+#include <filesystem>                   // for path
+#include <memory>                       // for unique_ptr
+#include <thread>                       // for thread
+#include "chain/chainparams.hpp"        // for ChainParams, ChainType
+#include "chain/files.hpp"              // for get_default_datadir
+#include "chain/notifications.hpp"      // for ChainNotifications
+#include "network/network_manager.hpp"  // for NetworkManager
+#include "network/protocol.hpp"         // for MAINNET
+namespace coinbasechain { namespace mining { class CPUMiner; } }
+namespace coinbasechain { namespace rpc { class RPCServer; } }
+namespace coinbasechain { namespace validation { class ChainstateManager; } }
+---
+
+/Users/mike/Code/coinbasechain-full/src/application.cpp should add these lines:
+#include <stdint.h>                      // for int64_t
+#include <compare>                       // for operator>=, strong_ordering
+#include <csignal>                       // for signal, SIGINT, SIGTERM
+#include <string>                        // for basic_string, string
+#include "chain/block_index.hpp"         // for CBlockIndex
+#include "chain/chainstate_manager.hpp"  // for ChainstateManager
+#include "chain/miner.hpp"               // for CPUMiner
+#include "network/addr_manager.hpp"      // for AddressManager
+#include "network/rpc_server.hpp"        // for RPCServer
+class CBlockHeader;
+
+/Users/mike/Code/coinbasechain-full/src/application.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/application.cpp:
+#include "application.hpp"
+#include <stdint.h>                      // for int64_t
+#include <chrono>                        // for operator-, operator<=>, stea...
+#include <compare>                       // for operator>=, strong_ordering
+#include <csignal>                       // for signal, SIGINT, SIGTERM
+#include <iostream>                      // for basic_ostream, char_traits
+#include <string>                        // for basic_string, string
+#include <thread>                        // for thread, sleep_for
+#include "chain/block_index.hpp"         // for CBlockIndex
+#include "chain/chainstate_manager.hpp"  // for ChainstateManager
+#include "chain/fs_lock.hpp"             // for LockDirectory, LockResult
+#include "chain/logging.hpp"             // for LOG_INFO, LOG_ERROR, LOG_DEBUG
+#include "chain/miner.hpp"               // for CPUMiner
+#include "chain/randomx_pow.hpp"         // for InitRandomX, ShutdownRandomX
+#include "chain/time.hpp"                // for GetTime
+#include "network/addr_manager.hpp"      // for AddressManager
+#include "network/rpc_server.hpp"        // for RPCServer
+#include "version.hpp"                   // for GetStartupBanner
+class CBlockHeader;
+---
+
+
+/Users/mike/Code/coinbasechain-full/src/cli.cpp should add these lines:
+#include <_stdlib.h>               // for getenv
+#include <exception>               // for exception
+
+/Users/mike/Code/coinbasechain-full/src/cli.cpp should remove these lines:
+- #include <cstdlib>  // lines 6-6
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/cli.cpp:
+#include <_stdlib.h>               // for getenv
+#include <pwd.h>                   // for getpwuid, passwd
+#include <unistd.h>                // for getuid
+#include <exception>               // for exception
+#include <iostream>                // for basic_ostream, operator<<, cout, endl
+#include <string>                  // for basic_string, char_traits, operator==
+#include <vector>                  // for vector
+#include "network/rpc_client.hpp"  // for RPCClient
+#include "version.hpp"             // for GetCopyrightString, GetFullVersion...
+---
+
+In file included from /Users/mike/Code/coinbasechain-full/src/main.cpp:2:
+In file included from /Users/mike/Code/coinbasechain-full/include/chain/logging.hpp:7:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/spdlog.h:12:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/common.h:50:
+In file included from /Users/mike/Code/coinbasechain-full/build/_deps/spdlog-src/include/spdlog/fmt/fmt.h:32:
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3036:27: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3036 | constexpr auto operator"" _a(const char* s, size_t) -> detail::udl_arg<char> {
+      |                ~~~~~~~~~~~^~
+      |                operator""_a
+/Users/mike/Code/coinbasechain-full/build/_deps/fmt-src/include/fmt/format.h:3043:42: warning: identifier '_format' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+ 3043 | FMT_DEPRECATED constexpr auto operator"" _format(const char* s, size_t n)
+      |                               ~~~~~~~~~~~^~~~~~~
+      |                               operator""_format
+
+/Users/mike/Code/coinbasechain-full/src/main.cpp should add these lines:
+#include <exception>              // for exception
+#include <filesystem>             // for path, operator/
+#include <string>                 // for basic_string, operator==, stoi, string
+#include <vector>                 // for vector
+#include "chain/chainparams.hpp"  // for ChainType
+#include "network/protocol.hpp"   // for REGTEST, TESTNET
+
+/Users/mike/Code/coinbasechain-full/src/main.cpp should remove these lines:
+
+The full include-list for /Users/mike/Code/coinbasechain-full/src/main.cpp:
+#include <cstring>                // for size_t
+#include <exception>              // for exception
+#include <filesystem>             // for path, operator/
+#include <iostream>               // for char_traits, basic_ostream, operator<<
+#include <string>                 // for basic_string, operator==, stoi, string
+#include <vector>                 // for vector
+#include "application.hpp"        // for AppConfig, Application
+#include "chain/chainparams.hpp"  // for ChainType
+#include "chain/logging.hpp"      // for LogManager, LOG_ERROR
+#include "network/protocol.hpp"   // for REGTEST, TESTNET
+#include "version.hpp"            // for GetCopyrightString, GetFullVersionS...
+---
+

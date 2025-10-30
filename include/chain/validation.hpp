@@ -3,16 +3,17 @@
 
 #pragma once
 
-#include "chain/block_index.hpp"
-#include "chain/chainparams.hpp"
-#include "chain/block.hpp"
+#include <stdint.h>
 #include <string>
+#include <vector>
+#include "chain/arith_uint256.hpp"
+
+// Forward declarations
+class CBlockHeader;
 
 namespace coinbasechain {
 
-// Forward declarations
 namespace chain {
-class BlockManager;
 class ChainParams;
 class CBlockIndex;
 } // namespace chain

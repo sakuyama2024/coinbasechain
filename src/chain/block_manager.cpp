@@ -2,18 +2,19 @@
 // Distributed under the MIT software license
 
 #include "chain/block_manager.hpp"
-#include "chain/arith_uint256.hpp"
-#include "chain/block.hpp"
-#include "chain/logging.hpp"
 #include <algorithm>
 #include <cmath>
+#include <compare>
 #include <cstdint>
 #include <exception>
 #include <fstream>
+#include <nlohmann/json.hpp>
 #include <type_traits>
 #include <utility>
 #include <vector>
-#include <nlohmann/json.hpp>
+#include "chain/arith_uint256.hpp"
+#include "chain/block.hpp"
+#include "chain/logging.hpp"
 
 //DTC1
 

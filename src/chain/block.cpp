@@ -3,6 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+//DTC1
+
 #include "chain/block.hpp"
 #include "chain/sha256.hpp"
 #include "chain/endian.hpp"
@@ -12,8 +14,7 @@
 #include <sstream>
 
 namespace {
-// Compile-time header size calculation - if this doesn't match HEADER_SIZE,
-// compilation will fail (prevents silent drift during refactoring)
+// Compile-time header size calculation 
 static constexpr size_t kHeaderSize =
     4 /*nVersion*/ + 32 /*hashPrevBlock*/ + 20 /*minerAddress*/ + 4 /*nTime*/ +
     4 /*nBits*/ + 4 /*nNonce*/ + 32 /*hashRandomX*/;
@@ -21,50 +22,40 @@ static_assert(kHeaderSize == CBlockHeader::HEADER_SIZE, "HEADER_SIZE mismatch");
 } // namespace
 
 uint256 CBlockHeader::GetHash() const noexcept {
-  // Serialize using fixed-size array (no heap allocation)
   const auto s = SerializeFixed();
 
-  // Double SHA256 - use separate hasher instances for safety
-  // (not all CSHA256 implementations guarantee Reset() works after Finalize())
-  uint256 result;
-  CSHA256().Write(s.data(), s.size()).Finalize(result.begin());
-  CSHA256().Write(result.begin(), CSHA256::OUTPUT_SIZE).Finalize(result.begin());
-  return result;
+  uint8_t tmp[CSHA256::OUTPUT_SIZE];
+  CSHA256().Write(s.data(), s.size()).Finalize(tmp);
+
+  uint256 out;
+  CSHA256().Write(tmp, sizeof(tmp)).Finalize(out.begin());
+  return out;
 }
 
 CBlockHeader::HeaderBytes CBlockHeader::SerializeFixed() const noexcept {
-  // CONSENSUS-CRITICAL: Wire format is exactly 100 bytes, all little-endian
-  // See SERIALIZATION_SPECIFICATION.md for complete format documentation
-  // Field order and sizes MUST NEVER CHANGE without a hard fork
+  // Wire format is exactly 100 bytes, all little-endian
 
   HeaderBytes data{};
 
-  // nVersion (4 bytes, offset 0, little-endian)
+  // nVersion (4 bytes, offset 0)
   endian::WriteLE32(data.data() + OFF_VERSION, static_cast<uint32_t>(nVersion));
 
   // hashPrevBlock (32 bytes, offset 4)
-  // uint256 stores bytes in internal format, copy directly to wire (no endian
-  // swap)
-  std::copy(hashPrevBlock.begin(), hashPrevBlock.end(),
-            data.begin() + OFF_PREV);
+  std::copy(hashPrevBlock.begin(), hashPrevBlock.end(), data.begin() + OFF_PREV);
 
   // minerAddress (20 bytes, offset 36)
-  // uint160 stores bytes in internal format, copy directly to wire (no endian
-  // swap)
   std::copy(minerAddress.begin(), minerAddress.end(), data.begin() + OFF_MINER);
 
-  // nTime (4 bytes, offset 56, little-endian)
+  // nTime (4 bytes, offset 56)
   endian::WriteLE32(data.data() + OFF_TIME, nTime);
 
-  // nBits (4 bytes, offset 60, little-endian)
+  // nBits (4 bytes, offset 60)
   endian::WriteLE32(data.data() + OFF_BITS, nBits);
 
-  // nNonce (4 bytes, offset 64, little-endian)
+  // nNonce (4 bytes, offset 64)
   endian::WriteLE32(data.data() + OFF_NONCE, nNonce);
 
   // hashRandomX (32 bytes, offset 68)
-  // uint256 stores bytes in internal format, copy directly to wire (no endian
-  // swap)
   std::copy(hashRandomX.begin(), hashRandomX.end(), data.begin() + OFF_RANDOMX);
 
   return data;
@@ -78,35 +69,31 @@ std::vector<uint8_t> CBlockHeader::Serialize() const {
 
 bool CBlockHeader::Deserialize(const uint8_t *data, size_t size) noexcept {
   // Consensus-critical: Reject if size doesn't exactly match HEADER_SIZE
-  // This prevents silent truncation/padding that could cause consensus splits
   if (size != HEADER_SIZE) {
     return false;
   }
 
-  // nVersion (4 bytes, offset 0, little-endian)
+  // nVersion (4 bytes, offset 0)
   nVersion = static_cast<int32_t>(endian::ReadLE32(data + OFF_VERSION));
 
   // hashPrevBlock (32 bytes, offset 4)
-  // Copy directly from wire to internal format (no endian swap)
   std::copy(data + OFF_PREV, data + OFF_PREV + UINT256_BYTES,
             hashPrevBlock.begin());
 
   // minerAddress (20 bytes, offset 36)
-  // Copy directly from wire to internal format (no endian swap)
   std::copy(data + OFF_MINER, data + OFF_MINER + UINT160_BYTES,
             minerAddress.begin());
 
-  // nTime (4 bytes, offset 56, little-endian)
+  // nTime (4 bytes, offset 56)
   nTime = endian::ReadLE32(data + OFF_TIME);
 
-  // nBits (4 bytes, offset 60, little-endian)
+  // nBits (4 bytes, offset 60)
   nBits = endian::ReadLE32(data + OFF_BITS);
 
-  // nNonce (4 bytes, offset 64, little-endian)
+  // nNonce (4 bytes, offset 64)
   nNonce = endian::ReadLE32(data + OFF_NONCE);
 
-  // hashRandomX (32 bytes, offset 68)
-  // Copy directly from wire to internal format (no endian swap)
+  // hashRandomX (32 bytes)
   std::copy(data + OFF_RANDOMX, data + OFF_RANDOMX + UINT256_BYTES,
             hashRandomX.begin());
 

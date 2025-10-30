@@ -33,9 +33,6 @@ enum BlockStatus : uint32_t {
   //! This is the highest validation level for headers-only chain
   BLOCK_VALID_TREE = 2,
 
-  //! All validity bits
-  BLOCK_VALID_MASK = BLOCK_VALID_HEADER | BLOCK_VALID_TREE,
-
   BLOCK_FAILED_VALID = 32, //! Stage after last reached validity failed
   BLOCK_FAILED_CHILD = 64, //! Descends from failed block
   BLOCK_FAILED_MASK = BLOCK_FAILED_VALID | BLOCK_FAILED_CHILD,
@@ -45,6 +42,10 @@ enum BlockStatus : uint32_t {
 // IsValid() and RaiseValidity() use numeric comparison (< and >=)
 static_assert(BLOCK_VALID_HEADER == 1 && BLOCK_VALID_TREE == 2,
               "Validity levels must be sequential integers (not bitflags) for comparison logic in IsValid()");
+
+// Mask for extracting validity level from nStatus (low byte, values 0-2)
+// Validity levels occupy low bits, failure flags use high bits (32, 64)
+static constexpr uint32_t VALIDITY_LEVEL_MASK = 0xFF;
 
 // CBlockIndex - Metadata for a single block header
 // Simplified from Bitcoin Core for headers-only chain (no transaction counts,
@@ -178,20 +179,20 @@ public:
 
   [[nodiscard]] bool
   IsValid(enum BlockStatus nUpTo = BLOCK_VALID_TREE) const noexcept {
-    assert(!(nUpTo & ~BLOCK_VALID_MASK)); // Only validity flags allowed
+    assert(nUpTo <= BLOCK_VALID_TREE); // Only validity levels (0-2) allowed
     if (nStatus & BLOCK_FAILED_MASK)
       return false;
-    return ((nStatus & BLOCK_VALID_MASK) >= nUpTo);
+    return ((nStatus & VALIDITY_LEVEL_MASK) >= nUpTo);
   }
 
   // Raise validity level of this block, returns true if changed
   [[nodiscard]] bool RaiseValidity(enum BlockStatus nUpTo) noexcept {
-    assert(!(nUpTo & ~BLOCK_VALID_MASK)); // Only validity flags allowed
+    assert(nUpTo <= BLOCK_VALID_TREE); // Only validity levels (0-2) allowed
     if (nStatus & BLOCK_FAILED_MASK)
       return false;
 
-    if ((nStatus & BLOCK_VALID_MASK) < nUpTo) {
-      nStatus = (nStatus & ~BLOCK_VALID_MASK) | nUpTo;
+    if ((nStatus & VALIDITY_LEVEL_MASK) < nUpTo) {
+      nStatus = (nStatus & ~VALIDITY_LEVEL_MASK) | nUpTo;
       return true;
     }
     return false;

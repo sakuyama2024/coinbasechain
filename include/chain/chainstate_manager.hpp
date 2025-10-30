@@ -3,16 +3,18 @@
 
 #pragma once
 
-#include "chain/block_manager.hpp"
-#include "chain/block.hpp"
-#include "chain/chain_selector.hpp"
-#include "chain/validation.hpp"
-#include "network/protocol.hpp"
+#include <stddef.h>
+#include <stdint.h>
 #include <atomic>
-#include <functional>
-#include <memory>
+#include <map>
 #include <mutex>
 #include <set>
+#include <string>
+#include <vector>
+#include "chain/block.hpp"
+#include "chain/block_manager.hpp"
+#include "chain/chain_selector.hpp"
+#include "chain/uint.hpp"
 
 namespace coinbasechain {
 
@@ -24,6 +26,10 @@ class CBlockIndex;
 
 namespace crypto {
 enum class POWVerifyMode;
+}
+
+namespace validation {
+class ValidationState;
 }
 
 namespace validation {

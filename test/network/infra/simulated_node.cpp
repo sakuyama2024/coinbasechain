@@ -2,14 +2,16 @@
 // SimulatedNode implementation - Uses REAL P2P components with simulated transport
 
 #include "simulated_node.hpp"
-#include "chain/sha256.hpp"
+#include <random>
+#include <sstream>
 #include "chain/block.hpp"
 #include "chain/chainstate_manager.hpp"
 #include "chain/logging.hpp"
 #include "chain/pow.hpp"
 #include "chain/randomx_pow.hpp"
-#include <sstream>
-#include <random>
+#include "chain/sha256.hpp"
+#include "chain/validation.hpp"
+#include "network/banman.hpp"
 
 namespace coinbasechain {
 namespace test {

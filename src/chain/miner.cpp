@@ -6,14 +6,15 @@
 // for generating test blocks in regtest mode during development and testing.
 
 #include "chain/miner.hpp"
-#include "chain/arith_uint256.hpp"
-#include "chain/pow.hpp"
-#include "chain/randomx_pow.hpp"
-#include "randomx.h"
-#include "chain/logging.hpp"
-#include "chain/chainstate_manager.hpp"
 #include <ctime>
 #include <thread>
+#include "chain/arith_uint256.hpp"
+#include "chain/chainstate_manager.hpp"
+#include "chain/logging.hpp"
+#include "chain/pow.hpp"
+#include "chain/randomx_pow.hpp"
+#include "chain/validation.hpp"
+#include "randomx.h"
 
 namespace coinbasechain {
 namespace mining {

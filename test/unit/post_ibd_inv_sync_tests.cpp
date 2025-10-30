@@ -1,5 +1,7 @@
 #include "catch_amalgamated.hpp"
+#include "chain/validation.hpp"
 #include "infra/simulated_network.hpp"
+#include "chain/validation.hpp"
 #include "infra/simulated_node.hpp"
 #include "network/protocol.hpp"
 

@@ -1,21 +1,45 @@
 #pragma once
 
-#include "chain/chainparams.hpp"
-#include "chain/block.hpp"
-#include "network/addr_manager.hpp"
-#include "network/nat_manager.hpp"
-#include "network/peer_manager.hpp"
-#include "network/transport.hpp"
-#include "network/banman.hpp"
+#include <stddef.h>
+#include <stdint.h>
 #include <atomic>
-#include <boost/asio.hpp>
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <chrono>
+#include <memory>
 #include <mutex>
+#include <optional>
+#include <string>
 #include <thread>
+#include <vector>
+#include "network/peer.hpp"
+#include "network/peer_manager.hpp"
+#include "network/protocol.hpp"
+#include "network/transport.hpp"
+
+// Forward declarations
+class uint256;
+
+namespace boost {
+namespace asio {
+template <typename Executor, typename, typename>
+class executor_work_guard;
+}
+} // namespace boost
 
 namespace coinbasechain {
 
-// Forward declarations
+namespace chain {
+class ChainParams;
+}
+
+namespace message {
+class GetHeadersMessage;
+class HeadersMessage;
+class InvMessage;
+class Message;
+}
+
 namespace validation {
 class ChainstateManager;
 }
@@ -23,10 +47,13 @@ class ChainstateManager;
 namespace network {
 
 // Forward declarations
+class AddressManager;
 class AnchorManager;
-class HeaderSyncManager;
+class BanMan;
 class BlockRelayManager;
+class HeaderSyncManager;
 class MessageRouter;
+class NATManager;
 
 // NetworkManager - Top-level coordinator for all networking (inspired by
 // Bitcoin's CConnman) Manages io_context, coordinates
