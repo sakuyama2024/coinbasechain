@@ -397,6 +397,14 @@ bool PeerManager::evict_inbound_peer() {
     }
     // Unlock before disconnecting to avoid callbacks under lock
     lock.unlock();
+
+    // Notify callback (e.g., HeaderSyncManager) that peer disconnected
+    // This is critical: without this, sync can get stuck when sync peer is evicted
+    // Pattern matches remove_peer() to ensure consistent disconnect notification
+    if (peer_disconnect_callback_) {
+      peer_disconnect_callback_(worst_peer_id);
+    }
+
     if (peer_to_disconnect) {
       peer_to_disconnect->disconnect();
       return true;
