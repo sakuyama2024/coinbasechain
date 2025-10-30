@@ -102,29 +102,47 @@ void HeaderSyncManager::CheckInitialSync() {
   // If there is no current sync peer, we may (re)select one even post-IBD;
   // the resulting GETHEADERS is harmless if fully synced.
   if (HasSyncPeer()) {
+    LOG_NET_TRACE("CheckInitialSync: already have sync peer, skipping");
     return;
   }
-
-  const bool in_ibd = chainstate_manager_.IsInitialBlockDownload();
-  (void)in_ibd; // informational; selection is allowed even post-IBD if no sync peer
 
   // Protect peer selection with mutex to prevent races
   std::lock_guard<std::mutex> lock(sync_mutex_);
   if (sync_state_.sync_peer_id != NO_SYNC_PEER) {
+    LOG_NET_TRACE("CheckInitialSync: sync peer set under lock, skipping");
     return;
   }
 
-  // Try outbound peers first (preferred for initial sync)
-  // Note: Bitcoin Core only sets fSyncStarted for outbound peers to reduce eclipse attack surface.
-  // We also allow inbound fallback for simpler deployment, but this is less secure.
+  LOG_NET_TRACE("CheckInitialSync: no sync peer, attempting selection...");
+
+  // Select sync peer from OUTBOUND peers ONLY (Bitcoin Core: net_processing.cpp)
+  // Bitcoin Core only sets CNodeState::fSyncStarted for outbound peers to prevent
+  // eclipse attacks. Outbound peer selection is controlled by your node (DNS seeds,
+  // AddressManager diversity); inbound peer selection is controlled by attackers.
+  //
+  // Security rationale:
+  // - During IBD: Attacker can feed fake chain from genesis (no valid history)
+  // - Post-IBD: Attacker can waste bandwidth with invalid headers, DoS vectors
+  // - Outbound: Your node chooses from diverse sources (checkpoints, DNS seeds)
+  // - Inbound: Attacker chooses to connect (eclipse attack, targeted DoS)
   auto outbound_peers = peer_manager_.get_outbound_peers();
+  LOG_NET_TRACE("CheckInitialSync: checking {} outbound peers", outbound_peers.size());
   for (const auto &peer : outbound_peers) {
-    if (!peer) continue;
-    if (peer->sync_started()) continue; // Already started with this peer
-    if (peer->is_feeler()) continue;    // Skip feelers - they auto-disconnect on VERACK
+    if (!peer) {
+      LOG_NET_TRACE("CheckInitialSync: peer is null, skipping");
+      continue;
+    }
+    if (peer->sync_started()) {
+      LOG_NET_TRACE("CheckInitialSync: peer {} already sync_started, skipping", peer->id());
+      continue;
+    }
+    if (peer->is_feeler()) {
+      LOG_NET_TRACE("CheckInitialSync: peer {} is feeler, skipping", peer->id());
+      continue;
+    }
 
     int current_height = chainstate_manager_.GetChainHeight();
-    LOG_NET_DEBUG("initial getheaders ({}) peer={}", current_height, peer->id());
+    LOG_NET_TRACE("CheckInitialSync: selecting peer {} as sync peer (height={})", peer->id(), current_height);
 
     SetSyncPeerUnlocked(peer->id());
     peer->set_sync_started(true);  // CNodeState::fSyncStarted
@@ -134,22 +152,8 @@ void HeaderSyncManager::CheckInitialSync() {
     return; // Only one sync peer
   }
 
-  // Fallback: inbound peers (diverges from Bitcoin Core for operational flexibility)
-  // TODO: Consider making this configurable or removing for production hardening
-  auto inbound_peers = peer_manager_.get_inbound_peers();
-  for (const auto &peer : inbound_peers) {
-    if (!peer) continue;
-    if (peer->sync_started()) continue;
-
-    int current_height = chainstate_manager_.GetChainHeight();
-    LOG_NET_DEBUG("initial getheaders ({}) peer={}", current_height, peer->id());
-
-    SetSyncPeerUnlocked(peer->id());
-    peer->set_sync_started(true);
-
-    RequestHeadersFromPeer(peer);
-    return; // Only one sync peer
-  }
+  // No suitable outbound peer available - wait for outbound connections.
+  // Bitcoin Core behavior: Never fall back to inbound peers for sync.
 }
 
 void HeaderSyncManager::RequestHeadersFromPeer(PeerPtr peer) {
