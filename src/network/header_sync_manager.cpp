@@ -210,15 +210,16 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   // and is an ancestor of our best header or tip, skip all DoS checks for this entire batch.
   // This prevents false positives when reconnecting to peers after manual InvalidateBlock.
   //
-  // Simplified implementation: If header exists and has been validated (nChainWork > 0),
-  // skip DoS checks. This achieves the same goal without needing GetAncestor().
+  // Fixed implementation: Check that header is on active chain (not just any side chain).
+  // This prevents DoS where attacker creates low-work side chain forks and forces
+  // expensive RandomX validation by claiming headers build on validated side-chain headers.
   bool skip_dos_checks = false;
   if (!headers.empty()) {
     const chain::CBlockIndex* last_header_index =
         chainstate_manager_.LookupBlockIndex(headers.back().GetHash());
-    if (last_header_index && last_header_index->nChainWork > 0) {
+    if (last_header_index && chainstate_manager_.IsOnActiveChain(last_header_index)) {
       skip_dos_checks = true;
-      LOG_NET_TRACE("Peer {} sent {} headers, last header already validated (log2_work={:.6f}), skipping DoS checks",
+      LOG_NET_TRACE("Peer {} sent {} headers, last header on active chain (log2_work={:.6f}), skipping DoS checks",
                     peer_id, headers.size(), std::log(last_header_index->nChainWork.getdouble()) / std::log(2.0));
     }
   }
