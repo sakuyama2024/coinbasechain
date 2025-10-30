@@ -17,17 +17,12 @@ static constexpr uint32_t SECONDS_PER_DAY = 86400;
 
 // AddrInfo implementation
 
-std::string AddrInfo::get_key() const {
-  std::stringstream ss;
-
-  // Convert IP bytes to string
-  for (size_t i = 0; i < 16; i++) {
-    ss << std::hex << std::setw(2) << std::setfill('0')
-       << static_cast<int>(address.ip[i]);
-  }
-  ss << ":" << std::dec << address.port;
-
-  return ss.str();
+AddressKey AddrInfo::get_key() const {
+  AddressKey key;
+  // Direct memory copy - no string formatting overhead
+  std::copy(std::begin(address.ip), std::end(address.ip), key.ip.begin());
+  key.port = address.port;
+  return key;
 }
 
 bool AddrInfo::is_stale(uint32_t now) const {
@@ -66,7 +61,7 @@ bool AddressManager::add(const protocol::NetworkAddress &addr,
 bool AddressManager::add_internal(const protocol::NetworkAddress &addr,
                                   uint32_t timestamp) {
   AddrInfo info(addr, timestamp == 0 ? now() : timestamp);
-  std::string key = info.get_key();
+  AddressKey key = info.get_key();
 
   // Check if already in tried table
   if (tried_.find(key) != tried_.end()) {
@@ -93,6 +88,7 @@ bool AddressManager::add_internal(const protocol::NetworkAddress &addr,
 
   // Add to new table
   new_[key] = info;
+  new_keys_.push_back(key);
   return true;
 }
 
@@ -114,7 +110,7 @@ void AddressManager::attempt(const protocol::NetworkAddress &addr) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   AddrInfo info(addr);
-  std::string key = info.get_key();
+  AddressKey key = info.get_key();
 
   // Update in tried table (checked first since select() prefers tried 80% of time)
   auto tried_it = tried_.find(key);
@@ -136,44 +132,53 @@ void AddressManager::good(const protocol::NetworkAddress &addr) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   AddrInfo info(addr);
-  std::string key = info.get_key();
+  AddressKey key = info.get_key();
   uint32_t current_time = now();
 
-  LOG_NET_TRACE("AddressManager::good() called for address: {}", key);
+  LOG_NET_TRACE("AddressManager::good() called for address port={}", addr.port);
 
   // Check if in new table
   auto new_it = new_.find(key);
   if (new_it != new_.end()) {
     // Move from new to tried
-    LOG_NET_TRACE("Moving address {} from 'new' to 'tried' table", key);
+    LOG_NET_TRACE("Moving address port={} from 'new' to 'tried' table", addr.port);
     new_it->second.tried = true;
     new_it->second.last_success = current_time;
     new_it->second.attempts = 0; // Reset failure count
 
     tried_[key] = new_it->second;
+    tried_keys_.push_back(key);
     new_.erase(new_it);
-    LOG_NET_TRACE("Address {} successfully moved to 'tried'. New size: {}, Tried size: {}",
-                  key, new_.size(), tried_.size());
+
+    // Remove key from new_keys_ vector (swap-and-pop for O(1) removal)
+    auto vec_it = std::find(new_keys_.begin(), new_keys_.end(), key);
+    if (vec_it != new_keys_.end()) {
+      *vec_it = new_keys_.back();
+      new_keys_.pop_back();
+    }
+
+    LOG_NET_TRACE("Address port={} successfully moved to 'tried'. New size: {}, Tried size: {}",
+                  addr.port, new_.size(), tried_.size());
     return;
   }
 
   // Already in tried table
   auto tried_it = tried_.find(key);
   if (tried_it != tried_.end()) {
-    LOG_NET_TRACE("Updating existing address {} in 'tried' table", key);
+    LOG_NET_TRACE("Updating existing address port={} in 'tried' table", addr.port);
     tried_it->second.last_success = current_time;
     tried_it->second.attempts = 0; // Reset failure count
     return;
   }
 
-  LOG_NET_WARN("AddressManager::good() called for unknown address: {}", key);
+  LOG_NET_WARN("AddressManager::good() called for unknown address port={}", addr.port);
 }
 
 void AddressManager::failed(const protocol::NetworkAddress &addr) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   AddrInfo info(addr);
-  std::string key = info.get_key();
+  AddressKey key = info.get_key();
 
   // Update in new table
   auto new_it = new_.find(key);
@@ -183,6 +188,13 @@ void AddressManager::failed(const protocol::NetworkAddress &addr) {
     // Remove if too many failures
     if (new_it->second.is_terrible(now())) {
       new_.erase(new_it);
+
+      // Remove key from new_keys_ vector (swap-and-pop)
+      auto vec_it = std::find(new_keys_.begin(), new_keys_.end(), key);
+      if (vec_it != new_keys_.end()) {
+        *vec_it = new_keys_.back();
+        new_keys_.pop_back();
+      }
     }
     return;
   }
@@ -196,7 +208,15 @@ void AddressManager::failed(const protocol::NetworkAddress &addr) {
     if (tried_it->second.attempts >= MAX_FAILURES) {
       tried_it->second.tried = false;
       new_[key] = tried_it->second;
+      new_keys_.push_back(key);
       tried_.erase(tried_it);
+
+      // Remove key from tried_keys_ vector (swap-and-pop)
+      auto vec_it = std::find(tried_keys_.begin(), tried_keys_.end(), key);
+      if (vec_it != tried_keys_.end()) {
+        *vec_it = tried_keys_.back();
+        tried_keys_.pop_back();
+      }
     }
   }
 }
@@ -219,13 +239,13 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
     return false;
   };
 
-  if (use_tried && !tried_.empty()) {
-    std::uniform_int_distribution<size_t> idx_dist(0, tried_.size() - 1);
-    const size_t max_checks = std::min<size_t>(tried_.size(), 64);
+  if (use_tried && !tried_keys_.empty()) {
+    std::uniform_int_distribution<size_t> idx_dist(0, tried_keys_.size() - 1);
+    const size_t max_checks = std::min<size_t>(tried_keys_.size(), 64);
     for (size_t i = 0; i < max_checks; ++i) {
-      auto it = tried_.begin();
-      std::advance(it, idx_dist(rng_));
-      if (ok(it->second)) {
+      const AddressKey& key = tried_keys_[idx_dist(rng_)];
+      auto it = tried_.find(key);
+      if (it != tried_.end() && ok(it->second)) {
         return it->second.address;
       }
     }
@@ -233,13 +253,13 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
     // Fall through to try new_ table
   }
 
-  if (!new_.empty()) {
-    std::uniform_int_distribution<size_t> idx_dist(0, new_.size() - 1);
-    const size_t max_checks = std::min<size_t>(new_.size(), 64);
+  if (!new_keys_.empty()) {
+    std::uniform_int_distribution<size_t> idx_dist(0, new_keys_.size() - 1);
+    const size_t max_checks = std::min<size_t>(new_keys_.size(), 64);
     for (size_t i = 0; i < max_checks; ++i) {
-      auto it = new_.begin();
-      std::advance(it, idx_dist(rng_));
-      if (ok(it->second)) {
+      const AddressKey& key = new_keys_[idx_dist(rng_)];
+      auto it = new_.find(key);
+      if (it != new_.end() && ok(it->second)) {
         return it->second.address;
       }
     }
@@ -256,15 +276,18 @@ AddressManager::select_new_for_feeler() {
 
   // FEELER connections test addresses from "new" table (never connected before)
   // This helps move working addresses from "new" to "tried"
-  if (new_.empty()) {
+  if (new_keys_.empty()) {
     return std::nullopt;
   }
 
-  // Select random address from "new" table only
-  std::uniform_int_distribution<size_t> idx_dist(0, new_.size() - 1);
-  auto it = new_.begin();
-  std::advance(it, idx_dist(rng_));
-  return it->second.address;
+  // Select random address from "new" table only (O(1) random access)
+  std::uniform_int_distribution<size_t> idx_dist(0, new_keys_.size() - 1);
+  const AddressKey& key = new_keys_[idx_dist(rng_)];
+  auto it = new_.find(key);
+  if (it != new_.end()) {
+    return it->second.address;
+  }
+  return std::nullopt;
 }
 
 std::vector<protocol::TimestampedAddress>
@@ -321,6 +344,13 @@ void AddressManager::cleanup_stale() {
     } else {
       ++it;
     }
+  }
+
+  // Rebuild new_keys_ vector to match new_ map after removals
+  new_keys_.clear();
+  new_keys_.reserve(new_.size());
+  for (const auto& [key, info] : new_) {
+    new_keys_.push_back(key);
   }
 
   // Keep tried addresses even if old (they worked before)
@@ -483,6 +513,19 @@ bool AddressManager::Load(const std::string &filepath) {
       }
     }
 
+    // Rebuild key vectors for O(1) random access
+    tried_keys_.clear();
+    tried_keys_.reserve(tried_.size());
+    for (const auto& [key, info] : tried_) {
+      tried_keys_.push_back(key);
+    }
+
+    new_keys_.clear();
+    new_keys_.reserve(new_.size());
+    for (const auto& [key, info] : new_) {
+      new_keys_.push_back(key);
+    }
+
     // Calculate total size without calling size() to avoid recursive lock
     size_t total_size = tried_.size() + new_.size();
     LOG_NET_INFO("Successfully loaded {} addresses ({} tried, {} new)",
@@ -492,7 +535,9 @@ bool AddressManager::Load(const std::string &filepath) {
   } catch (const std::exception &e) {
     LOG_NET_ERROR("Exception during Load: {}", e.what());
     tried_.clear();
+    tried_keys_.clear();
     new_.clear();
+    new_keys_.clear();
     return false;
   }
 }
