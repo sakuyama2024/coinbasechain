@@ -425,6 +425,15 @@ void PeerManager::disconnect_all() {
     peer_misbehavior_.clear();
   }
 
+  // Notify callback for each peer (matches remove_peer/evict_inbound_peer pattern)
+  // Even during shutdown when io_context is stopped, invoking callbacks ensures
+  // consistency and defensive programming (e.g., clearing stale sync peer state)
+  for (const auto &[id, peer] : peers_to_disconnect) {
+    if (peer_disconnect_callback_) {
+      peer_disconnect_callback_(id);
+    }
+  }
+
   // Disconnect all peers outside the lock
   for (auto &[id, peer] : peers_to_disconnect) {
     if (peer) {
