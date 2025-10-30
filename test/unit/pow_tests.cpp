@@ -317,16 +317,16 @@ TEST_CASE("PoW - CreateVMForEpoch for parallel verification", "[pow][randomx][vm
     uint32_t epoch = 0;
 
     // Create multiple VMs for same epoch (for parallel verification)
-    randomx_vm* vm1 = crypto::CreateVMForEpoch(epoch);
-    randomx_vm* vm2 = crypto::CreateVMForEpoch(epoch);
+    auto vm1 = crypto::CreateVMForEpoch(epoch);
+    auto vm2 = crypto::CreateVMForEpoch(epoch);
 
     REQUIRE(vm1 != nullptr);
     REQUIRE(vm2 != nullptr);
-    REQUIRE(vm1 != vm2);  // Different VM instances
+    REQUIRE(vm1->vm != nullptr);
+    REQUIRE(vm2->vm != nullptr);
+    REQUIRE(vm1->vm != vm2->vm);  // Different VM instances
 
-    // Clean up
-    randomx_destroy_vm(vm1);
-    randomx_destroy_vm(vm2);
+    // VMs automatically cleaned up by RAII wrappers
 
     crypto::ShutdownRandomX();
 }

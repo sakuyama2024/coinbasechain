@@ -158,7 +158,7 @@ void ShutdownRandomX() {
                   "cleaned up automatically)");
 }
 
-randomx_vm *CreateVMForEpoch(uint32_t nEpoch) {
+std::shared_ptr<RandomXVMWrapper> CreateVMForEpoch(uint32_t nEpoch) {
   if (!g_randomx_initialized) {
     throw std::runtime_error("RandomX not initialized");
   }
@@ -195,7 +195,8 @@ randomx_vm *CreateVMForEpoch(uint32_t nEpoch) {
         "Failed to create RandomX VM for parallel verification");
   }
 
-  return vm;
+  // Wrap in RAII smart pointer for automatic cleanup
+  return std::make_shared<RandomXVMWrapper>(vm, myCache);
 }
 
 } // namespace crypto

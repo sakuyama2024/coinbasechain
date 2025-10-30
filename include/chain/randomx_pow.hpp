@@ -72,8 +72,8 @@ void InitRandomX(int vmCacheSize = DEFAULT_RANDOMX_VM_CACHE_SIZE);
 void ShutdownRandomX();
 
 // Create RandomX VM for epoch (for parallel verification)
-// Caller must destroy with randomx_destroy_vm
-randomx_vm *CreateVMForEpoch(uint32_t nEpoch);
+// Returns RAII-wrapped VM that automatically cleans up
+std::shared_ptr<RandomXVMWrapper> CreateVMForEpoch(uint32_t nEpoch);
 
 // Get cached RandomX VM for epoch (thread-local storage, JIT enabled)
 // Each thread gets its own VM instance - no locking required
