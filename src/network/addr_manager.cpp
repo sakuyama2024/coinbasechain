@@ -115,11 +115,19 @@ void AddressManager::attempt(const protocol::NetworkAddress &addr) {
   AddrInfo info(addr);
   std::string key = info.get_key();
 
+  // Update in tried table (checked first since select() prefers tried 80% of time)
+  auto tried_it = tried_.find(key);
+  if (tried_it != tried_.end()) {
+    tried_it->second.last_try = now();
+    tried_it->second.attempts++;
+    return;
+  }
+
   // Update in new table
-  auto it = new_.find(key);
-  if (it != new_.end()) {
-    it->second.last_try = now();
-    it->second.attempts++;
+  auto new_it = new_.find(key);
+  if (new_it != new_.end()) {
+    new_it->second.last_try = now();
+    new_it->second.attempts++;
   }
 }
 
@@ -195,9 +203,9 @@ void AddressManager::failed(const protocol::NetworkAddress &addr) {
 std::optional<protocol::NetworkAddress> AddressManager::select() {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  // Prefer tried addresses (80% of the time)
+  // Select tried or new table with 50% probability (Bitcoin Core parity)
   std::uniform_int_distribution<int> dist(0, 99);
-  bool use_tried = !tried_.empty() && (dist(rng_) < 80 || new_.empty());
+  bool use_tried = !tried_.empty() && (dist(rng_) < 50 || new_.empty());
 
   const uint32_t now_ts = now();
   const uint32_t COOLDOWN_SEC = 600; // 10 minutes
