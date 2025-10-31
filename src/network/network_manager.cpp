@@ -90,7 +90,7 @@ NetworkManager::NetworkManager(
 
   // Create MessageRouter
   message_router_ = std::make_unique<MessageRouter>(
-      addr_manager_.get(), header_sync_manager_.get(), block_relay_manager_.get());
+      addr_manager_.get(), header_sync_manager_.get(), block_relay_manager_.get(), peer_manager_.get());
   
   // Register callback for peer disconnects (Bitcoin Core FinalizeNode equivalent)
   // This allows HeaderSyncManager to clear sync state when sync peer disconnects

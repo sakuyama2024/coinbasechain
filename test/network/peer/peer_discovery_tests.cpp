@@ -34,7 +34,7 @@ static NetworkAddress MakeIPv4Address(const std::string& ip_str, uint16_t port) 
     return addr;
 }
 
-TEST_CASE("GETADDR replies only to inbound peers (ignore outbound)", "[network][peer_discovery][getaddr]") {
+TEST_CASE("GETADDR replies only to inbound peers (ignore outbound)", "[network][peer_discovery][getaddr][parity]") {
     SimulatedNetwork net(2710);
     TestOrchestrator orch(&net);
     net.EnableCommandTracking(true);
@@ -56,7 +56,7 @@ TEST_CASE("GETADDR replies only to inbound peers (ignore outbound)", "[network][
     REQUIRE(addr_count == 0);
 }
 
-TEST_CASE("GETADDR per-peer rate limiting (cooldown before next ADDR)", "[network][peer_discovery][getaddr][ratelimit]") {
+TEST_CASE("GETADDR once-per-connection (no repeat until reconnect)", "[network][peer_discovery][getaddr][ratelimit]") {
     SimulatedNetwork net(2711);
     TestOrchestrator orch(&net);
     net.EnableCommandTracking(true);
@@ -66,6 +66,8 @@ TEST_CASE("GETADDR per-peer rate limiting (cooldown before next ADDR)", "[networ
 
     REQUIRE(client.ConnectTo(server.GetId()));
     REQUIRE(orch.WaitForConnection(server, client));
+    // Ensure handshake completes before sending GETADDR
+    for (int i = 0; i < 12; ++i) orch.AdvanceTime(std::chrono::milliseconds(100));
 
     // First GETADDR: client -> server, expect one ADDR
     auto hdr1 = message::create_header(protocol::magic::REGTEST, protocol::commands::GETADDR, {});
@@ -74,17 +76,21 @@ TEST_CASE("GETADDR per-peer rate limiting (cooldown before next ADDR)", "[networ
     orch.AdvanceTime(std::chrono::milliseconds(200));
     REQUIRE(net.CountCommandSent(server.GetId(), client.GetId(), protocol::commands::ADDR) == 1);
 
-    // Second GETADDR within cooldown window: should be ignored
+    // Second GETADDR on same connection: should be ignored (still only 1 ADDR)
     auto hdr2 = message::create_header(protocol::magic::REGTEST, protocol::commands::GETADDR, {});
     auto hdr2_bytes = message::serialize_header(hdr2);
     net.SendMessage(client.GetId(), server.GetId(), hdr2_bytes);
     orch.AdvanceTime(std::chrono::milliseconds(200));
     REQUIRE(net.CountCommandSent(server.GetId(), client.GetId(), protocol::commands::ADDR) == 1);
 
-    // Advance time beyond cooldown (60s) gradually and try again
-    for (int i = 0; i < 310; ++i) { // 310 * 200ms = 62s
-        orch.AdvanceTime(std::chrono::milliseconds(200));
-    }
+    // Disconnect and reconnect, then GETADDR should yield a second ADDR
+    client.DisconnectFrom(server.GetId());
+    REQUIRE(orch.WaitForDisconnect(server, client));
+
+    REQUIRE(client.ConnectTo(server.GetId()));
+    REQUIRE(orch.WaitForConnection(server, client));
+    // Ensure handshake completes before sending GETADDR after reconnect
+    for (int i = 0; i < 12; ++i) orch.AdvanceTime(std::chrono::milliseconds(100));
 
     auto hdr3 = message::create_header(protocol::magic::REGTEST, protocol::commands::GETADDR, {});
     auto hdr3_bytes = message::serialize_header(hdr3);
@@ -195,14 +201,16 @@ static std::vector<uint8_t> MakeWire(const std::string& cmd, const std::vector<u
 TEST_CASE("Peer discovery via ADDR messages populates AddressManager", "[network][peer_discovery][e2e]") {
     SimulatedNetwork net(2610);
     TestOrchestrator orch(&net);
+    net.EnableCommandTracking(true);
     SimulatedNode node1(1, &net); SimulatedNode node2(2, &net);
     node1.SetBypassPOWValidation(true); node2.SetBypassPOWValidation(true);
     REQUIRE(node1.ConnectTo(2)); REQUIRE(orch.WaitForConnection(node1, node2));
-    net.EnableCommandTracking(true);
+    // Ensure VERSION/VERACK completes before sending GETADDR
+    for (int i = 0; i < 12; ++i) orch.AdvanceTime(std::chrono::milliseconds(100));
     auto getaddr_wire = MakeWire(commands::GETADDR, {});
     // node1 -> node2 (request), expect node2 -> node1 (ADDR)
     net.SendMessage(node1.GetId(), node2.GetId(), getaddr_wire);
-    orch.AdvanceTime(std::chrono::milliseconds(300));
+    orch.AdvanceTime(std::chrono::milliseconds(400));
 
     auto payloads = net.GetCommandPayloads(node2.GetId(), node1.GetId(), commands::ADDR);
     REQUIRE_FALSE(payloads.empty());

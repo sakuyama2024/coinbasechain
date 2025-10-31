@@ -137,6 +137,9 @@ public:
   // Test-only: Manually trigger a feeler connection attempt
   void attempt_feeler_connection();
 
+  // Test-only: Access router for diagnostics
+  MessageRouter& router_for_test() { return *message_router_; }
+
   // Stats (used primarily in tests, but useful for monitoring/debugging)
   size_t active_peer_count() const;
   size_t outbound_peer_count() const;

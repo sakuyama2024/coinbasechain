@@ -78,6 +78,8 @@ add_executable(coinbasechain_tests
     security/security_attack_simulations.cpp
     network/addr_manager_tests2.cpp
     network/feeler_anchor_tests.cpp
+    network/addr/getaddr_router_tests.cpp
+    network/addr/getaddr_multi_node_tests.cpp
 )
 
 target_include_directories(coinbasechain_tests PRIVATE

@@ -2,60 +2,27 @@
 #include "network/addr_manager.hpp"
 #include "network/header_sync_manager.hpp"
 #include "network/block_relay_manager.hpp"
+#include "network/peer_manager.hpp"
 #include "network/protocol.hpp"
 #include "util/logging.hpp"
 #include "util/time.hpp"
-#include <sstream>
-#include <iomanip>
 #include <unordered_set>
+#include <algorithm>
+#include <cassert>
+#include <random>
 
 namespace coinbasechain {
 namespace network {
 
-namespace {
-// Create a stable string key for a NetworkAddress: 16-byte hex + ':' + port
-static std::string MakeAddrKey(const protocol::NetworkAddress& a) {
-  std::ostringstream ss;
-  for (size_t i = 0; i < 16; ++i) {
-    ss << std::hex << std::setw(2) << std::setfill('0') << (int)a.ip[i];
-  }
-  ss << ":" << std::dec << a.port;
-  return ss.str();
-}
-
-// Parse an address key back into a NetworkAddress; returns false on failure
-static bool ParseAddrKey(const std::string& key, protocol::NetworkAddress& out) {
-  auto pos = key.find(':');
-  if (pos == std::string::npos) return false;
-  const std::string hex = key.substr(0, pos);
-  const std::string port_str = key.substr(pos + 1);
-  if (hex.size() != 32) return false; // 16 bytes * 2 hex chars
-  for (size_t i = 0; i < 16; ++i) {
-    std::string byte_hex = hex.substr(i * 2, 2);
-    unsigned int byte_val = 0;
-    std::istringstream iss(byte_hex);
-    iss >> std::hex >> byte_val;
-    if (iss.fail()) return false;
-    out.ip[i] = static_cast<uint8_t>(byte_val & 0xFF);
-  }
-  try {
-    int p = std::stoi(port_str);
-    if (p < 0 || p > 65535) return false;
-    out.port = static_cast<uint16_t>(p);
-  } catch (...) {
-    return false;
-  }
-  out.services = protocol::ServiceFlags::NODE_NETWORK;
-  return true;
-}
-} // namespace
-
 MessageRouter::MessageRouter(AddressManager* addr_mgr,
                              HeaderSyncManager* header_sync,
-                             BlockRelayManager* block_relay)
+                             BlockRelayManager* block_relay,
+                             PeerManager* peer_mgr)
     : addr_manager_(addr_mgr),
       header_sync_manager_(header_sync),
-      block_relay_manager_(block_relay) {}
+      block_relay_manager_(block_relay),
+      peer_manager_(peer_mgr),
+      rng_(std::random_device{}()) {}
 
 bool MessageRouter::RouteMessage(PeerPtr peer, std::unique_ptr<message::Message> msg) {
   if (!msg || !peer) {
@@ -70,8 +37,12 @@ bool MessageRouter::RouteMessage(PeerPtr peer, std::unique_ptr<message::Message>
     return handle_verack(peer);
   }
 
-  if (command == protocol::commands::ADDR) {
+if (command == protocol::commands::ADDR) {
     auto *addr_msg = dynamic_cast<message::AddrMessage *>(msg.get());
+    if (!addr_msg) {
+      LOG_NET_ERROR("MessageRouter: bad payload type for ADDR from peer {}", peer ? peer->id() : -1);
+      return false;
+    }
     return handle_addr(peer, addr_msg);
   }
 
@@ -79,18 +50,30 @@ bool MessageRouter::RouteMessage(PeerPtr peer, std::unique_ptr<message::Message>
     return handle_getaddr(peer);
   }
 
-  if (command == protocol::commands::INV) {
+if (command == protocol::commands::INV) {
     auto *inv_msg = dynamic_cast<message::InvMessage *>(msg.get());
+    if (!inv_msg) {
+      LOG_NET_ERROR("MessageRouter: bad payload type for INV from peer {}", peer ? peer->id() : -1);
+      return false;
+    }
     return handle_inv(peer, inv_msg);
   }
 
-  if (command == protocol::commands::HEADERS) {
+if (command == protocol::commands::HEADERS) {
     auto *headers_msg = dynamic_cast<message::HeadersMessage *>(msg.get());
+    if (!headers_msg) {
+      LOG_NET_ERROR("MessageRouter: bad payload type for HEADERS from peer {}", peer ? peer->id() : -1);
+      return false;
+    }
     return handle_headers(peer, headers_msg);
   }
 
-  if (command == protocol::commands::GETHEADERS) {
+if (command == protocol::commands::GETHEADERS) {
     auto *getheaders_msg = dynamic_cast<message::GetHeadersMessage *>(msg.get());
+    if (!getheaders_msg) {
+      LOG_NET_ERROR("MessageRouter: bad payload type for GETHEADERS from peer {}", peer ? peer->id() : -1);
+      return false;
+    }
     return handle_getheaders(peer, getheaders_msg);
   }
 
@@ -100,9 +83,16 @@ bool MessageRouter::RouteMessage(PeerPtr peer, std::unique_ptr<message::Message>
 }
 
 bool MessageRouter::handle_verack(PeerPtr peer) {
-  // Peer has completed handshake (VERSION/VERACK exchange)
-  if (!peer->successfully_connected()) {
+  // Verify peer is still connected
+  if (!peer || !peer->is_connected()) {
+    LOG_NET_TRACE("Ignoring VERACK from disconnected peer");
     return true;
+  }
+  // Router is invoked after Peer::handle_verack() marks the peer as successfully connected.
+  // Sanity check: by this point, the peer must be successfully_connected().
+  assert(peer->successfully_connected() && "VERACK routed before peer marked successfully connected");
+  if (!peer->successfully_connected()) {
+    return true; // Defensive in release builds
   }
 
   // Mark outbound connections as successful in address manager
@@ -128,7 +118,7 @@ bool MessageRouter::handle_verack(PeerPtr peer) {
     }
   }
 
-  // Announce our tip to this peer immediately (Bitcoin Core does this with no time throttling)
+  // Announce our tip to this peer immediately
   // This allows peers to discover our chain and request headers if we're ahead
   if (block_relay_manager_) {
     block_relay_manager_->AnnounceTipToPeer(peer.get());
@@ -142,19 +132,38 @@ bool MessageRouter::handle_addr(PeerPtr peer, message::AddrMessage* msg) {
     return false;
   }
 
-  // Add to AddressManager
+  // Validate peer handshake status BEFORE processing 
+  if (!peer || !peer->successfully_connected()) {
+    LOG_NET_TRACE("Ignoring ADDR from non-connected peer");
+    return true; // Not an error, just gated
+  }
+
+  // Validate size and apply misbehavior if available
+  if (msg->addresses.size() > protocol::MAX_ADDR_SIZE) {
+    LOG_NET_WARN("Peer {} sent oversized ADDR message ({} addrs, max {}), truncating",
+                 peer->id(), msg->addresses.size(), protocol::MAX_ADDR_SIZE);
+    if (peer_manager_) {
+      peer_manager_->ReportOversizedMessage(peer->id());
+      if (peer_manager_->ShouldDisconnect(peer->id())) {
+        peer_manager_->remove_peer(peer->id());
+        return false;
+      }
+    }
+    msg->addresses.resize(protocol::MAX_ADDR_SIZE);
+  }
+
+  // Feed AddressManager after validation
   addr_manager_->add_multiple(msg->addresses);
 
-  // Record learned addresses for echo-suppression against this peer
-  const int peer_id = peer ? peer->id() : -1;
-  if (peer_id >= 0) {
-    const int64_t now_s = util::GetTime();
+  const int peer_id = peer->id();
+  const int64_t now_s = util::GetTime();
+  {
     std::lock_guard<std::mutex> g(addr_mutex_);
     auto& learned = learned_addrs_by_peer_[peer_id];
 
-    // Prune old entries to avoid unbounded growth
+    // Prune old entries by TTL
     for (auto it = learned.begin(); it != learned.end(); ) {
-      const int64_t age = now_s - it->second;
+      const int64_t age = now_s - it->second.last_seen_s;
       if (age > ECHO_SUPPRESS_TTL_SEC) {
         it = learned.erase(it);
       } else {
@@ -162,13 +171,31 @@ bool MessageRouter::handle_addr(PeerPtr peer, message::AddrMessage* msg) {
       }
     }
 
+    // Insert/update learned entries and record recent ring
     for (const auto& ta : msg->addresses) {
-      learned[MakeAddrKey(ta.address)] = now_s;
-      // Record globally (ring buffer)
+      AddressKey k = MakeKey(ta.address);
+      auto& e = learned[k];
+      if (e.last_seen_s == 0 || ta.timestamp >= e.ts_addr.timestamp) {
+        e.ts_addr = ta; // preserve services + latest timestamp
+      }
+      e.last_seen_s = now_s;
+
+      // Global recent ring (O(1) eviction)
       recent_addrs_.push_back(ta);
       if (recent_addrs_.size() > RECENT_ADDRS_MAX) {
-        recent_addrs_.erase(recent_addrs_.begin(), recent_addrs_.begin() + (recent_addrs_.size() - RECENT_ADDRS_MAX));
+        recent_addrs_.pop_front();
       }
+    }
+
+    // Enforce per-peer cap by evicting oldest
+    while (learned.size() > MAX_LEARNED_PER_PEER) {
+      auto victim = learned.begin();
+      for (auto it = learned.begin(); it != learned.end(); ++it) {
+        if (it->second.last_seen_s < victim->second.last_seen_s) {
+          victim = it;
+        }
+      }
+      learned.erase(victim);
     }
   }
   return true;
@@ -179,131 +206,170 @@ bool MessageRouter::handle_getaddr(PeerPtr peer) {
     return false;
   }
 
-  // Privacy: Only respond to inbound peers
+  {
+    std::lock_guard<std::mutex> sg(stats_mutex_);
+    stats_getaddr_total_++;
+  }
+
+  // Respond only to INBOUND peers (fingerprinting protection)
+  // This asymmetric behavior prevents attackers from fingerprinting nodes by:
+  // 1. Sending fake addresses to victim's AddrMan
+  // 2. Later requesting GETADDR to check if those addresses are returned
+  // Reference: Bitcoin Core net_processing.cpp ProcessMessage("getaddr")
   if (!peer->is_inbound()) {
-    LOG_NET_TRACE("Ignoring GETADDR from outbound peer {}", peer->id());
+    {
+      std::lock_guard<std::mutex> sg(stats_mutex_);
+      stats_getaddr_ignored_outbound_++;
+    }
+    LOG_NET_DEBUG("GETADDR ignored: outbound peer={} (inbound-only policy)", peer->id());
     return true; // Not an error; just ignore
+  }
+  if (!peer->successfully_connected()) {
+    {
+      std::lock_guard<std::mutex> sg(stats_mutex_);
+      stats_getaddr_ignored_prehandshake_++;
+    }
+    LOG_NET_DEBUG("GETADDR ignored: pre-VERACK peer={}", peer->id());
+    return true;
   }
 
   const int peer_id = peer->id();
   const int64_t now_s = util::GetTime();
 
-  // Check and update rate limit under lock
+  // Once-per-connection gating (reply to GETADDR only once per connection)
   {
     std::lock_guard<std::mutex> g(addr_mutex_);
-    auto it = last_getaddr_reply_s_.find(peer_id);
-    if (it != last_getaddr_reply_s_.end()) {
-      const int64_t elapsed = now_s - it->second;
-      if (elapsed >= 0 && elapsed < GETADDR_COOLDOWN_SEC) {
-        LOG_NET_TRACE("Rate-limiting GETADDR from peer {} (elapsed={}s < cooldown={}s)", peer_id, elapsed, GETADDR_COOLDOWN_SEC);
-        return true; // silently ignore within cooldown
+    if (getaddr_replied_.count(peer_id)) {
+      {
+        std::lock_guard<std::mutex> sg(stats_mutex_);
+        stats_getaddr_ignored_repeat_++;
       }
+      LOG_NET_DEBUG("GETADDR ignored: repeat on same connection peer={}", peer_id);
+      return true;
     }
-    last_getaddr_reply_s_[peer_id] = now_s;
+    getaddr_replied_.insert(peer_id);
   }
 
   // Copy suppression map for this peer while pruning old entries (under lock)
-  std::unordered_map<std::string, int64_t> suppression_map_copy;
+  LearnedMap suppression_map_copy;
   {
     std::lock_guard<std::mutex> g(addr_mutex_);
-    auto& learned = learned_addrs_by_peer_[peer_id];
-    for (auto it = learned.begin(); it != learned.end(); ) {
-      const int64_t age = now_s - it->second;
-      if (age > ECHO_SUPPRESS_TTL_SEC) {
-        it = learned.erase(it);
-      } else {
-        ++it;
+    auto it = learned_addrs_by_peer_.find(peer_id);
+    if (it != learned_addrs_by_peer_.end()) {
+      // prune TTL in place before copying
+      for (auto lit = it->second.begin(); lit != it->second.end(); ) {
+        const int64_t age = now_s - lit->second.last_seen_s;
+        if (age > ECHO_SUPPRESS_TTL_SEC) {
+          lit = it->second.erase(lit);
+        } else {
+          ++lit;
+        }
       }
+      suppression_map_copy = it->second; // copy after pruning
     }
-    suppression_map_copy = learned; // copy after pruning
   }
 
   // Build response outside lock
   auto response = std::make_unique<message::AddrMessage>();
-  auto addrs = addr_manager_->get_addresses(protocol::MAX_ADDR_SIZE);
 
-
-  // Also derive the peer's own address key to avoid sending it back
-  std::string peer_addr_key;
+  // Requester's own address key (avoid reflecting it)
+  AddressKey peer_self_key{};
+  bool have_self = false;
   try {
     protocol::NetworkAddress peer_na = protocol::NetworkAddress::from_string(peer->address(), peer->port());
-    peer_addr_key = MakeAddrKey(peer_na);
+    peer_self_key = MakeKey(peer_na);
+    have_self = true;
   } catch (...) {
-    peer_addr_key.clear();
+    have_self = false;
   }
 
-  // Build candidate set of addresses learned recently from ANY peers,
-  // excluding those learned from the requesting peer within TTL (echo suppression)
-  std::unordered_set<std::string> candidate_keys;
-  {
-    std::lock_guard<std::mutex> g(addr_mutex_);
-    for (const auto& kv : learned_addrs_by_peer_) {
-      for (const auto& kv2 : kv.second) {
-        const int64_t age = now_s - kv2.second;
-        // Consider all learned addresses (regardless of age); suppression logic will block recent echoes
-        // Skip if this key is in the requester's suppression map (i.e., learned from them within TTL)
-        auto it_req = suppression_map_copy.find(kv2.first);
-        if (kv.first == peer_id && it_req != suppression_map_copy.end()) {
-          continue;
-        }
-        candidate_keys.insert(kv2.first);
-      }
-    }
-  }
-
-  // Helper to decide suppression for a given key
-  auto is_suppressed = [&](const std::string& key)->bool {
-    if (!peer_addr_key.empty() && key == peer_addr_key) return true;
-    auto it_k = suppression_map_copy.find(key);
-    if (it_k != suppression_map_copy.end()) {
-      const int64_t age = now_s - it_k->second;
+  // Suppression predicate
+  auto is_suppressed = [&](const AddressKey& key)->bool {
+    auto it = suppression_map_copy.find(key);
+    if (it != suppression_map_copy.end()) {
+      const int64_t age = now_s - it->second.last_seen_s;
       if (age >= 0 && age <= ECHO_SUPPRESS_TTL_SEC) return true;
     }
+    if (have_self && key == peer_self_key) return true;
     return false;
   };
 
-  // First pass: include learned candidate addresses even if addrman does not return them
-  std::unordered_set<std::string> included_keys;
+  std::unordered_set<AddressKey, AddressKey::Hasher> included;
 
-  // First add from the recent ring buffer (most recent first)
+  size_t c_from_recent = 0;
+  size_t c_from_addrman = 0;
+  size_t c_from_learned = 0;
+  size_t c_suppressed = 0;
+
+  // 1) Prefer recently learned addresses (most recent first)
   {
     std::lock_guard<std::mutex> g(addr_mutex_);
     for (auto it = recent_addrs_.rbegin(); it != recent_addrs_.rend(); ++it) {
       if (response->addresses.size() >= protocol::MAX_ADDR_SIZE) break;
-      const std::string key = MakeAddrKey(it->address);
-      if (is_suppressed(key)) continue;
-      if (included_keys.find(key) != included_keys.end()) continue;
+      AddressKey k = MakeKey(it->address);
+      if (is_suppressed(k)) { c_suppressed++; continue; }
+      if (!included.insert(k).second) continue;
       response->addresses.push_back(*it);
-      included_keys.insert(key);
+      c_from_recent++;
     }
   }
 
-  // Include learned candidate addresses even if addrman does not return them
-  for (const auto& key : candidate_keys) {
-    if (response->addresses.size() >= protocol::MAX_ADDR_SIZE) break;
-    if (included_keys.find(key) != included_keys.end()) continue;
-    if (is_suppressed(key)) continue;
-    protocol::NetworkAddress na;
-    if (ParseAddrKey(key, na)) {
-      protocol::TimestampedAddress ta;
-      ta.timestamp = static_cast<uint32_t>(now_s);
-      ta.address = na;
+  // 2) Top-up from AddrMan sample
+  if (response->addresses.size() < protocol::MAX_ADDR_SIZE) {
+    auto addrs = addr_manager_->get_addresses(protocol::MAX_ADDR_SIZE);
+    for (const auto& ta : addrs) {
+      if (response->addresses.size() >= protocol::MAX_ADDR_SIZE) break;
+      AddressKey k = MakeKey(ta.address);
+      if (is_suppressed(k)) { c_suppressed++; continue; }
+      if (!included.insert(k).second) continue;
       response->addresses.push_back(ta);
-      included_keys.insert(key);
+      c_from_addrman++;
     }
   }
 
-  // Second pass: include any matching addresses from addrman output that we haven't added yet
-  for (const auto& ta : addrs) {
-    if (response->addresses.size() >= protocol::MAX_ADDR_SIZE) break;
-    const std::string key = MakeAddrKey(ta.address);
-    if (included_keys.find(key) != included_keys.end()) continue;
-    if (is_suppressed(key)) continue;
-    response->addresses.push_back(ta);
-    included_keys.insert(key);
+  // 3) Fallback: if still empty, include learned addresses from other peers (excluding requester)
+  if (response->addresses.empty()) {
+    std::lock_guard<std::mutex> g(addr_mutex_);
+    for (const auto& [other_peer_id, learned_map] : learned_addrs_by_peer_) {
+      if (other_peer_id == peer_id) continue;
+      for (const auto& [akey, entry] : learned_map) {
+        if (response->addresses.size() >= protocol::MAX_ADDR_SIZE) break;
+        if (is_suppressed(akey)) { c_suppressed++; continue; }
+        if (!included.insert(akey).second) continue;
+        response->addresses.push_back(entry.ts_addr);
+        c_from_learned++;
+      }
+      if (response->addresses.size() >= protocol::MAX_ADDR_SIZE) break;
+    }
+  }
+
+  // Save composition stats and log
+  {
+    std::lock_guard<std::mutex> sg(stats_mutex_);
+    last_resp_from_addrman_ = c_from_addrman;
+    last_resp_from_recent_ = c_from_recent;
+    last_resp_from_learned_ = c_from_learned;
+    last_resp_suppressed_ = c_suppressed;
+  }
+  LOG_NET_DEBUG("GETADDR served peer={} addrs_total={} from_recent={} from_addrman={} from_learned={} suppressed={}",
+                peer_id, response->addresses.size(), c_from_recent, c_from_addrman, c_from_learned, c_suppressed);
+
+  // Verify peer still connected before sending (TOCTOU protection)
+  if (!peer->is_connected()) {
+    LOG_NET_TRACE("Peer {} disconnected before GETADDR response could be sent", peer_id);
+    return true; // Not an error, just too late
+  }
+
+  // Privacy: randomize order to avoid recency leaks
+  if (!response->addresses.empty()) {
+    std::shuffle(response->addresses.begin(), response->addresses.end(), rng_);
   }
 
   peer->send_message(std::move(response));
+  {
+    std::lock_guard<std::mutex> sg(stats_mutex_);
+    stats_getaddr_served_++;
+  }
   return true;
 }
 
@@ -331,10 +397,34 @@ bool MessageRouter::handle_getheaders(PeerPtr peer, message::GetHeadersMessage* 
   return header_sync_manager_->HandleGetHeadersMessage(peer, msg);
 }
 
+// Helper to build binary key
+MessageRouter::AddressKey MessageRouter::MakeKey(const protocol::NetworkAddress& a) {
+  AddressKey k; k.ip = a.ip; k.port = a.port; return k;
+}
+
 void MessageRouter::OnPeerDisconnected(int peer_id) {
   std::lock_guard<std::mutex> g(addr_mutex_);
-  last_getaddr_reply_s_.erase(peer_id);
+  getaddr_replied_.erase(peer_id);
   learned_addrs_by_peer_.erase(peer_id);
+}
+
+MessageRouter::GetAddrDebugStats MessageRouter::GetGetAddrDebugStats() const {
+  std::lock_guard<std::mutex> sg(stats_mutex_);
+  GetAddrDebugStats s;
+  s.total = stats_getaddr_total_;
+  s.served = stats_getaddr_served_;
+  s.ignored_outbound = stats_getaddr_ignored_outbound_;
+  s.ignored_prehandshake = stats_getaddr_ignored_prehandshake_;
+  s.ignored_repeat = stats_getaddr_ignored_repeat_;
+  s.last_from_addrman = last_resp_from_addrman_;
+  s.last_from_recent = last_resp_from_recent_;
+  s.last_from_learned = last_resp_from_learned_;
+  s.last_suppressed = last_resp_suppressed_;
+  return s;
+}
+
+void MessageRouter::TestSeedRng(uint64_t seed) {
+  rng_.seed(seed);
 }
 
 } // namespace network
