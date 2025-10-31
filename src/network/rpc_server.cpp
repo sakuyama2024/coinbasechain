@@ -24,6 +24,7 @@
 #include "chain/chainstate_manager.hpp"
 #include "util/logging.hpp"
 #include "chain/miner.hpp"
+#include "chain/pow.hpp"
 #include "util/time.hpp"
 #include "util/uint.hpp"
 #include "network/banman.hpp"
@@ -398,20 +399,7 @@ std::string RPCServer::HandleGetInfo(const std::vector<std::string> &params) {
   int height = tip ? tip->nHeight : -1;
 
   // Get difficulty
-  double difficulty = 1.0;
-  if (tip && tip->nBits != 0) {
-    int nShift = (tip->nBits >> 24) & 0xff;
-    double dDiff = (double)0x000fffff / (double)(tip->nBits & 0x00ffffff);
-    while (nShift < 29) {
-      dDiff *= 256.0;
-      nShift++;
-    }
-    while (nShift > 29) {
-      dDiff /= 256.0;
-      nShift--;
-    }
-    difficulty = dDiff;
-  }
+  double difficulty = (tip && tip->nBits != 0) ? consensus::GetDifficulty(tip->nBits, params_) : 1.0;
 
   std::ostringstream oss;
   oss << "{\n"
@@ -434,20 +422,7 @@ RPCServer::HandleGetBlockchainInfo(const std::vector<std::string> &params) {
   int height = tip ? tip->nHeight : -1;
 
   // Calculate difficulty
-  double difficulty = 1.0;
-  if (tip && tip->nBits != 0) {
-    int nShift = (tip->nBits >> 24) & 0xff;
-    double dDiff = (double)0x000fffff / (double)(tip->nBits & 0x00ffffff);
-    while (nShift < 29) {
-      dDiff *= 256.0;
-      nShift++;
-    }
-    while (nShift > 29) {
-      dDiff /= 256.0;
-      nShift--;
-    }
-    difficulty = dDiff;
-  }
+  double difficulty = (tip && tip->nBits != 0) ? consensus::GetDifficulty(tip->nBits, params_) : 1.0;
 
   // Compute average inter-block times over recent windows
   auto compute_avg = [](const chain::CBlockIndex *p, int window) -> double {
@@ -572,20 +547,7 @@ RPCServer::HandleGetBlockHeader(const std::vector<std::string> &params) {
   }
 
   // Calculate difficulty
-  double difficulty = 1.0;
-  if (index->nBits != 0) {
-    int nShift = (index->nBits >> 24) & 0xff;
-    double dDiff = (double)0x000fffff / (double)(index->nBits & 0x00ffffff);
-    while (nShift < 29) {
-      dDiff *= 256.0;
-      nShift++;
-    }
-    while (nShift > 29) {
-      dDiff /= 256.0;
-      nShift--;
-    }
-    difficulty = dDiff;
-  }
+  double difficulty = (index->nBits != 0) ? consensus::GetDifficulty(index->nBits, params_) : 1.0;
 
   // Calculate confirmations
   auto *tip = chainstate_manager_.GetTip();
@@ -910,20 +872,7 @@ std::string
 RPCServer::HandleGetDifficulty(const std::vector<std::string> &params) {
   auto *tip = chainstate_manager_.GetTip();
 
-  double difficulty = 1.0;
-  if (tip && tip->nBits != 0) {
-    int nShift = (tip->nBits >> 24) & 0xff;
-    double dDiff = (double)0x000fffff / (double)(tip->nBits & 0x00ffffff);
-    while (nShift < 29) {
-      dDiff *= 256.0;
-      nShift++;
-    }
-    while (nShift > 29) {
-      dDiff /= 256.0;
-      nShift--;
-    }
-    difficulty = dDiff;
-  }
+  double difficulty = (tip && tip->nBits != 0) ? consensus::GetDifficulty(tip->nBits, params_) : 1.0;
 
   std::ostringstream oss;
   oss << difficulty << "\n";
@@ -936,20 +885,7 @@ RPCServer::HandleGetMiningInfo(const std::vector<std::string> &params) {
   int height = tip ? tip->nHeight : -1;
 
   // Calculate difficulty
-  double difficulty = 1.0;
-  if (tip && tip->nBits != 0) {
-    int nShift = (tip->nBits >> 24) & 0xff;
-    double dDiff = (double)0x000fffff / (double)(tip->nBits & 0x00ffffff);
-    while (nShift < 29) {
-      dDiff *= 256.0;
-      nShift++;
-    }
-    while (nShift > 29) {
-      dDiff /= 256.0;
-      nShift--;
-    }
-    difficulty = dDiff;
-  }
+  double difficulty = (tip && tip->nBits != 0) ? consensus::GetDifficulty(tip->nBits, params_) : 1.0;
 
   // Calculate network hashrate (simplified - based on last DEFAULT_HASHRATE_CALCULATION_BLOCKS)
   double networkhashps = 0.0;
