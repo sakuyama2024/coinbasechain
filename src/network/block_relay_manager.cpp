@@ -46,28 +46,26 @@ void BlockRelayManager::AnnounceTipToAllPeers() {
   auto all_peers = peer_manager_.get_all_peers();
   for (const auto &peer : all_peers) {
     if (peer && peer->is_connected() && peer->state() == PeerState::READY) {
-      // Check per-peer TTL; suppress re-announce of same tip within TTL regardless of queue state
-      bool same_tip = false;
-      bool within_ttl = false;
-      {
+      // Thread-safe access to block announcement queue
+      // CRITICAL: Hold announce_mutex_ throughout check-and-queue to prevent TOCTOU race
+      peer->with_block_inv_queue([&](auto& queue) {
         std::lock_guard<std::mutex> guard(announce_mutex_);
+
+        // Check per-peer TTL; suppress re-announce of same tip within TTL
         auto it_hash = last_announced_to_peer_.find(peer->id());
         auto it_time = last_announce_time_s_.find(peer->id());
-        same_tip = (it_hash != last_announced_to_peer_.end() && it_hash->second == current_tip_hash);
+        const bool same_tip = (it_hash != last_announced_to_peer_.end() && it_hash->second == current_tip_hash);
         const bool have_time = (it_time != last_announce_time_s_.end());
-        within_ttl = have_time && (now_s - it_time->second < REANNOUNCE_INTERVAL_SEC);
-      }
-      if (same_tip && within_ttl) {
-        continue;
-      }
+        const bool within_ttl = have_time && (now_s - it_time->second < REANNOUNCE_INTERVAL_SEC);
 
-      // Thread-safe access to block announcement queue
-      peer->with_block_inv_queue([&](auto& queue) {
+        if (same_tip && within_ttl) {
+          return; // Skip - already announced recently
+        }
+
         // Only add if not already in this peer's queue (per-peer deduplication)
         if (std::find(queue.begin(), queue.end(), current_tip_hash) == queue.end()) {
           queue.push_back(current_tip_hash);
           // Record last announcement (hash + time)
-          std::lock_guard<std::mutex> guard(announce_mutex_);
           last_announced_to_peer_[peer->id()] = current_tip_hash;
           last_announce_time_s_[peer->id()] = now_s;
         }
@@ -167,7 +165,7 @@ void BlockRelayManager::RelayBlock(const uint256 &block_hash) {
   LOG_NET_INFO("Relaying block {} to {} peers", block_hash.GetHex(),
                peer_manager_.peer_count());
 
-  // Time now (mocked unix seconds) for TTL bookkeeping
+  // Time now  for TTL bookkeeping
   const int64_t now_s = util::GetTime();
 
   // Send to all connected peers
