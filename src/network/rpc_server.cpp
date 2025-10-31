@@ -28,6 +28,7 @@
 #include "util/time.hpp"
 #include "util/uint.hpp"
 #include "network/banman.hpp"
+#include "network/connection_types.hpp"
 #include "network/network_manager.hpp"
 #include "network/peer_manager.hpp"
 #include <sstream>
@@ -725,9 +726,9 @@ std::string RPCServer::HandleAddNode(const std::vector<std::string> &params) {
       std::copy(bytes.begin(), bytes.end(), addr.ip.begin());
     }
 
-    // Connect to the node
-    LOG_INFO("RPC addnode: calling network_manager_.connect_to()");
-    bool success = network_manager_.connect_to(addr);
+    // Connect to the node (use MANUAL type - bypasses ban checks and outbound limits)
+    LOG_INFO("RPC addnode: calling network_manager_.connect_to() with ConnectionType::MANUAL");
+    bool success = network_manager_.connect_to(addr, network::ConnectionType::MANUAL);
     LOG_INFO("RPC addnode: connect_to() returned {}", success);
     if (!success) {
       LOG_INFO("RPC addnode: connect_to() failed");

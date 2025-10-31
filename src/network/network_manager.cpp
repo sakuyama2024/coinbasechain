@@ -282,8 +282,9 @@ void NetworkManager::stop() {
   io_context_.restart();
 }
 
-bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
-  LOG_NET_TRACE("connect_to() called");
+bool NetworkManager::connect_to(const protocol::NetworkAddress &addr,
+                                 ConnectionType conn_type) {
+  LOG_NET_TRACE("connect_to() called with type={}", ConnectionTypeAsString(conn_type));
 
   if (!running_.load(std::memory_order_acquire)) {
     LOG_NET_TRACE("connect_to() failed: not running");
@@ -299,16 +300,19 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
   const std::string &address = *ip_opt;
   uint16_t port = addr.port;
 
-  // Check if address is banned
-  if (ban_man_ && ban_man_->IsBanned(address)) {
-    LOG_NET_TRACE("refusing to connect to banned address: {}", address);
-    return false;
-  }
+  // MANUAL connections bypass ban/discourage checks (user explicitly requested)
+  if (conn_type != ConnectionType::MANUAL) {
+    // Check if address is banned
+    if (ban_man_ && ban_man_->IsBanned(address)) {
+      LOG_NET_TRACE("refusing to connect to banned address: {}", address);
+      return false;
+    }
 
-  // Check if address is discouraged
-  if (ban_man_ && ban_man_->IsDiscouraged(address)) {
-    LOG_NET_TRACE("refusing to connect to discouraged address: {}", address);
-    return false;
+    // Check if address is discouraged
+    if (ban_man_ && ban_man_->IsDiscouraged(address)) {
+      LOG_NET_TRACE("refusing to connect to discouraged address: {}", address);
+      return false;
+    }
   }
 
   // SECURITY: Prevent duplicate outbound connections to same peer
@@ -320,12 +324,15 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
   }
 
   // Check if we can add more outbound connections
-  bool needs_more = peer_manager_->needs_more_outbound();
-  size_t outbound = peer_manager_->outbound_count();
-  LOG_NET_TRACE("connect_to(): needs_more_outbound={}, outbound_count={}", needs_more, outbound);
-  if (!needs_more) {
-    LOG_NET_TRACE("connect_to() failed: don't need more outbound connections");
-    return false;
+  // MANUAL and FEELER connections don't count against the limit
+  if (conn_type != ConnectionType::MANUAL && conn_type != ConnectionType::FEELER) {
+    bool needs_more = peer_manager_->needs_more_outbound();
+    size_t outbound = peer_manager_->outbound_count();
+    LOG_NET_TRACE("connect_to(): needs_more_outbound={}, outbound_count={}", needs_more, outbound);
+    if (!needs_more) {
+      LOG_NET_TRACE("connect_to() failed: don't need more outbound connections");
+      return false;
+    }
   }
 
   // We need to capture the peer_id in the connection callback, but we don't
@@ -385,7 +392,7 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
   // Create outbound peer with the connection (will be in CONNECTING state)
   // Store target address for duplicate connection prevention (Bitcoin Core pattern)
   auto peer = Peer::create_outbound(io_context_, connection, config_.network_magic,
-                                     current_height, address, port);
+                                     current_height, address, port, conn_type);
   if (!peer) {
     LOG_NET_ERROR("Failed to create peer for {}:{}", address, port);
     return false;

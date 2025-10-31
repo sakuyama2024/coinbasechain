@@ -103,6 +103,7 @@ public:
   bool is_inbound() const { return is_inbound_; }
   ConnectionType connection_type() const { return connection_type_; }
   bool is_feeler() const { return connection_type_ == ConnectionType::FEELER; }
+  bool is_manual() const { return connection_type_ == ConnectionType::MANUAL; }
   int id() const { return id_; }
 
   // Peer information from VERSION message

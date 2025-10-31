@@ -257,10 +257,10 @@ size_t PeerManager::outbound_count() const {
   std::lock_guard<std::mutex> lock(mutex_);
   size_t count = 0;
 
-  // Count outbound peers (excluding feelers which don't consume outbound slots)
-  // Bitcoin Core pattern: Feelers don't count against MAX_OUTBOUND_FULL_RELAY_CONNECTIONS
+  // Count outbound peers (excluding feelers and manual which don't consume outbound slots)
+  // Bitcoin Core pattern: Feelers and manual connections don't count against MAX_OUTBOUND_FULL_RELAY_CONNECTIONS
   for (const auto &[id, peer] : peers_) {
-    if (!peer->is_inbound() && !peer->is_feeler()) {
+    if (!peer->is_inbound() && !peer->is_feeler() && !peer->is_manual()) {
       count++;
     }
   }

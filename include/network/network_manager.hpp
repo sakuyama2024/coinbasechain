@@ -12,6 +12,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "network/connection_types.hpp"
 #include "network/peer.hpp"
 #include "network/peer_manager.hpp"
 #include "network/protocol.hpp"
@@ -100,7 +101,8 @@ public:
   BanMan &ban_man() { return *ban_man_; }
 
   // Manual connection management
-  bool connect_to(const protocol::NetworkAddress &addr);
+  bool connect_to(const protocol::NetworkAddress &addr,
+                  ConnectionType conn_type = ConnectionType::OUTBOUND);
   void disconnect_from(int peer_id);
 
   // Block relay
