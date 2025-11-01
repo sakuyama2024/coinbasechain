@@ -5,6 +5,7 @@
 #include "network/message.hpp"
 #include "network/message_router.hpp"
 #include "test_orchestrator.hpp"
+#include <set>
 
 using namespace coinbasechain;
 using namespace coinbasechain::test;
@@ -137,4 +138,89 @@ TEST_CASE("GETADDR reply shuffles order across seeds", "[network][addr][privacy]
         }
     }
     REQUIRE_FALSE(same_order);
+}
+
+TEST_CASE("GETADDR echo suppression: do not reflect sender-provided addresses", "[network][addr][privacy][echo]") {
+    SimulatedNetwork net(48103);
+    TestOrchestrator orch(&net);
+    net.EnableCommandTracking(true);
+
+    SimulatedNode server(1, &net);
+    SimulatedNode client(2, &net);
+
+    REQUIRE(client.ConnectTo(server.GetId()));
+    REQUIRE(orch.WaitForConnection(server, client));
+    for (int i = 0; i < 12; ++i) orch.AdvanceTime(std::chrono::milliseconds(100));
+
+    // Build ADDR with two addresses
+    message::AddrMessage addrmsg;
+    auto make_ts = [](uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
+        protocol::TimestampedAddress ta;
+        ta.timestamp = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+        ta.address.services = protocol::NODE_NETWORK;
+        for (int i=0;i<10;++i) ta.address.ip[i]=0; ta.address.ip[10]=0xFF; ta.address.ip[11]=0xFF;
+        ta.address.ip[12]=a; ta.address.ip[13]=b; ta.address.ip[14]=c; ta.address.ip[15]=d;
+        ta.address.port = 9590;
+        return ta;
+    };
+    auto ta1 = make_ts(203,0,113,50);
+    auto ta2 = make_ts(203,0,113,51);
+    addrmsg.addresses.push_back(ta1);
+    addrmsg.addresses.push_back(ta2);
+
+    // Send ADDR from client to server
+    auto addr_payload = addrmsg.serialize();
+    net.SendMessage(client.GetId(), server.GetId(), MakeWire(commands::ADDR, addr_payload));
+    orch.AdvanceTime(std::chrono::milliseconds(200));
+
+    // Now ask for GETADDR; response should not include ta1/ta2 for same connection (echo suppression)
+    net.SendMessage(client.GetId(), server.GetId(), MakeWire(commands::GETADDR, {}));
+    orch.AdvanceTime(std::chrono::milliseconds(400));
+
+    auto payloads = net.GetCommandPayloads(server.GetId(), client.GetId(), commands::ADDR);
+    REQUIRE_FALSE(payloads.empty());
+    message::AddrMessage rsp; REQUIRE(rsp.deserialize(payloads.back().data(), payloads.back().size()));
+
+    auto key = [](const protocol::TimestampedAddress& x){
+        return std::tuple<uint8_t,uint8_t,uint8_t,uint8_t>(x.address.ip[12], x.address.ip[13], x.address.ip[14], x.address.ip[15]);
+    };
+    std::set<decltype(key(ta1))> s; for (auto& t : rsp.addresses) s.insert(key(t));
+
+    REQUIRE(s.count(key(ta1)) == 0);
+    REQUIRE(s.count(key(ta2)) == 0);
+}
+
+TEST_CASE("GETADDR must not include requester's own address", "[network][addr][privacy][self]") {
+    SimulatedNetwork net(48104);
+    TestOrchestrator orch(&net);
+    net.EnableCommandTracking(true);
+
+    SimulatedNode server(1, &net);
+    SimulatedNode client(2, &net);
+
+    // Preload server AddrMan with client's address
+    auto& am = server.GetNetworkManager().address_manager();
+    auto client_addr = protocol::NetworkAddress::from_string(client.GetAddress(), client.GetPort());
+    am.add(client_addr);
+
+    REQUIRE(client.ConnectTo(server.GetId()));
+    REQUIRE(orch.WaitForConnection(server, client));
+    for (int i = 0; i < 12; ++i) orch.AdvanceTime(std::chrono::milliseconds(100));
+
+    net.SendMessage(client.GetId(), server.GetId(), MakeWire(commands::GETADDR, {}));
+    orch.AdvanceTime(std::chrono::milliseconds(300));
+
+    auto payloads = net.GetCommandPayloads(server.GetId(), client.GetId(), commands::ADDR);
+    REQUIRE_FALSE(payloads.empty());
+    message::AddrMessage rsp; REQUIRE(rsp.deserialize(payloads.back().data(), payloads.back().size()));
+
+    bool contains_client = false;
+    for (const auto& ta : rsp.addresses) {
+        if (ta.address.port == client.GetPort() &&
+            ta.address.ip[12]==127 && ta.address.ip[13]==0 && ta.address.ip[14]==0 && ta.address.ip[15]==(client.GetId()%255)) {
+            contains_client = true; break;
+        }
+    }
+    REQUIRE_FALSE(contains_client);
 }

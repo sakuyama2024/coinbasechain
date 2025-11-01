@@ -56,6 +56,9 @@ TEST_CASE("InvalidateBlock - Basic invalidation with reorg (test2)", "[invalidat
     CHECK(node2.GetTipHeight() == 4);
 
     node2.ConnectTo(1);
+    // With outbound-only header sync (Core parity), ensure the lagging node (node1)
+    // also has an OUTBOUND connection to the announcer so it will initiate GETHEADERS.
+    node1.ConnectTo(2);
     for (int i = 0; i < 100; i++) network.AdvanceTime(network.GetCurrentTime() + 100);
 
     CHECK(node1.GetTipHeight() == 4);

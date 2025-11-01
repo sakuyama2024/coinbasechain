@@ -45,6 +45,11 @@ bool NATManager::Start(uint16_t internal_port) {
         return false;
     }
 
+    if (internal_port == 0) {
+        LOG_NET_ERROR("invalid internal port: 0");
+        return false;
+    }
+
     internal_port_ = internal_port;
     running_ = true;
 
@@ -53,8 +58,8 @@ bool NATManager::Start(uint16_t internal_port) {
     // Discover UPnP device
     DiscoverUPnPDevice();
 
-    if (gateway_url_.empty()) {
-        LOG_NET_TRACE("no UPnP-capable gateway found");
+    if (control_url_.empty() || igd_service_type_.empty() || lanaddr_.empty()) {
+        LOG_NET_DEBUG("no UPnP-capable gateway found");
         running_ = false;
         return false;
     }
@@ -119,37 +124,39 @@ void NATManager::DiscoverUPnPDevice() {
     );
 
     if (!devlist) {
-        LOG_NET_TRACE("UPnP discovery failed: error code {}", error);
+        LOG_NET_DEBUG("UPnP discovery failed: error code {}", error);
         return;
     }
 
     // Get first valid IGD (Internet Gateway Device)
-    UPNPUrls urls;
-    IGDdatas data;
-    char lanaddr[64];
+    UPNPUrls urls{};
+    IGDdatas data{};
+    char lanaddr[64] = {0};
 
     int result = UPNP_GetValidIGD(UPNP_GETVALIDIGD_ARGS(devlist, &urls, &data, lanaddr));
 
     freeUPNPDevlist(devlist);
 
     if (result != 1) {
-        LOG_NET_TRACE("no valid IGD found (result: {})", result);
+        LOG_NET_DEBUG("no valid IGD found (result: {})", result);
+        FreeUPNPUrls(&urls);
         return;
     }
 
-    // Store gateway info
-    gateway_url_ = urls.controlURL;
-    control_url_ = urls.controlURL;
+    // Store gateway info (copy to our cached strings)
+    control_url_ = urls.controlURL ? urls.controlURL : "";
+    igd_service_type_ = data.first.servicetype; // fixed: servicetype is an array, always non-null
+    lanaddr_ = lanaddr;
 
     // Get external IP
-    char ext_ip[40];
-    if (UPNP_GetExternalIPAddress(
-            urls.controlURL,
-            data.first.servicetype,
+    char ext_ip[40] = {0};
+    if (!control_url_.empty() && !igd_service_type_.empty() &&
+        UPNP_GetExternalIPAddress(
+            control_url_.c_str(),
+            igd_service_type_.c_str(),
             ext_ip) == UPNPCOMMAND_SUCCESS) {
         external_ip_ = ext_ip;
-        LOG_NET_TRACE("gateway found at {} (LAN: {}, WAN: {})",
-                  control_url_, lanaddr, external_ip_);
+        LOG_NET_TRACE("gateway found (LAN: {}, WAN: {})", lanaddr_, external_ip_);
     }
 
     FreeUPNPUrls(&urls);
@@ -161,54 +168,30 @@ bool NATManager::MapPort(uint16_t internal_port) {
     LOG_NET_TRACE("NAT support disabled, skipping port mapping");
     return false;
 #else
-    if (gateway_url_.empty()) {
+    if (control_url_.empty() || igd_service_type_.empty() || lanaddr_.empty()) {
         return false;
     }
 
-    // Reload UPnP device info for mapping
-    int error = 0;
-    UPNPDev* devlist = upnpDiscover(
-        UPNP_DISCOVER_TIMEOUT_MS, nullptr, nullptr, 0, 0, 2, &error);
-
-    if (!devlist) {
-        return false;
-    }
-
-    UPNPUrls urls;
-    IGDdatas data;
-    char lanaddr[64];
-
-    int result = UPNP_GetValidIGD(UPNP_GETVALIDIGD_ARGS(devlist, &urls, &data, lanaddr));
-    freeUPNPDevlist(devlist);
-
-    if (result != 1) {
-        return false;
-    }
+    std::lock_guard<std::mutex> guard(mapping_mutex_);
 
     // Try to map the same port externally
     external_port_ = internal_port;
 
-    char internal_port_str[16];
-    char external_port_str[16];
-    char duration_str[16];
-
-    snprintf(internal_port_str, sizeof(internal_port_str), "%u", internal_port);
-    snprintf(external_port_str, sizeof(external_port_str), "%u", external_port_);
-    snprintf(duration_str, sizeof(duration_str), "%d", PORT_MAPPING_DURATION_SECONDS);
+    const std::string internal_port_str = std::to_string(internal_port);
+    const std::string external_port_str = std::to_string(external_port_);
+    const std::string duration_str = std::to_string(PORT_MAPPING_DURATION_SECONDS);
 
     int ret = UPNP_AddPortMapping(
-        urls.controlURL,
-        data.first.servicetype,
-        external_port_str,  // external port
-        internal_port_str,  // internal port
-        lanaddr,            // internal client
-        "CoinbaseChain P2P", // description
-        "TCP",              // protocol
-        nullptr,            // remote host (any)
-        duration_str        // lease duration
+        control_url_.c_str(),
+        igd_service_type_.c_str(),
+        external_port_str.c_str(),  // external port
+        internal_port_str.c_str(),  // internal port
+        lanaddr_.c_str(),           // internal client
+        "CoinbaseChain P2P",       // description
+        "TCP",                     // protocol
+        nullptr,                    // remote host (any)
+        duration_str.c_str()        // lease duration
     );
-
-    FreeUPNPUrls(&urls);
 
     if (ret != UPNPCOMMAND_SUCCESS) {
         LOG_NET_ERROR("UPnP port mapping failed: error code {}", ret);
@@ -216,7 +199,7 @@ bool NATManager::MapPort(uint16_t internal_port) {
     }
 
     port_mapped_ = true;
-    LOG_NET_TRACE("UPnP port mapping created: {} -> {}", external_port_, internal_port);
+    LOG_NET_TRACE("UPnP port mapping created/refreshed: {} -> {}", external_port_, internal_port);
     return true;
 #endif // DISABLE_NAT_SUPPORT
 }
@@ -225,41 +208,27 @@ void NATManager::UnmapPort() {
 #ifdef DISABLE_NAT_SUPPORT
     return;
 #else
-    if (!port_mapped_ || gateway_url_.empty()) {
+    if (!port_mapped_) {
         return;
     }
 
-    int error = 0;
-    UPNPDev* devlist = upnpDiscover(
-        UPNP_DISCOVER_TIMEOUT_MS, nullptr, nullptr, 0, 0, 2, &error);
-
-    if (!devlist) {
+    if (control_url_.empty() || igd_service_type_.empty()) {
+        port_mapped_ = false;
         return;
     }
 
-    UPNPUrls urls;
-    IGDdatas data;
-    char lanaddr[64];
+    std::lock_guard<std::mutex> guard(mapping_mutex_);
 
-    int result = UPNP_GetValidIGD(UPNP_GETVALIDIGD_ARGS(devlist, &urls, &data, lanaddr));
-    freeUPNPDevlist(devlist);
+    const std::string external_port_str = std::to_string(external_port_);
 
-    if (result != 1) {
-        return;
-    }
-
-    char external_port_str[16];
-    snprintf(external_port_str, sizeof(external_port_str), "%u", external_port_);
-
-    UPNP_DeletePortMapping(
-        urls.controlURL,
-        data.first.servicetype,
-        external_port_str,
+    int ret = UPNP_DeletePortMapping(
+        control_url_.c_str(),
+        igd_service_type_.c_str(),
+        external_port_str.c_str(),
         "TCP",
         nullptr
     );
-
-    FreeUPNPUrls(&urls);
+    (void)ret; // ignore ret; best-effort cleanup
 
     port_mapped_ = false;
     LOG_NET_TRACE("UPnP port mapping removed");
@@ -269,12 +238,35 @@ void NATManager::UnmapPort() {
 void NATManager::RefreshMapping() {
     LOG_NET_TRACE("refreshing UPnP port mapping");
 
-    // Remove old mapping and create new one
-    // This ensures the mapping stays active
-    if (port_mapped_) {
-        UnmapPort();
-        MapPort(internal_port_);
+    if (!port_mapped_) return;
+
+#ifndef DISABLE_NAT_SUPPORT
+    // Re-issue the same AddPortMapping call to refresh/extend lease without tearing down
+    {
+        std::lock_guard<std::mutex> guard(mapping_mutex_);
+        const std::string internal_port_str = std::to_string(internal_port_);
+        const std::string external_port_str = std::to_string(external_port_);
+        const std::string duration_str = std::to_string(PORT_MAPPING_DURATION_SECONDS);
+        (void)UPNP_AddPortMapping(
+            control_url_.c_str(),
+            igd_service_type_.c_str(),
+            external_port_str.c_str(),
+            internal_port_str.c_str(),
+            lanaddr_.c_str(),
+            "CoinbaseChain P2P",
+            "TCP",
+            nullptr,
+            duration_str.c_str());
+
+        // Try to refresh external IP as well (it may change)
+        char ext_ip[40] = {0};
+        if (!control_url_.empty() && !igd_service_type_.empty() &&
+            UPNP_GetExternalIPAddress(control_url_.c_str(), igd_service_type_.c_str(), ext_ip) == UPNPCOMMAND_SUCCESS &&
+            ext_ip[0] != '\0') {
+            external_ip_ = ext_ip;
+        }
     }
+#endif
 }
 
 const std::string& NATManager::GetExternalIP() const {

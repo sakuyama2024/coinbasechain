@@ -1,5 +1,40 @@
 #pragma once
 
+/*
+ AddressManager (AddrMan) — simplified peer address manager for CoinbaseChain
+
+ Purpose
+ - Maintain two tables of peer addresses:
+   • "new": learned but never successfully connected
+   • "tried": previously successful connections
+ - Select addresses for outbound and feeler dials with an 80% "tried" bias
+   and a cooldown to avoid immediate re-dials
+ - Persist state to JSON (peers.json) with atomic save and optional checksum
+ - Apply basic hygiene: minimal address validation, timestamp clamping,
+   and stale/"terrible" eviction
+
+ How this differs from Bitcoin Core's addrman
+ - No bucketization/source-grouping: this first release does NOT implement Core's
+   bucket model. Selection is simpler (tried/new + cooldown) and has lower Sybil
+   resistance. A bucketized design is planned for a future release.
+ - Discovery policy location: GETADDR/ADDR privacy and echo-suppression policy
+   lives in MessageRouter here, not inside AddrMan (Core intertwines more policy
+   with addrman callers).
+ - Persistence format: human-readable JSON with an optional SHA-256 checksum
+   (over tried/new arrays) vs Core's binary peers.dat with checksumming.
+ - Time handling: explicit timestamp clamping; future timestamps are not treated
+   as stale. Tried entries record last_try so cooldown applies consistently.
+ - Simpler scoring: no per-entry chance weighting or privacy scoring; limits like
+   STALE_AFTER_DAYS and MAX_FAILURES are compile-time constants.
+
+ Notes
+ - Selection prefers entries passing cooldown; if no TRIED entry is eligible it
+   falls back to NEW before choosing any TRIED under cooldown.
+ - get_addresses() filters invalid and "terrible" entries.
+ - Future work: add bucketization and stronger per-network-group diversity to
+   better match Core's behavior.
+*/
+
 #include "network/protocol.hpp"
 #include <chrono>
 #include <map>

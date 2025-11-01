@@ -19,12 +19,32 @@ void CChain::SetTip(CBlockIndex &block) {
                   pindex->GetBlockHash().ToString().substr(0, 16),
                   pindex->nHeight);
 
-  vChain.resize(pindex->nHeight + 1);
+  // Defensive: refuse to operate on negative heights (corrupted input)
+  if (pindex->nHeight < 0) {
+    LOG_CHAIN_ERROR("CChain::SetTip: negative height {} for block {} - aborting SetTip",
+                    pindex->nHeight, pindex->GetBlockHash().ToString().substr(0,16));
+    return;
+  }
+
+  vChain.resize(static_cast<size_t>(pindex->nHeight) + 1);
 
   // Walk backwards from tip, filling in the vector
   int blocks_updated = 0;
-  while (pindex && vChain[pindex->nHeight] != pindex) {
-    vChain[pindex->nHeight] = pindex;
+  while (pindex) {
+    // Guard against corrupted heights while walking back
+    if (pindex->nHeight < 0) {
+      LOG_CHAIN_ERROR("CChain::SetTip: encountered negative height {} while backtracking at block {}",
+                      pindex->nHeight, pindex->GetBlockHash().ToString().substr(0,16));
+      break;
+    }
+    size_t idx = static_cast<size_t>(pindex->nHeight);
+    if (idx >= vChain.size()) {
+      vChain.resize(idx + 1);
+    }
+    if (vChain[idx] == pindex) {
+      break; // already set from a previous walk
+    }
+    vChain[idx] = pindex;
     pindex = pindex->pprev;
     blocks_updated++;
   }

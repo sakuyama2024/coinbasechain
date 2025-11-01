@@ -36,8 +36,6 @@ enum class ConnectionType {
    * via RPC or configuration options. Even if a manual connection is
    * misbehaving, we do not automatically disconnect or add it to our
    * discouragement filter.
-   *
-   * NOT YET IMPLEMENTED - placeholder for future use
    */
   MANUAL,
 

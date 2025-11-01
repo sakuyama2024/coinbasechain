@@ -73,6 +73,8 @@ TEST_CASE("NetworkManager HeaderSync - IBD flips on recent tip; behavior switche
     victim.GetNetworkManager().test_hook_check_initial_sync();
     net.AdvanceTime(200);
     victim.ConnectTo(p_other.GetId());
+    // Ensure p_other has an OUTBOUND to victim as well (Core parity: fSyncStarted is outbound-only)
+    p_other.ConnectTo(victim.GetId());
     net.AdvanceTime(200);
 
     // Phase 1: confirm IBD (tip at genesis)
@@ -390,6 +392,9 @@ TEST_CASE("NetworkManager HeaderSync - Near-tip allows multi-peer headers", "[ne
 
     victim.ConnectTo(pA.GetId());
     victim.ConnectTo(pB.GetId());
+    // Ensure peers also have OUTBOUND connections to victim so they can sync to its tip
+    pA.ConnectTo(victim.GetId());
+    pB.ConnectTo(victim.GetId());
     net.AdvanceTime(200);
 
     // Let peers sync to victim's base tip
@@ -504,6 +509,90 @@ TEST_CASE("NetworkManager HeaderSync - Reorg during IBD switches to most-work an
     }
     REQUIRE(victim.GetTipHeight() == 60);
 }
+
+TEST_CASE("HeaderSync - Outbound-only selection requires outbound peer (rewrite)", "[network_header_sync][policy]") {
+    SimulatedNetwork net(50019);
+    SetZeroLatency(net);
+    net.EnableCommandTracking(true);
+
+    // Victim at genesis (IBD)
+    SimulatedNode victim(90, &net);
+    victim.SetBypassPOWValidation(true);
+
+    // Inbound-only peer connects
+    SimulatedNode inbound_peer(91, &net);
+    inbound_peer.ConnectTo(victim.GetId());
+
+    // Let handshake/messages settle
+    for (int i = 0; i < 20; ++i) net.AdvanceTime(net.GetCurrentTime() + 200);
+
+    // No outbound peers yet -> victim must NOT start header sync
+    auto gh_inbound = net.GetCommandPayloads(victim.GetId(), inbound_peer.GetId(), protocol::commands::GETHEADERS);
+    CHECK(gh_inbound.empty());
+
+    // Add a separate OUTBOUND peer for victim
+    SimulatedNode outbound_peer(92, &net);
+    victim.ConnectTo(outbound_peer.GetId());
+
+    // Wait for handshake + selection and observe GETHEADERS to the outbound peer
+    std::vector<std::vector<uint8_t>> gh_outbound;
+    for (int i = 0; i < 200 && gh_outbound.empty(); ++i) {
+        victim.GetNetworkManager().test_hook_check_initial_sync();
+        net.AdvanceTime(net.GetCurrentTime() + 200);
+        gh_outbound = net.GetCommandPayloads(victim.GetId(), outbound_peer.GetId(), protocol::commands::GETHEADERS);
+    }
+
+    // Ensure victim did not solicit inbound-only peer
+    gh_inbound = net.GetCommandPayloads(victim.GetId(), inbound_peer.GetId(), protocol::commands::GETHEADERS);
+    CHECK(gh_inbound.empty());
+
+    // Ensure victim did solicit the outbound peer
+    REQUIRE_FALSE(gh_outbound.empty());
+}
+
+TEST_CASE("HeaderSync - IBD inbound INV does not adopt sync peer (clean)", "[network_header_sync][policy]") {
+    SimulatedNetwork net(50020);
+    SetZeroLatency(net);
+    net.EnableCommandTracking(true);
+
+    // Victim at genesis (IBD)
+    SimulatedNode victim(92, &net);
+    victim.SetBypassPOWValidation(true);
+
+    // Inbound-only announcer connects to victim
+    SimulatedNode inbound_peer(93, &net);
+    inbound_peer.ConnectTo(victim.GetId());
+
+    // Let handshake complete
+    for (int i = 0; i < 20; ++i) net.AdvanceTime(net.GetCurrentTime() + 200);
+
+    // Announcer mines a few blocks and relays INV to victim
+    for (int i = 0; i < 5; ++i) { (void)inbound_peer.MineBlock(); net.AdvanceTime(net.GetCurrentTime() + 200); }
+
+    // During IBD, victim must NOT adopt inbound-only announcer as sync peer
+    // Verify no GETHEADERS sent to inbound-only peer
+    auto gh_inbound = net.GetCommandPayloads(victim.GetId(), inbound_peer.GetId(), protocol::commands::GETHEADERS);
+    CHECK(gh_inbound.empty());
+
+    // Now provide an OUTBOUND peer and let selection/sync occur
+    SimulatedNode outbound_peer(94, &net);
+    victim.ConnectTo(outbound_peer.GetId());
+
+    // Wait some time for handshake + selection + request
+    std::vector<std::vector<uint8_t>> gh_outbound;
+    for (int i = 0; i < 200 && gh_outbound.empty(); ++i) {
+        net.AdvanceTime(net.GetCurrentTime() + 200);
+        gh_outbound = net.GetCommandPayloads(victim.GetId(), outbound_peer.GetId(), protocol::commands::GETHEADERS);
+    }
+
+    // Assert: still no GETHEADERS to inbound-only announcer
+    gh_inbound = net.GetCommandPayloads(victim.GetId(), inbound_peer.GetId(), protocol::commands::GETHEADERS);
+    CHECK(gh_inbound.empty());
+
+    // Assert: GETHEADERS sent to the outbound peer
+    REQUIRE_FALSE(gh_outbound.empty());
+}
+
 
 TEST_CASE("NetworkManager HeaderSync - Ignore non-sync large headers during IBD (BTC parity)", "[network_header_sync][network]") {
     SimulatedNetwork net(50010);

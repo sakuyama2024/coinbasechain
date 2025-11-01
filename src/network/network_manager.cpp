@@ -74,9 +74,13 @@ NetworkManager::NetworkManager(
       [this](const protocol::NetworkAddress& addr) -> std::optional<std::string> {
         return network_address_to_string(addr);
       },
-      // Callback to connect to an address
-      [this](const protocol::NetworkAddress& addr) {
-        connect_to(addr);
+      // Callback to connect to an address (mark anchors as NoBan and whitelist in BanMan)
+      [this](const protocol::NetworkAddress& addr, bool noban) {
+        auto ip_opt = network_address_to_string(addr);
+        if (ip_opt && ban_man_) {
+          ban_man_->AddToWhitelist(*ip_opt);
+        }
+        connect_to_with_permissions(addr, noban ? NetPermissionFlags::NoBan : NetPermissionFlags::None);
       }
   );
 
@@ -283,6 +287,10 @@ void NetworkManager::stop() {
 }
 
 bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
+  return connect_to_with_permissions(addr, NetPermissionFlags::None);
+}
+
+bool NetworkManager::connect_to_with_permissions(const protocol::NetworkAddress &addr, NetPermissionFlags permissions) {
   LOG_NET_TRACE("connect_to() called");
 
   if (!running_.load(std::memory_order_acquire)) {
@@ -395,7 +403,7 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
   setup_peer_message_handler(peer.get());
 
   // Add to peer manager and get the assigned peer_id
-  int peer_id = peer_manager_->add_peer(std::move(peer));
+  int peer_id = peer_manager_->add_peer(std::move(peer), permissions);
   if (peer_id < 0) {
     LOG_NET_ERROR("Failed to add peer to peer manager");
     return false;
@@ -665,9 +673,10 @@ void NetworkManager::run_maintenance() {
     header_sync_manager_->ProcessTimers();
   }
 
-  // Sweep expired bans
+  // Sweep expired bans and discouraged entries
   if (ban_man_) {
     ban_man_->SweepBanned();
+    ban_man_->SweepDiscouraged();
   }
 
   // Periodically announce our tip to peers (Bitcoin Core pattern: queue only, SendMessages loop flushes)

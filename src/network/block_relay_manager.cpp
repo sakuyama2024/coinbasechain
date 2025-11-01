@@ -34,13 +34,17 @@ void BlockRelayManager::AnnounceTipToAllPeers() {
   LOG_NET_DEBUG("Adding tip to all peers' announcement queues (height={}, hash={})", tip->nHeight,
                 current_tip_hash.GetHex().substr(0, 16));
 
-  last_announced_tip_ = current_tip_hash;
 
 
   // Time now (mocked unix seconds)
   const int64_t now_s = util::GetTime();
   // Re-announce interval (10 minutes)
   static constexpr int64_t REANNOUNCE_INTERVAL_SEC = 10LL * 60; // 10 min
+  // TTL semantics: we only update last_announce_time_s_ when we enqueue.
+  // If the tip remains in the peer's queue, we do not refresh TTL here.
+  // With 1s flushing this is harmless; if flush cadence lengthens, we may
+  // re-enqueue after TTL even if a duplicate sat in-queue. This is acceptable
+  // and keeps logic simple.
 
   // Add to all ready peers' announcement queues with per-peer deduplication + TTL
   auto all_peers = peer_manager_.get_all_peers();
@@ -58,12 +62,16 @@ void BlockRelayManager::AnnounceTipToAllPeers() {
         within_ttl = have_time && (now_s - it_time->second < REANNOUNCE_INTERVAL_SEC);
       }
       if (same_tip && within_ttl) {
+        // TTL suppression: do not refresh last_announce_time_s_ unless we enqueue
+        // (suppression window stays fixed until a new enqueue occurs)
         continue;
       }
 
       // Thread-safe access to block announcement queue
       peer->with_block_inv_queue([&](auto& queue) {
         // Only add if not already in this peer's queue (per-peer deduplication)
+        // TTL refresh policy: we refresh last_announce_time_s_ ONLY when we enqueue;
+        // if already present, we leave timestamps unchanged to avoid extending TTL spuriously.
         if (std::find(queue.begin(), queue.end(), current_tip_hash) == queue.end()) {
           queue.push_back(current_tip_hash);
           // Record last announcement (hash + time)
@@ -98,13 +106,14 @@ void BlockRelayManager::AnnounceTipToPeer(Peer* peer) {
   const int64_t now_s = util::GetTime();
   static constexpr int64_t REANNOUNCE_INTERVAL_SEC = 10LL * 60;
 
-  // Add to peer's announcement queue (like Bitcoin's m_blocks_for_inv_relay)
+  // Add to peer's announcement queue 
   // Thread-safe access to block announcement queue
   peer->with_block_inv_queue([&](auto& queue) {
     // Only add if not already in this peer's queue (per-peer deduplication)
     const bool already_queued = (std::find(queue.begin(), queue.end(), current_tip_hash) != queue.end());
 
-    // For per-peer READY event, ignore TTL and ensure the current tip is queued once
+    // For per-peer READY event, ignore TTL and ensure the current tip is queued once.
+    // Note: If already queued, we do NOT refresh last_announce_time_s_ here; TTL refresh only on enqueue.
     if (!already_queued) {
       queue.push_back(current_tip_hash);
       std::lock_guard<std::mutex> guard(announce_mutex_);
@@ -140,18 +149,29 @@ void BlockRelayManager::FlushBlockAnnouncements() {
       continue;
     }
 
-    // Create and send INV message with pending blocks
-    auto inv_msg = std::make_unique<message::InvMessage>();
-    for (const auto& block_hash : blocks_to_announce) {
-      protocol::InventoryVector inv;
-      inv.type = protocol::InventoryType::MSG_BLOCK;
-      std::memcpy(inv.hash.data(), block_hash.data(), 32);
-      inv_msg->inventory.push_back(inv);
+    // Create and send INV message(s) with pending blocks
+    // Chunked to protocol::MAX_INV_SIZE to respect wire limits and avoid overlarge messages
+    // (parity with Bitcoin Core policy for INV caps).
+    const size_t total = blocks_to_announce.size();
+    const size_t chunk = protocol::MAX_INV_SIZE;
+    size_t sent_items = 0;
+    size_t chunk_idx = 0;
+    while (sent_items < total) {
+      size_t end = std::min(total, sent_items + chunk);
+      auto inv_msg = std::make_unique<message::InvMessage>();
+      inv_msg->inventory.reserve(end - sent_items);
+      for (size_t j = sent_items; j < end; ++j) {
+        protocol::InventoryVector inv;
+        inv.type = protocol::InventoryType::MSG_BLOCK;
+        std::memcpy(inv.hash.data(), blocks_to_announce[j].data(), 32);
+        inv_msg->inventory.push_back(inv);
+      }
+      ++chunk_idx;
+      LOG_NET_DEBUG("Flushing {} block announcement(s) to peer {} (chunk {}/{})",
+                    (end - sent_items), peer->id(), chunk_idx, (total + chunk - 1)/chunk);
+      peer->send_message(std::move(inv_msg));
+      sent_items = end;
     }
-
-    LOG_NET_DEBUG("Flushing {} block announcement(s) to peer {}",
-                  blocks_to_announce.size(), peer->id());
-    peer->send_message(std::move(inv_msg));
   }
 }
 
@@ -172,18 +192,21 @@ void BlockRelayManager::RelayBlock(const uint256 &block_hash) {
   const int64_t now_s = util::GetTime();
 
   // Send to all connected peers
+  // Policy: Age gating (MAX_BLOCK_RELAY_AGE) and IBD checks are enforced by the caller
+  // (Application's BlockConnected subscription) before invoking relay_block(). This function
+  // focuses on efficient delivery and deduplication vs queued announcements.
   auto all_peers = peer_manager_.get_all_peers();
-  int ready_count = 0;
-  int sent_count = 0;
   for (const auto &peer : all_peers) {
     if (peer && peer->is_connected()) {
       if (peer->state() == PeerState::READY) {
-        ready_count++;
+        // Drop any pending duplicate of this block from the peer's INV queue before immediate relay
+        peer->with_block_inv_queue([&](auto& queue) {
+          queue.erase(std::remove(queue.begin(), queue.end(), block_hash), queue.end());
+        });
         // Clone the message for each peer
         auto msg_copy = std::make_unique<message::InvMessage>();
         msg_copy->inventory = inv_msg->inventory;
         peer->send_message(std::move(msg_copy));
-        sent_count++;
         // Record last announcement (hash + time) so periodic reannounce TTL suppresses duplicates
         {
           std::lock_guard<std::mutex> guard(announce_mutex_);
@@ -236,11 +259,15 @@ bool BlockRelayManager::HandleInvMessage(PeerPtr peer,
               // Ignore INV-driven requests from non-sync peers during IBD
             }
           } else {
-            // No sync peer yet: adopt announcer as sync peer and request
-            LOG_NET_DEBUG("HandleInv: (IBD) adopting peer={} and requesting headers", peer->id());
-            header_sync_manager_->SetSyncPeer(peer->id());
-            peer->set_sync_started(true);
-            header_sync_manager_->RequestHeadersFromPeer(peer);
+            // No sync peer yet: adopt announcer as sync peer ONLY if outbound (Core parity)
+            if (!peer->is_inbound()) {
+              LOG_NET_DEBUG("HandleInv: (IBD) adopting OUTBOUND peer={} and requesting headers", peer->id());
+              header_sync_manager_->SetSyncPeer(peer->id());
+              peer->set_sync_started(true);
+              header_sync_manager_->RequestHeadersFromPeer(peer);
+            } else {
+              LOG_NET_TRACE("HandleInv: (IBD) ignoring inbound announcer for sync adoption (Core parity)");
+            }
           }
         } else {
           // Post-IBD: Always request headers from the announcing peer, regardless of sync peer

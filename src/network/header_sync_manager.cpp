@@ -10,6 +10,22 @@
 #include "util/time.hpp"
 #include <cstring>
 #include <chrono>
+#include <cmath>
+
+// File-scoped constants for HeaderSync behavior and time conversions
+namespace {
+  // Time conversion: microseconds per second. We store sync timestamps in microseconds.
+  static constexpr int64_t kMicrosPerSecond = 1'000'000;
+
+  // Headers sync stall timeout (microseconds). If no headers are received from the sync peer within
+  // this window, we disconnect it to allow reselection. Conservative for a headers-only chain; consider
+  // making this configurable if needed.
+  static constexpr int64_t kHeadersSyncTimeoutUs = 120 * kMicrosPerSecond; // 120 seconds
+
+  // During IBD we accept small unsolicited HEADERS announcements (e.g., INV-triggered) from any peer,
+  // but gate larger batches to the designated sync peer. This bounds wasted processing on multiple peers.
+  static constexpr size_t kMaxUnsolicitedAnnouncement = 2;
+}
 
 namespace coinbasechain {
 namespace network {
@@ -27,7 +43,7 @@ uint64_t HeaderSyncManager::GetSyncPeerId() const {
 }
 
 void HeaderSyncManager::SetSyncPeerUnlocked(uint64_t peer_id) {
-  int64_t now_us = util::GetTime() * 1000000;
+  int64_t now_us = util::GetTime() * kMicrosPerSecond;
   // Invariant: at most one sync peer at a time (enforced by HasSyncPeer() check)
   sync_state_.sync_peer_id = peer_id;
   sync_state_.sync_start_time_us = now_us;
@@ -83,14 +99,16 @@ void HeaderSyncManager::ProcessTimers() {
   if (sync_id == NO_SYNC_PEER) return;
 
   // Use mockable wall-clock time for determinism in tests
-  const int64_t now_us = util::GetTime() * 1000000;
+  const int64_t now_us = util::GetTime() * kMicrosPerSecond;
 
-  // Conservative timeout (2 minutes). Bitcoin uses a dynamic timeout; we keep it simple.
-  static constexpr int64_t HEADERS_SYNC_TIMEOUT_US = 120 * 1000 * 1000; // 120s
 
-  if (last_us > 0 && (now_us - last_us) > HEADERS_SYNC_TIMEOUT_US) {
+  // Stall handling: if our designated sync peer hasn't delivered HEADERS within the timeout,
+  // disconnect it and allow reselection. This avoids getting stuck forever on a slow or unresponsive
+  // peer. We don’t trigger reselection inline; the normal SendMessages/maintenance loop handles it,
+  // keeping control flow simple and testable.
+  if (last_us > 0 && (now_us - last_us) > kHeadersSyncTimeoutUs) {
     LOG_NET_INFO("Headers sync stalled for {:.1f}s with peer {}, disconnecting",
-                 (now_us - last_us) / 1e6, sync_id);
+                static_cast<double>(now_us - last_us) / static_cast<double>(kMicrosPerSecond), sync_id);
     // Ask PeerManager to drop the peer. This triggers OnPeerDisconnected() via callback
     peer_manager_.remove_peer(static_cast<int>(sync_id));
     // Do NOT call CheckInitialSync() here; SendMessages/maintenance cadence will do reselection.
@@ -105,18 +123,13 @@ void HeaderSyncManager::CheckInitialSync() {
     return;
   }
 
-  const bool in_ibd = chainstate_manager_.IsInitialBlockDownload();
-  (void)in_ibd; // informational; selection is allowed even post-IBD if no sync peer
-
   // Protect peer selection with mutex to prevent races
   std::lock_guard<std::mutex> lock(sync_mutex_);
   if (sync_state_.sync_peer_id != NO_SYNC_PEER) {
     return;
   }
 
-  // Try outbound peers first (preferred for initial sync)
-  // Note: Bitcoin Core only sets fSyncStarted for outbound peers to reduce eclipse attack surface.
-  // We also allow inbound fallback for simpler deployment, but this is less secure.
+  // Outbound-only sync peer selection (Bitcoin Core parity)
   auto outbound_peers = peer_manager_.get_outbound_peers();
   for (const auto &peer : outbound_peers) {
     if (!peer) continue;
@@ -134,22 +147,6 @@ void HeaderSyncManager::CheckInitialSync() {
     return; // Only one sync peer
   }
 
-  // Fallback: inbound peers (diverges from Bitcoin Core for operational flexibility)
-  // TODO: Consider making this configurable or removing for production hardening
-  auto inbound_peers = peer_manager_.get_inbound_peers();
-  for (const auto &peer : inbound_peers) {
-    if (!peer) continue;
-    if (peer->sync_started()) continue;
-
-    int current_height = chainstate_manager_.GetChainHeight();
-    LOG_NET_DEBUG("initial getheaders ({}) peer={}", current_height, peer->id());
-
-    SetSyncPeerUnlocked(peer->id());
-    peer->set_sync_started(true);
-
-    RequestHeadersFromPeer(peer);
-    return; // Only one sync peer
-  }
 }
 
 void HeaderSyncManager::RequestHeadersFromPeer(PeerPtr peer) {
@@ -197,9 +194,9 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   // multiple peers.
   // Gate large batches to the designated sync peer ONLY during IBD (Bitcoin Core behavior).
   if (chainstate_manager_.IsInitialBlockDownload()) {
-    constexpr size_t MAX_UNSOLICITED_ANNOUNCEMENT = 2; // accept small announcements
+    // Accept small unsolicited announcements (see kMaxUnsolicitedAnnouncement at top of file)
     uint64_t sync_id = GetSyncPeerId();
-    if (!headers.empty() && headers.size() > MAX_UNSOLICITED_ANNOUNCEMENT &&
+    if (!headers.empty() && headers.size() > kMaxUnsolicitedAnnouncement &&
         (sync_id == NO_SYNC_PEER || static_cast<uint64_t>(peer_id) != sync_id)) {
       LOG_NET_TRACE(
           "Ignoring unsolicited large headers batch from non-sync peer during IBD: peer={} size={}",
@@ -209,13 +206,12 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
     }
   }
 
-  // Bitcoin Core approach: If the last header in this batch is already in our chain
-  // and is an ancestor of our best header or tip, skip all DoS checks for this entire batch.
-  // This prevents false positives when reconnecting to peers after manual InvalidateBlock.
-  //
-  // Fixed implementation: Check that header is on active chain (not just any side chain).
-  // This prevents DoS where attacker creates low-work side chain forks and forces
-  // expensive RandomX validation by claiming headers build on validated side-chain headers.
+  // Heuristic: if the batch's LAST header is already on our ACTIVE chain,
+  // we treat the batch as extending known-valid work and SKIP anti-DoS checks
+  // (e.g., low-work gating) for this batch. This avoids penalizing peers after
+  // local invalidations/reorgs.
+  // Important: Only the ACTIVE chain qualifies (not side chains), so attackers
+  // cannot piggyback on validated-but-inactive forks to bypass the checks.
   bool skip_dos_checks = false;
   if (!headers.empty()) {
     const chain::CBlockIndex* last_header_index =
@@ -233,13 +229,13 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   // Update last headers received timestamp
   {
     std::lock_guard<std::mutex> lock(sync_mutex_);
-    sync_state_.last_headers_received_us = util::GetTime() * 1000000;
+    sync_state_.last_headers_received_us = util::GetTime() * kMicrosPerSecond;
   }
 
-  // Process headers (logic moved from HeaderSync::ProcessHeaders)
+  // Empty reply: peer has no more headers to offer from our locator.
+  // Clear current sync peer so the next CheckInitialSync() can choose another peer
+  // (or do nothing if we're already up-to-date). No penalty for empty replies.
   if (headers.empty()) {
-    // Bitcoin Core: "Nothing interesting. Stop asking this peer for more headers."
-    // Clear current sync peer and allow reselection on next CheckInitialSync() call.
     LOG_NET_DEBUG("received headers (0) peer={}", peer_id);
     ClearSyncPeer();
     return true;
@@ -309,7 +305,6 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   }
 
   // DoS Protection: Check for low-work headers (Bitcoin Core approach)
-  // Bitcoin Core: net_processing.cpp lines 2993-2999
   // Only run anti-DoS check if we haven't already validated this work
   if (!skip_dos_checks) {
     const chain::CBlockIndex* chain_start = chainstate_manager_.LookupBlockIndex(headers[0].hashPrevBlock);

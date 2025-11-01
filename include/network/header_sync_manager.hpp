@@ -1,5 +1,27 @@
 #pragma once
 
+/*
+ * HeaderSyncManager — headers-only synchronization coordinator
+ *
+ * Functionality:
+ * - Headers-only network: HEADERS payloads contain only fixed-size 100-byte headers
+ *   (no per-header txcount like Bitcoin Core). GETHEADERS/HEADERS is the only sync path.
+ * - Single sync peer at a time; selection is outbound-only (Core parity). Initial request
+ *   uses a “pprev-of-tip” locator to guarantee a non-empty response when tips match.
+ * - During IBD, accept large batches only from the designated sync peer; allow small
+ *   unsolicited announcements (≤2 headers) from any peer. Post-IBD, unsolicited gating is
+ *   relaxed but batch processing remains identical.
+ * - Low-work gating: uses CalculateHeadersWork() + GetAntiDoSWorkThreshold(). The threshold
+ *   is effectively disabled during IBD (0) to permit bootstrap. If a full-sized batch has
+ *   insufficient work, we request more rather than penalize immediately (no Core-style
+ *   HeadersSyncState; simplified behavior).
+ * - DoS-check skip heuristic: if the batch’s last header is already on the ACTIVE chain, we
+ *   skip low-work checks for that batch to avoid false positives after local invalidations.
+ *   Side chains do NOT qualify (safer than historic Core heuristics).
+ * - Stall detection: a fixed 120s timeout disconnects an unresponsive sync peer; reselection
+ *   occurs via the regular SendMessages/maintenance cadence (simpler than Core’s dynamic timers).
+ */
+
 #include "chain/block.hpp"
 #include "network/peer.hpp"
 #include "network/message.hpp"

@@ -118,7 +118,7 @@ TEST_CASE("NetworkSync - SyncFromMultiplePeers", "[networksync][network]") {
 TEST_CASE("NetworkSync - CatchUpAfterMining", "[networksync][network]") {
     SimulatedNetwork network(24003); SetZeroLatency(network);
     SimulatedNode node1(1,&network); SimulatedNode node2(2,&network);
-    node1.ConnectTo(2); uint64_t t=100; network.AdvanceTime(t);
+    node2.ConnectTo(1); uint64_t t=100; network.AdvanceTime(t);
     for(int i=0;i<20;i++){ (void)node1.MineBlock(); t+=100; network.AdvanceTime(t);} 
     CHECK(node2.GetTipHeight()==20);
 }

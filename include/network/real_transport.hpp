@@ -6,6 +6,8 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <thread>
+#include <vector>
 
 namespace coinbasechain {
 namespace network {
@@ -120,6 +122,7 @@ private:
       work_guard_;
   std::vector<std::thread> io_threads_;
   std::atomic<bool> running_{false};
+  size_t desired_io_threads_{4};
 
   // Acceptor for inbound connections
   std::unique_ptr<boost::asio::ip::tcp::acceptor> acceptor_;
@@ -128,5 +131,4 @@ private:
 
 } // namespace network
 } // namespace coinbasechain
-
 

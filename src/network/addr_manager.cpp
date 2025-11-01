@@ -1,21 +1,45 @@
 #include "network/addr_manager.hpp"
 #include "util/logging.hpp"
+#include "util/time.hpp"
+#include "util/sha256.hpp"
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
 #include <nlohmann/json.hpp>
 #include <sstream>
+#include <filesystem>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace coinbasechain {
 namespace network {
 
 // Constants
+// An address in the NEW table is considered "stale" if we haven't heard about it for this many days.
+// Stale NEW entries are removed by cleanup_stale(); TRIED entries are retained even if old (they worked before).
 static constexpr uint32_t STALE_AFTER_DAYS = 30;
+
+// After this many consecutive failed connection attempts:
+// - NEW: entry is considered "terrible" and may be removed
+// - TRIED: entry is demoted back to NEW; further failures there may remove it
 static constexpr uint32_t MAX_FAILURES = 10;
-static constexpr uint32_t SECONDS_PER_DAY = 86400;
+
+static constexpr uint32_t SECONDS_PER_DAY = 86400; // Seconds in one day (utility for time math)
+// Selection tuning constants:
+// - SELECT_MAX_CHECKS: number of random probes into a table (TRIED/NEW) to find an eligible
+//   address before falling back; prevents O(N) scans in large tables.
+static constexpr size_t SELECT_MAX_CHECKS = 64;
+// - SELECT_TRIED_BIAS_PERCENT: initial probability (0..100) to draw from TRIED vs NEW,
+//   preferring known-good peers while still exploring NEW.
+static constexpr int SELECT_TRIED_BIAS_PERCENT = 80;
+// - SELECT_COOLDOWN_SEC: minimum time since last_try before an address is eligible; avoids
+//   tight re-dial loops to the same peer.
+static constexpr uint32_t SELECT_COOLDOWN_SEC = 600;      // 10 minutes
+// - SELECT_ATTEMPT_BYPASS: after this many attempts, allow selection even if still in cooldown,
+//   so flakier addresses are not starved forever.
+static constexpr int SELECT_ATTEMPT_BYPASS = 30;
 
 // AddrInfo implementation
-
 std::string AddrInfo::get_key() const {
   std::stringstream ss;
 
@@ -30,6 +54,7 @@ std::string AddrInfo::get_key() const {
 }
 
 bool AddrInfo::is_stale(uint32_t now) const {
+  if (timestamp == 0 || timestamp > now) return false; // avoid underflow and treat future/zero as not stale
   return (now - timestamp) > (STALE_AFTER_DAYS * SECONDS_PER_DAY);
 }
 
@@ -52,8 +77,7 @@ bool AddrInfo::is_terrible(uint32_t now) const {
 AddressManager::AddressManager() : rng_(std::random_device{}()) {}
 
 uint32_t AddressManager::now() const {
-  return static_cast<uint32_t>(
-      std::chrono::system_clock::now().time_since_epoch().count() / 1000000000);
+  return static_cast<uint32_t>(util::GetTime());
 }
 
 bool AddressManager::add(const protocol::NetworkAddress &addr,
@@ -64,29 +88,40 @@ bool AddressManager::add(const protocol::NetworkAddress &addr,
 
 bool AddressManager::add_internal(const protocol::NetworkAddress &addr,
                                   uint32_t timestamp) {
-  AddrInfo info(addr, timestamp == 0 ? now() : timestamp);
+  // Minimal validation: non-zero port and non-zero IP
+  if (addr.port == 0) return false;
+  bool all_zero = true; for (auto b : addr.ip) { if (b != 0) { all_zero = false; break; } }
+  if (all_zero) return false;
+
+  const uint32_t now_s = now();
+  // Clamp future or absurdly old timestamps to now
+  const uint32_t TEN_YEARS = 10u * 365u * 24u * 60u * 60u;
+  uint32_t eff_ts = (timestamp == 0 ? now_s : timestamp);
+  if (eff_ts > now_s || now_s - eff_ts > TEN_YEARS) eff_ts = now_s;
+
+  AddrInfo info(addr, eff_ts);
   std::string key = info.get_key();
 
   // Check if already in tried table
-  if (tried_.find(key) != tried_.end()) {
+  if (auto it = tried_.find(key); it != tried_.end()) {
     // Update timestamp if newer
-    if (timestamp > tried_[key].timestamp) {
-      tried_[key].timestamp = timestamp;
+    if (eff_ts > it->second.timestamp) {
+      it->second.timestamp = eff_ts;
     }
     return false; // Already have it
   }
 
   // Check if already in new table
-  if (new_.find(key) != new_.end()) {
+  if (auto it = new_.find(key); it != new_.end()) {
     // Update timestamp if newer
-    if (timestamp > new_[key].timestamp) {
-      new_[key].timestamp = timestamp;
+    if (eff_ts > it->second.timestamp) {
+      it->second.timestamp = eff_ts;
     }
     return false; // Already have it
   }
 
   // Filter out terrible addresses
-  if (info.is_terrible(now())) {
+  if (info.is_terrible(now_s)) {
     return false;
   }
 
@@ -112,14 +147,20 @@ size_t AddressManager::add_multiple(
 void AddressManager::attempt(const protocol::NetworkAddress &addr) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  AddrInfo info(addr);
-  std::string key = info.get_key();
+  AddrInfo probe(addr);
+  std::string key = probe.get_key();
+  uint32_t t = now();
 
   // Update in new table
-  auto it = new_.find(key);
-  if (it != new_.end()) {
-    it->second.last_try = now();
+  if (auto it = new_.find(key); it != new_.end()) {
+    it->second.last_try = t;
     it->second.attempts++;
+    return;
+  }
+
+  // Update cooldown marker for tried entries as well
+  if (auto it = tried_.find(key); it != tried_.end()) {
+    it->second.last_try = t;
   }
 }
 
@@ -195,24 +236,22 @@ void AddressManager::failed(const protocol::NetworkAddress &addr) {
 std::optional<protocol::NetworkAddress> AddressManager::select() {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  // Prefer tried addresses (80% of the time)
+  // Prefer tried addresses (SELECT_TRIED_BIAS_PERCENT% of the time)
   std::uniform_int_distribution<int> dist(0, 99);
-  bool use_tried = !tried_.empty() && (dist(rng_) < 80 || new_.empty());
+  bool use_tried = !tried_.empty() && (dist(rng_) < SELECT_TRIED_BIAS_PERCENT || new_.empty());
 
   const uint32_t now_ts = now();
-  const uint32_t COOLDOWN_SEC = 600; // 10 minutes
-  const int ATTEMPT_BYPASS = 30;     // After 30 attempts, allow sooner retries
 
   auto ok = [&](const AddrInfo& info) -> bool {
     if (info.last_try == 0) return true;
-    if (now_ts - info.last_try >= COOLDOWN_SEC) return true;
-    if (info.attempts >= ATTEMPT_BYPASS) return true;
+    if (now_ts - info.last_try >= SELECT_COOLDOWN_SEC) return true;
+    if (info.attempts >= SELECT_ATTEMPT_BYPASS) return true;
     return false;
   };
 
   if (use_tried && !tried_.empty()) {
     std::uniform_int_distribution<size_t> idx_dist(0, tried_.size() - 1);
-    const size_t max_checks = std::min<size_t>(tried_.size(), 64);
+    const size_t max_checks = std::min<size_t>(tried_.size(), SELECT_MAX_CHECKS);
     for (size_t i = 0; i < max_checks; ++i) {
       auto it = tried_.begin();
       std::advance(it, idx_dist(rng_));
@@ -220,6 +259,23 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
         return it->second.address;
       }
     }
+    // None in tried passed cooldown; try NEW table instead before falling back
+    if (!new_.empty()) {
+      std::uniform_int_distribution<size_t> n_idx(0, new_.size() - 1);
+      const size_t n_checks = std::min<size_t>(new_.size(), SELECT_MAX_CHECKS);
+      for (size_t i = 0; i < n_checks; ++i) {
+        auto itn = new_.begin();
+        std::advance(itn, n_idx(rng_));
+        if (ok(itn->second)) {
+          return itn->second.address;
+        }
+      }
+      // Fallback to any NEW if all failed ok()
+      auto itn = new_.begin();
+      std::advance(itn, n_idx(rng_));
+      return itn->second.address;
+    }
+    // As last resort, pick any tried (even if under cooldown)
     auto it = tried_.begin();
     std::advance(it, idx_dist(rng_));
     return it->second.address;
@@ -227,7 +283,7 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
 
   if (!new_.empty()) {
     std::uniform_int_distribution<size_t> idx_dist(0, new_.size() - 1);
-    const size_t max_checks = std::min<size_t>(new_.size(), 64);
+    const size_t max_checks = std::min<size_t>(new_.size(), SELECT_MAX_CHECKS);
     for (size_t i = 0; i < max_checks; ++i) {
       auto it = new_.begin();
       std::advance(it, idx_dist(rng_));
@@ -235,6 +291,23 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
         return it->second.address;
       }
     }
+    // Try TRIED as alternative if NEW had none eligible
+    if (!tried_.empty()) {
+      std::uniform_int_distribution<size_t> t_idx(0, tried_.size() - 1);
+      const size_t t_checks = std::min<size_t>(tried_.size(), SELECT_MAX_CHECKS);
+      for (size_t i = 0; i < t_checks; ++i) {
+        auto itt = tried_.begin();
+        std::advance(itt, t_idx(rng_));
+        if (ok(itt->second)) {
+          return itt->second.address;
+        }
+      }
+      // Fallback to any TRIED if all failed ok()
+      auto itt = tried_.begin();
+      std::advance(itt, t_idx(rng_));
+      return itt->second.address;
+    }
+    // Finally fallback to any NEW
     auto it = new_.begin();
     std::advance(it, idx_dist(rng_));
     return it->second.address;
@@ -267,17 +340,25 @@ AddressManager::get_addresses(size_t max_count) {
   std::vector<protocol::TimestampedAddress> result;
   result.reserve(std::min(max_count, tried_.size() + new_.size()));
 
-  // Add tried addresses first
+  const uint32_t now_s = now();
+
+  // Add tried addresses first (filter invalid/terrible defensively)
   for (const auto &[key, info] : tried_) {
-    if (result.size() >= max_count)
-      break;
+    if (result.size() >= max_count) break;
+    if (info.address.port == 0) continue;
+    bool all_zero = true; for (auto b : info.address.ip) { if (b != 0) { all_zero = false; break; } }
+    if (all_zero) continue;
+    if (info.is_terrible(now_s)) continue;
     result.push_back({info.timestamp, info.address});
   }
 
-  // Add new addresses
+  // Add new addresses (skip invalid/terrible)
   for (const auto &[key, info] : new_) {
-    if (result.size() >= max_count)
-      break;
+    if (result.size() >= max_count) break;
+    if (info.address.port == 0) continue;
+    bool all_zero = true; for (auto b : info.address.ip) { if (b != 0) { all_zero = false; break; } }
+    if (all_zero) continue;
+    if (info.is_terrible(now_s)) continue;
     result.push_back({info.timestamp, info.address});
   }
 
@@ -370,15 +451,74 @@ bool AddressManager::Save(const std::string &filepath) {
     }
     root["new"] = new_array;
 
-    // Write to file
-    std::ofstream file(filepath);
-    if (!file.is_open()) {
-      LOG_NET_ERROR("Failed to open file for writing: {}", filepath);
+    // Optional integrity checksum over tried+new arrays
+    try {
+      std::string payload = tried_array.dump() + new_array.dump();
+      unsigned char hash[CSHA256::OUTPUT_SIZE];
+      CSHA256().Write(reinterpret_cast<const unsigned char*>(payload.data()), payload.size()).Finalize(hash);
+      nlohmann::json checksum_arr = nlohmann::json::array();
+      for (size_t i = 0; i < CSHA256::OUTPUT_SIZE; ++i) checksum_arr.push_back(hash[i]);
+      root["checksum"] = checksum_arr;
+    } catch (...) {
+      // If checksum calculation fails, proceed without it
+    }
+
+    // Atomic write: write to temp then rename (with fsync for durability)
+    const std::string tmp = filepath + ".tmp";
+    std::string data = root.dump(2);
+
+    int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+      LOG_NET_ERROR("Failed to open temp peers file for writing: {}", tmp);
       return false;
     }
 
-    file << root.dump(2);
-    file.close();
+    size_t total = 0;
+    while (total < data.size()) {
+      ssize_t n = ::write(fd, data.data() + total, data.size() - total);
+      if (n <= 0) {
+        LOG_NET_ERROR("Failed to write temp peers file: {}", tmp);
+        ::close(fd);
+        std::error_code ec_remove;
+        std::filesystem::remove(tmp, ec_remove);
+        if (ec_remove) {
+          LOG_NET_ERROR("Failed to remove temp peers file {}: {}", tmp, ec_remove.message());
+        }
+        return false;
+      }
+      total += static_cast<size_t>(n);
+    }
+
+    if (::fsync(fd) != 0) {
+      LOG_NET_ERROR("fsync failed for temp peers file: {}", tmp);
+      ::close(fd);
+      std::error_code ec_remove;
+      std::filesystem::remove(tmp, ec_remove);
+      if (ec_remove) {
+        LOG_NET_ERROR("Failed to remove temp peers file {} after fsync failure: {}", tmp, ec_remove.message());
+      }
+      return false;
+    }
+
+    ::close(fd);
+
+    std::error_code ec;
+    std::filesystem::rename(tmp, filepath, ec);
+    if (ec) {
+      // Try replace by removing destination first
+      std::filesystem::remove(filepath, ec);
+      std::filesystem::rename(tmp, filepath, ec);
+      if (ec) {
+        LOG_NET_ERROR("Failed to atomically replace peers file: {} -> {}: {}", tmp, filepath, ec.message());
+        // Cleanup temp best-effort
+        std::error_code ec_remove;
+        std::filesystem::remove(tmp, ec_remove);
+        if (ec_remove) {
+          LOG_NET_ERROR("Failed to remove temp peers file {} after rename failure: {}", tmp, ec_remove.message());
+        }
+        return false;
+      }
+    }
 
     LOG_NET_TRACE("successfully saved {} addresses ({} tried, {} new)",
                   total_size, tried_.size(), new_.size());
@@ -416,6 +556,36 @@ bool AddressManager::Load(const std::string &filepath) {
     if (version != 1) {
       LOG_NET_ERROR("Unsupported peers file version: {}", version);
       return false;
+    }
+
+    // Verify optional checksum
+    bool checksum_ok = true;
+    if (root.contains("checksum") && root["checksum"].is_array()) {
+      try {
+        std::string payload = (root.contains("tried") ? root["tried"].dump() : std::string()) +
+                              (root.contains("new") ? root["new"].dump() : std::string());
+        unsigned char hash[CSHA256::OUTPUT_SIZE];
+        CSHA256().Write(reinterpret_cast<const unsigned char*>(payload.data()), payload.size()).Finalize(hash);
+        const auto& arr = root["checksum"];
+        if (arr.size() != CSHA256::OUTPUT_SIZE) {
+          checksum_ok = false;
+        } else {
+          for (size_t i = 0; i < CSHA256::OUTPUT_SIZE; ++i) {
+            uint32_t v = arr[i].get<uint32_t>();
+            if (v > 255 || static_cast<unsigned char>(v) != hash[i]) { checksum_ok = false; break; }
+          }
+        }
+      } catch (...) {
+        checksum_ok = false;
+      }
+      if (!checksum_ok) {
+        LOG_NET_ERROR("Peer address file checksum mismatch; refusing to load {}");
+        tried_.clear();
+        new_.clear();
+        return false;
+      }
+    } else {
+      LOG_NET_DEBUG("Peers file has no checksum (accepting for backwards compatibility)");
     }
 
     // Clear existing data

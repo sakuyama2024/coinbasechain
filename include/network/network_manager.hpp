@@ -204,6 +204,7 @@ private:
 
   std::optional<std::string> network_address_to_string(const protocol::NetworkAddress& addr);
   bool already_connected_to_address(const std::string& address, uint16_t port);
+  bool connect_to_with_permissions(const protocol::NetworkAddress &addr, NetPermissionFlags permissions);
 
   // Inbound connections (handled via transport callback)
   void handle_inbound_connection(TransportConnectionPtr connection);

@@ -89,6 +89,8 @@ bool Application::initialize() {
           // Bitcoin Core: Only relay blocks received recently (< 10 seconds)
           // This prevents relaying old blocks during reorgs - peers already know them
           // Blocks from disk or reorgs have nTimeReceived=0 or old timestamp
+          // Note: Periodic tip re-announcements are handled by BlockRelayManager without age gating
+          // (intentional) to help heal partitions; peers dedup via per-peer queues and TTL.
           int64_t now = util::GetTime();
           int64_t block_age = now - pindex->nTimeReceived;
 
