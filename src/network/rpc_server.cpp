@@ -27,7 +27,6 @@
 #include "chain/miner.hpp"
 #include "util/time.hpp"
 #include "util/uint.hpp"
-#include "network/banman.hpp"
 #include "network/network_manager.hpp"
 #include "network/peer_manager.hpp"
 #include <sstream>

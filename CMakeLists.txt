@@ -232,7 +232,6 @@ add_library(network STATIC
     src/network/real_transport.cpp
     # src/network/simulated_transport.cpp  # Not implemented yet
     src/network/nat_manager.cpp
-    src/network/banman.cpp
     src/network/notifications.cpp
     # RPC
     src/network/rpc_server.cpp

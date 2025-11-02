@@ -15,7 +15,6 @@
 #include "chain/validation.hpp"
 #include "network/addr_manager.hpp"
 #include "network/anchor_manager.hpp"
-#include "network/banman.hpp"
 #include "network/block_relay_manager.hpp"
 #include "network/connection_types.hpp"
 #include "network/header_sync_manager.hpp"

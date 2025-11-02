@@ -1,6 +1,5 @@
 // BanMan discouraged size cap tests
 #include "catch_amalgamated.hpp"
-#include "network/banman.hpp"
 #include <string>
 
 using namespace coinbasechain::network;

@@ -8,7 +8,6 @@
 #include "catch_amalgamated.hpp"
 #include "infra/simulated_network.hpp"
 #include "infra/simulated_node.hpp"
-#include "network/banman.hpp"
 
 namespace coinbasechain {
 namespace test {

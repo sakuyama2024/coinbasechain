@@ -1,7 +1,6 @@
 #include "network/header_sync_manager.hpp"
 #include "network/peer_manager.hpp"
 #include "network/peer.hpp"
-#include "network/banman.hpp"
 #include "network/protocol.hpp"
 #include "chain/chainstate_manager.hpp"
 #include "chain/validation.hpp"

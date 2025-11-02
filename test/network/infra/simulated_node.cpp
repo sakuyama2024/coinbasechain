@@ -11,7 +11,6 @@
 #include "chain/randomx_pow.hpp"
 #include "util/sha256.hpp"
 #include "chain/validation.hpp"
-#include "network/banman.hpp"
 
 namespace coinbasechain {
 namespace test {

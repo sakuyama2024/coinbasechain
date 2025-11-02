@@ -1,6 +1,5 @@
 // BanMan whitelist (NoBan) tests
 #include "catch_amalgamated.hpp"
-#include "network/banman.hpp"
 #include <filesystem>
 #include <thread>
 

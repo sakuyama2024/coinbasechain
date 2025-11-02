@@ -1,7 +1,6 @@
 // BanMan adversarial tests (ported to test2)
 
 #include "catch_amalgamated.hpp"
-#include "network/banman.hpp"
 
 using namespace coinbasechain::network;
 

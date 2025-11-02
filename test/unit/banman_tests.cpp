@@ -3,7 +3,6 @@
 // Focuses on persistence, expiration, and core operations
 
 #include "catch_amalgamated.hpp"
-#include "network/banman.hpp"
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
