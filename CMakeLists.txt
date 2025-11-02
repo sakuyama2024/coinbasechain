@@ -155,7 +155,6 @@ add_library(util STATIC
     src/util/threadpool.cpp
     # Time
     src/util/time.cpp
-    src/util/timedata.cpp
     # Crypto primitives
     src/util/sha256.cpp
     src/util/uint.cpp
@@ -193,6 +192,8 @@ add_library(chain STATIC
     src/chain/validation.cpp
     src/chain/chainstate_manager.cpp
     src/chain/chain_selector.cpp
+    # Time (consensus-related network time adjustment)
+    src/chain/timedata.cpp
     # Mining
     src/chain/miner.cpp
 )

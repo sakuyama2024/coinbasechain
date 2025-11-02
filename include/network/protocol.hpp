@@ -162,6 +162,10 @@ struct NetworkAddress {
 
   // Check if this is IPv4-mapped
   bool is_ipv4() const;
+
+  // Comparison operators (needed for std::set in timedata)
+  bool operator<(const NetworkAddress& other) const;
+  bool operator==(const NetworkAddress& other) const;
 };
 
 // Timestamped network address (34 bytes)

@@ -1,7 +1,7 @@
 #include "network/peer.hpp"
 #include "util/logging.hpp"
 #include "util/time.hpp"
-#include "util/timedata.hpp"
+#include "chain/timedata.hpp"
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/address_v6.hpp>
 #include <random>
@@ -320,7 +320,11 @@ void Peer::handle_version(const message::VersionMessage &msg) {
   // is wrong
   int64_t now = util::GetTime();
   int64_t time_offset = msg.timestamp - now;
-  util::AddTimeData(address(), time_offset);
+
+  // Construct NetworkAddress for timedata tracking (Bitcoin Core: uses CNetAddr)
+  protocol::NetworkAddress net_addr = protocol::NetworkAddress::from_string(
+      address(), port(), protocol::NODE_NETWORK);
+  chain::AddTimeData(net_addr, time_offset);
 
   // If we're inbound, send our VERSION first (BEFORE VERACK)
   // This is critical: peer must receive VERSION before VERACK to avoid protocol

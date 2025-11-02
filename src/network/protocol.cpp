@@ -110,6 +110,22 @@ bool NetworkAddress::is_ipv4() const {
          ip[10] == 0xff && ip[11] == 0xff;
 }
 
+bool NetworkAddress::operator<(const NetworkAddress& other) const {
+  // Lexicographic comparison for std::set
+  // Compare IP first, then port, then services
+  if (ip != other.ip) {
+    return ip < other.ip;
+  }
+  if (port != other.port) {
+    return port < other.port;
+  }
+  return services < other.services;
+}
+
+bool NetworkAddress::operator==(const NetworkAddress& other) const {
+  return ip == other.ip && port == other.port && services == other.services;
+}
+
 // TimestampedAddress implementation
 TimestampedAddress::TimestampedAddress() : timestamp(0) {}
 

@@ -10,7 +10,7 @@
 #include "util/logging.hpp"
 #include "chain/pow.hpp"
 #include "chain/randomx_pow.hpp"
-#include "util/timedata.hpp"
+#include "chain/timedata.hpp"
 #include "util/uint.hpp"
 
 namespace coinbasechain {
@@ -111,8 +111,8 @@ int64_t GetAdjustedTime() {
   // 3. Cap adjustment to ±70 minutes (DEFAULT_MAX_TIME_ADJUSTMENT)
   // 4. Warn user if local clock differs significantly from network
   //
-  // See util/timedata.cpp for full implementation (based on Bitcoin Core)
-  return static_cast<int64_t>(std::time(nullptr)) + util::GetTimeOffset();
+  // See chain/timedata.cpp for full implementation (based on Bitcoin Core)
+  return static_cast<int64_t>(std::time(nullptr)) + chain::GetTimeOffset();
 }
 
 // ============================================================================

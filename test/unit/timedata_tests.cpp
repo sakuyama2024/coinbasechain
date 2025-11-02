@@ -2,17 +2,22 @@
 // Distributed under the MIT software license
 // Unit tests for network-adjusted time (timedata)
 
-#include "util/timedata.hpp"
+#include "chain/timedata.hpp"
+#include "network/protocol.hpp"
 #include "util/time.hpp"
 #include "catch_amalgamated.hpp"
 #include <ctime>
 
-using namespace coinbasechain::util;
+using namespace coinbasechain::chain;
+using namespace coinbasechain::protocol;
 
 // Helper to add N peers with given offsets
 static void AddPeers(const std::vector<int64_t>& offsets) {
     for (size_t i = 0; i < offsets.size(); i++) {
-        AddTimeData("peer_" + std::to_string(i), offsets[i]);
+        // Create unique NetworkAddress for each peer (use different IPs)
+        NetworkAddress addr = NetworkAddress::from_string(
+            "192.168.1." + std::to_string(i), 8333, NODE_NETWORK);
+        AddTimeData(addr, offsets[i]);
     }
 }
 
@@ -41,7 +46,8 @@ TEST_CASE("TimeData - 5 peers = 6 total (even), no update from previous", "[time
     REQUIRE(GetTimeOffset() == 12);  // Confirm we have offset
 
     // Now add 5th peer: [0, 10, 20, 15, 12, 18] = 6 elements (even) -> no update
-    AddTimeData("peer_extra", 18);
+    NetworkAddress addr_extra = NetworkAddress::from_string("192.168.1.100", 8333, NODE_NETWORK);
+    AddTimeData(addr_extra, 18);
 
     REQUIRE(GetTimeOffset() == 12);  // Still 12, no update on even count
 }
@@ -135,12 +141,17 @@ TEST_CASE("TimeData - Duplicate peer addresses ignored", "[timedata]") {
     TestOnlyResetTimeData();
 
     // Same peer tries to submit multiple times
-    AddTimeData("192.168.1.1", 10);
-    AddTimeData("192.168.1.1", 50);  // Ignored (duplicate)
-    AddTimeData("192.168.1.1", 100); // Ignored (duplicate)
-    AddTimeData("192.168.1.2", 20);
-    AddTimeData("192.168.1.3", 15);
-    AddTimeData("192.168.1.4", 12);
+    NetworkAddress addr1 = NetworkAddress::from_string("192.168.1.1", 8333, NODE_NETWORK);
+    NetworkAddress addr2 = NetworkAddress::from_string("192.168.1.2", 8333, NODE_NETWORK);
+    NetworkAddress addr3 = NetworkAddress::from_string("192.168.1.3", 8333, NODE_NETWORK);
+    NetworkAddress addr4 = NetworkAddress::from_string("192.168.1.4", 8333, NODE_NETWORK);
+
+    AddTimeData(addr1, 10);
+    AddTimeData(addr1, 50);  // Ignored (duplicate)
+    AddTimeData(addr1, 100); // Ignored (duplicate)
+    AddTimeData(addr2, 20);
+    AddTimeData(addr3, 15);
+    AddTimeData(addr4, 12);
 
     // Only first sample from 192.168.1.1 (offset=10) counted
     // Filter: [0, 10, 20, 15, 12] = 5 elements (odd)
@@ -283,28 +294,34 @@ TEST_CASE("TimeData - Gradual accumulation", "[timedata]") {
     TestOnlyResetTimeData();
 
     //  1 peer: [0, 10] = 2 elements -> no update
-    AddTimeData("peer1", 10);
+    NetworkAddress peer1 = NetworkAddress::from_string("10.0.0.1", 8333, NODE_NETWORK);
+    AddTimeData(peer1, 10);
     REQUIRE(GetTimeOffset() == 0);
 
     // 2 peers: [0, 10, 20] = 3 elements -> no update
-    AddTimeData("peer2", 20);
+    NetworkAddress peer2 = NetworkAddress::from_string("10.0.0.2", 8333, NODE_NETWORK);
+    AddTimeData(peer2, 20);
     REQUIRE(GetTimeOffset() == 0);
 
     // 3 peers: [0, 10, 20, 15] = 4 elements -> no update
-    AddTimeData("peer3", 15);
+    NetworkAddress peer3 = NetworkAddress::from_string("10.0.0.3", 8333, NODE_NETWORK);
+    AddTimeData(peer3, 15);
     REQUIRE(GetTimeOffset() == 0);
 
     // 4 peers: [0, 10, 20, 15, 12] = 5 elements (odd) -> UPDATE!
     // Sorted: [0, 10, 12, 15, 20], median = 12
-    AddTimeData("peer4", 12);
+    NetworkAddress peer4 = NetworkAddress::from_string("10.0.0.4", 8333, NODE_NETWORK);
+    AddTimeData(peer4, 12);
     REQUIRE(GetTimeOffset() == 12);
 
     // 5 peers: [0, 10, 20, 15, 12, 18] = 6 elements (even) -> no update
-    AddTimeData("peer5", 18);
+    NetworkAddress peer5 = NetworkAddress::from_string("10.0.0.5", 8333, NODE_NETWORK);
+    AddTimeData(peer5, 18);
     REQUIRE(GetTimeOffset() == 12);  // Still 12
 
     // 6 peers: [0, 10, 20, 15, 12, 18, 14] = 7 elements (odd) -> UPDATE!
     // Sorted: [0, 10, 12, 14, 15, 18, 20], median = 14
-    AddTimeData("peer6", 14);
+    NetworkAddress peer6 = NetworkAddress::from_string("10.0.0.6", 8333, NODE_NETWORK);
+    AddTimeData(peer6, 14);
     REQUIRE(GetTimeOffset() == 14);
 }
