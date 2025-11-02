@@ -62,12 +62,12 @@ int64_t GetMockTime();
 /**
  * Format a Unix timestamp as a human-readable ISO 8601 UTC string
  *
- * @param unix_time Unix timestamp in seconds since epoch
+ * @param unix_time Unix timestamp in seconds since epoch (64-bit to avoid Y2038/Y2106)
  * @return Formatted string like "2025-10-25 14:33:09 UTC"
  *
  * Example: FormatTime(1729868000) -> "2024-10-25 12:00:00 UTC"
  */
-std::string FormatTime(uint32_t unix_time);
+std::string FormatTime(int64_t unix_time);
 
 /**
  * RAII helper to set mock time and restore it when scope exits
@@ -81,8 +81,14 @@ public:
 
   ~MockTimeScope() { SetMockTime(previous_time_); }
 
+  // Delete copy/move to prevent misuse
+  MockTimeScope(const MockTimeScope&) = delete;
+  MockTimeScope& operator=(const MockTimeScope&) = delete;
+  MockTimeScope(MockTimeScope&&) = delete;
+  MockTimeScope& operator=(MockTimeScope&&) = delete;
+
 private:
-  int64_t previous_time_;
+  const int64_t previous_time_;
 };
 
 } // namespace util

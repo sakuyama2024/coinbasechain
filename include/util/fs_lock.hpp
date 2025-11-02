@@ -40,7 +40,7 @@ public:
    */
   const std::string& GetReason() const { return reason_; }
 
-private:
+  // Platform-specific handles (public for error checking in LockDirectory)
   std::string reason_;
 #ifndef _WIN32
   int fd_{-1};

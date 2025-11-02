@@ -5,7 +5,6 @@
 #include "util/logging.hpp"
 #include <cerrno>
 #include <cstring>
-#include <fstream>
 
 #ifndef _WIN32
 #include <fcntl.h>
@@ -36,7 +35,10 @@ static std::map<std::string, std::unique_ptr<FileLock>> g_dir_locks;
 static std::string GetErrorReason() { return std::strerror(errno); }
 
 FileLock::FileLock(const fs::path &file) {
-  fd_ = open(file.c_str(), O_RDWR);
+  // O_CREAT: Create file if it doesn't exist (fixes race condition)
+  // O_CLOEXEC: Don't leak fd to child processes (prevents lock inheritance)
+  // 0644: rw-r--r-- permissions
+  fd_ = open(file.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
   if (fd_ == -1) {
     reason_ = GetErrorReason();
   }
@@ -44,6 +46,7 @@ FileLock::FileLock(const fs::path &file) {
 
 FileLock::~FileLock() {
   if (fd_ != -1) {
+    // Closing the fd automatically releases the fcntl lock
     close(fd_);
   }
 }
@@ -88,9 +91,11 @@ static std::string GetErrorReason() {
 }
 
 FileLock::FileLock(const fs::path &file) {
+  // OPEN_ALWAYS: Create file if it doesn't exist (fixes race condition)
+  // FILE_SHARE_* flags allow other processes to read/delete while we hold lock
   hFile_ = CreateFileW(file.wstring().c_str(), GENERIC_READ | GENERIC_WRITE,
                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                       nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                       nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 
   if (hFile_ == INVALID_HANDLE_VALUE) {
     reason_ = GetErrorReason();
@@ -99,6 +104,7 @@ FileLock::FileLock(const fs::path &file) {
 
 FileLock::~FileLock() {
   if (hFile_ != INVALID_HANDLE_VALUE) {
+    // Closing the handle automatically releases the lock
     CloseHandle(hFile_);
   }
 }
@@ -136,29 +142,55 @@ LockResult LockDirectory(const fs::path &directory,
     return LockResult::Success;
   }
 
-  // Create empty lock file if it doesn't exist
-  {
-    std::ofstream lockfile(lockfile_path, std::ios::app);
-    if (!lockfile) {
-      LOG_CHAIN_ERROR("Failed to create lock file: {}", lockfile_path.string());
-      return LockResult::ErrorWrite;
+  // Create and lock the file atomically
+  // FileLock constructor now uses O_CREAT/OPEN_ALWAYS, so no separate
+  // creation step needed (fixes TOCTOU race condition)
+  auto file_lock = std::make_unique<FileLock>(lockfile_path);
+
+  // Check if file was opened successfully
+  #ifndef _WIN32
+  if (file_lock->fd_ == -1) {
+    if (!probe_only) {
+      LOG_CHAIN_ERROR("Failed to open lock file {}: {}", lockfile_path.string(),
+                file_lock->GetReason());
     }
+    return LockResult::ErrorWrite;
   }
+  #else
+  if (file_lock->hFile_ == INVALID_HANDLE_VALUE) {
+    if (!probe_only) {
+      LOG_CHAIN_ERROR("Failed to open lock file {}: {}", lockfile_path.string(),
+                file_lock->GetReason());
+    }
+    return LockResult::ErrorWrite;
+  }
+  #endif
 
   // Try to acquire lock
-  auto file_lock = std::make_unique<FileLock>(lockfile_path);
   if (!file_lock->TryLock()) {
-    LOG_CHAIN_ERROR("Failed to lock directory {}: {}", directory.string(),
-              file_lock->GetReason());
+    // Only log errors in non-probe mode (fixes log pollution)
+    if (!probe_only) {
+      LOG_CHAIN_ERROR("Failed to lock directory {}: {}", directory.string(),
+                file_lock->GetReason());
+    }
     return LockResult::ErrorLock;
   }
 
-  if (!probe_only) {
-    // Lock successful and we're not just probing, store it
+  // Lock acquired successfully
+  if (probe_only) {
+    // NOTE: probe_only has inherent race condition
+    // The lock will be released when file_lock destructs at end of function
+    // Another process could acquire it before the caller acts on the result
+    // This is unavoidable with fcntl/LockFileEx semantics
+    LOG_CHAIN_TRACE("Probe successful for directory lock: {} (lock will be released)",
+              directory.string());
+    return LockResult::Success;
+  } else {
+    // Normal mode: store the lock to keep it held
     g_dir_locks.emplace(lockfile_str, std::move(file_lock));
+    LOG_CHAIN_TRACE("Acquired directory lock: {}", directory.string());
+    return LockResult::Success;
   }
-
-  return LockResult::Success;
 }
 
 void UnlockDirectory(const fs::path &directory,
@@ -168,11 +200,16 @@ void UnlockDirectory(const fs::path &directory,
   fs::path lockfile_path = directory / lockfile_name;
   std::string lockfile_str = lockfile_path.string();
 
-  g_dir_locks.erase(lockfile_str);
+  auto it = g_dir_locks.find(lockfile_str);
+  if (it != g_dir_locks.end()) {
+    LOG_CHAIN_TRACE("Released directory lock: {}", directory.string());
+    g_dir_locks.erase(it);
+  }
 }
 
 void ReleaseAllDirectoryLocks() {
   std::lock_guard<std::mutex> lock(g_dir_locks_mutex);
+  LOG_CHAIN_TRACE("Releasing all directory locks ({} locks)", g_dir_locks.size());
   g_dir_locks.clear();
 }
 
