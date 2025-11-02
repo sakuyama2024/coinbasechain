@@ -15,6 +15,10 @@ namespace util {
  *
  * Provides centralized logging configuration and easy access
  * to loggers throughout the application.
+ *
+ * Thread-safety: All methods are thread-safe. Initialization is
+ * performed exactly once using std::call_once. Logger access is
+ * protected by mutex for safe concurrent use.
  */
 class LogManager {
 public:
@@ -24,6 +28,9 @@ public:
    * critical)
    * @param log_to_file If true, also log to file
    * @param log_file_path Path to log file (if log_to_file is true)
+   *
+   * Thread-safe: Uses std::call_once internally. Multiple calls are safe;
+   * only the first call performs initialization.
    */
   static void Initialize(const std::string &log_level = "info",
                          bool log_to_file = false,
@@ -31,18 +38,26 @@ public:
 
   /**
    * Shutdown logging system (flushes buffers)
+   *
+   * Thread-safe: Protected by mutex. Safe to call from any thread.
+   * Subsequent logging calls after shutdown will auto-reinitialize.
    */
   static void Shutdown();
 
   /**
    * Get logger for specific component
    * @param name Component name (e.g., "network", "sync", "chain")
+   *
+   * Thread-safe: Protected by mutex. Auto-initializes if not initialized.
+   * Returns cached logger for performance.
    */
   static std::shared_ptr<spdlog::logger>
   GetLogger(const std::string &name = "default");
 
   /**
    * Set log level at runtime (all components)
+   *
+   * Thread-safe: Protected by mutex.
    */
   static void SetLogLevel(const std::string &level);
 
@@ -50,11 +65,13 @@ public:
    * Set log level for a specific component
    * @param component Component name (network, sync, chain, crypto, app, default)
    * @param level Log level (trace, debug, info, warn, error, critical)
+   *
+   * Thread-safe: Protected by mutex.
    */
   static void SetComponentLevel(const std::string &component, const std::string &level);
 
 private:
-  static bool initialized_;
+  // No bool flag - using std::call_once for thread-safe initialization
 };
 
 } // namespace util
