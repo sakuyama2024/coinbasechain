@@ -156,7 +156,8 @@ bool SimulatedNode::ConnectTo(int peer_node_id, const std::string& address, uint
     }
 
     // Use real NetworkManager to connect
-    bool success = network_manager_->connect_to(net_addr);
+    auto result = network_manager_->connect_to(net_addr);
+    bool success = (result == network::ConnectionResult::Success);
     if (success) {
         stats_.connections_made++;
     }

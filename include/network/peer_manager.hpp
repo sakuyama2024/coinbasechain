@@ -1,5 +1,83 @@
 #pragma once
 
+/*
+ PeerManager — unified peer lifecycle and misbehavior tracking for CoinbaseChain
+
+ Purpose
+ - Maintain a registry of active peer connections (both inbound and outbound)
+ - Enforce connection limits (max_inbound, max_outbound, per-IP limits)
+ - Track misbehavior scores and apply DoS protection policies
+ - Coordinate with AddressManager for connection lifecycle updates (good/failed)
+ - Provide peer discovery/eviction logic for connection management
+
+ Key responsibilities
+ 1. Peer lifecycle: add, remove, lookup by ID or address
+ 2. Connection policy: limit enforcement, feeler connections, eviction
+ 3. Misbehavior tracking: score accumulation, thresholds, disconnect decisions
+ 4. Permission system: NoBan and Manual flags to protect certain connections
+ 5. Integration: callbacks for sync state cleanup on peer disconnect
+
+ Misbehavior system
+ - Each peer has a misbehavior score; penalties are applied for protocol violations
+ - Threshold: 100 points → automatic disconnect (DISCOURAGEMENT_THRESHOLD)
+ - Permission flags can prevent banning (NoBan) or mark manual connections
+ - Duplicate-invalid tracking: avoid double-penalizing the same invalid header
+ - Unconnecting headers: progressive tracking with max threshold before penalty
+
+ Penalties (from MisbehaviorPenalty namespace)
+   INVALID_POW = 100 (instant ban)
+   INVALID_HEADER = 100 (instant ban, unless duplicate)
+   TOO_MANY_UNCONNECTING = 100 (after MAX_UNCONNECTING_HEADERS threshold)
+   TOO_MANY_ORPHANS = 100 (instant ban)
+   OVERSIZED_MESSAGE = 20
+   NON_CONTINUOUS_HEADERS = 20
+   LOW_WORK_HEADERS = 10
+
+ Connection limits
+ - max_outbound_peers: default 8 (protocol::DEFAULT_MAX_OUTBOUND_CONNECTIONS)
+ - max_inbound_peers: default 125 (protocol::DEFAULT_MAX_INBOUND_CONNECTIONS)
+ - target_outbound_peers: attempt to maintain this many outbound connections
+ - MAX_INBOUND_PER_IP = 2: per-IP inbound limit to prevent single-host flooding
+
+ Feeler connections
+ - Short-lived test connections to validate addresses in the "new" table
+ - FEELER_MAX_LIFETIME_SEC = 120: forced removal after 2 minutes
+ - Marked as feeler via PeerPtr flags, tracked for cleanup in process_periodic()
+
+ Public API design
+ - Report* methods: external code (HeaderSync, message handlers) reports violations
+   • ReportInvalidPoW, ReportInvalidHeader, ReportLowWorkHeaders, etc.
+   • Each applies the appropriate penalty internally via private Misbehaving()
+ - Increment/Reset UnconnectingHeaders: track non-connectable header sequences
+ - Query methods: GetMisbehaviorScore(), ShouldDisconnect() for testing/debugging
+ - NO direct penalty manipulation from external code; all penalties are internal
+
+ AddressManager integration
+ - On successful peer addition: addr_manager_.attempt() is called
+ - On peer removal: addr_manager_.good() or failed() based on disconnect reason
+ - PeerManager does NOT manage address selection; that's AddressManager's job
+
+ Threading
+ - All public methods are thread-safe (protected by mutex_)
+ - Shutdown() disables callbacks to prevent use-after-free during destruction
+ - SetPeerDisconnectCallback: optional callback for sync state cleanup
+
+ Differences from Bitcoin Core
+ - Simpler permission model: only NoBan and Manual flags (no BloomFilter, etc.)
+ - No NetGroupManager: per-IP limits only, no ASN-based grouping yet
+ - Misbehavior data stored separately from Peer objects for cleaner separation
+ - Feeler connections explicitly tracked and aged out (no implicit heuristics)
+ - Inbound eviction: simple heuristic (oldest non-protected peer), not Core's
+   complex network-diversity preservation logic
+
+ Notes
+ - find_peer_by_address() requires exact IP:port match if port != 0
+ - evict_inbound_peer() prefers to evict older, non-protected peers first
+ - TestOnlySetPeerCreatedAt() is for unit tests to simulate feeler aging
+ - process_periodic() should be called regularly (e.g., every 10 seconds) to
+   handle feeler cleanup and connection maintenance
+*/
+
 #include "network/addr_manager.hpp"
 #include "network/peer.hpp"
 #include <functional>
@@ -61,16 +139,6 @@ struct PeerMisbehaviorData {
   std::unordered_set<std::string> invalid_header_hashes;
 };
 
-/**
- * PeerManager - Unified peer lifecycle and misbehavior tracking
- *
- * Manages both connection lifecycle AND misbehavior/DoS protection:
- * - Tracks active peer connections
- * - Handles peer addition/removal
- * - Manages connection limits
- * - Tracks misbehavior scores
- * - Decides when to disconnect misbehaving peers
- */
 class PeerManager {
 public:
   struct Config {
@@ -95,6 +163,16 @@ public:
 
   // Shutdown: disable callbacks and mark as shutting down to avoid UAF during destructor
   void Shutdown();
+
+  // Pre-allocate a peer ID (for async connection setup)
+  // This allows NetworkManager to create the peer with a known ID before the connection completes
+  int allocate_peer_id();
+
+  // Add a peer with pre-allocated ID (for async connection setup)
+  // Returns true on success, false on failure
+  // Peer's id must match peer_id parameter
+  bool add_peer_with_id(int peer_id, PeerPtr peer, NetPermissionFlags permissions = NetPermissionFlags::None,
+                        const std::string &address = "");
 
   // Add a peer (with optional permissions)
   // Returns the assigned peer_id on success, -1 on failure
@@ -197,7 +275,6 @@ private:
 
   // Get next available peer ID
   std::atomic<int> next_peer_id_{0};
-  int allocate_peer_id();
   
   // Callback for peer disconnect events
   std::function<void(int)> peer_disconnect_callback_;

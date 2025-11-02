@@ -46,6 +46,19 @@ class ChainstateManager;
 
 namespace network {
 
+// Connection result codes for better error reporting
+enum class ConnectionResult {
+  Success,
+  NotRunning,
+  AddressBanned,
+  AddressDiscouraged,
+  AlreadyConnected,
+  NoSlotsAvailable,
+  TransportFailed,
+  PeerCreationFailed,
+  PeerManagerFailed
+};
+
 // Forward declarations
 class AddressManager;
 class AnchorManager;
@@ -106,7 +119,7 @@ public:
   BanMan &ban_man() { return *ban_man_; }
 
   // Manual connection management
-  bool connect_to(const protocol::NetworkAddress &addr);
+  ConnectionResult connect_to(const protocol::NetworkAddress &addr);
   void disconnect_from(int peer_id);
 
   // Block relay
@@ -210,7 +223,7 @@ private:
 
   std::optional<std::string> network_address_to_string(const protocol::NetworkAddress& addr);
   bool already_connected_to_address(const std::string& address, uint16_t port);
-  bool connect_to_with_permissions(const protocol::NetworkAddress &addr, NetPermissionFlags permissions);
+  ConnectionResult connect_to_with_permissions(const protocol::NetworkAddress &addr, NetPermissionFlags permissions);
 
   // Inbound connections (handled via transport callback)
   void handle_inbound_connection(TransportConnectionPtr connection);

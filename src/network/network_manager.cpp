@@ -27,11 +27,15 @@
 namespace coinbasechain {
 namespace network {
 
+// Connection attempt constants
+static constexpr int MAX_CONNECTION_ATTEMPTS_PER_CYCLE = 100;  // Bitcoin Core: similar pattern in ThreadOpenConnections
+
 // Helper to generate random nonce
+// Thread-safe: uses thread_local storage to avoid data races
 static uint64_t generate_nonce() {
-  static std::random_device rd;
-  static std::mt19937_64 gen(rd());
-  static std::uniform_int_distribution<uint64_t> dis;
+  thread_local std::random_device rd;
+  thread_local std::mt19937_64 gen(rd());
+  thread_local std::uniform_int_distribution<uint64_t> dis;
   return dis(gen);
 }
 
@@ -74,10 +78,11 @@ NetworkManager::NetworkManager(
       [this](const protocol::NetworkAddress& addr) -> std::optional<std::string> {
         return network_address_to_string(addr);
       },
-      // Callback to connect to an address (mark anchors as NoBan and whitelist in BanMan)
+      // Callback to connect to an address (mark anchors as NoBan if requested)
+      // Only whitelist in BanMan if noban permission is explicitly set
       [this](const protocol::NetworkAddress& addr, bool noban) {
         auto ip_opt = network_address_to_string(addr);
-        if (ip_opt && ban_man_) {
+        if (ip_opt && ban_man_ && noban) {
           ban_man_->AddToWhitelist(*ip_opt);
         }
         connect_to_with_permissions(addr, noban ? NetPermissionFlags::NoBan : NetPermissionFlags::None);
@@ -286,96 +291,68 @@ void NetworkManager::stop() {
   io_context_.restart();
 }
 
-bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
+ConnectionResult NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
   return connect_to_with_permissions(addr, NetPermissionFlags::None);
 }
 
-bool NetworkManager::connect_to_with_permissions(const protocol::NetworkAddress &addr, NetPermissionFlags permissions) {
-  LOG_NET_TRACE("connect_to() called");
-
+ConnectionResult NetworkManager::connect_to_with_permissions(const protocol::NetworkAddress &addr, NetPermissionFlags permissions) {
   if (!running_.load(std::memory_order_acquire)) {
-    LOG_NET_TRACE("connect_to() failed: not running");
-    return false;
+    return ConnectionResult::NotRunning;
   }
 
   // Convert NetworkAddress to IP string for transport layer
   auto ip_opt = network_address_to_string(addr);
   if (!ip_opt) {
     LOG_NET_ERROR("Failed to convert NetworkAddress to IP string");
-    return false;
+    return ConnectionResult::TransportFailed;
   }
   const std::string &address = *ip_opt;
   uint16_t port = addr.port;
 
   // Check if address is banned
   if (ban_man_ && ban_man_->IsBanned(address)) {
-    LOG_NET_TRACE("refusing to connect to banned address: {}", address);
-    return false;
+    return ConnectionResult::AddressBanned;
   }
 
   // Check if address is discouraged
   if (ban_man_ && ban_man_->IsDiscouraged(address)) {
-    LOG_NET_TRACE("refusing to connect to discouraged address: {}", address);
-    return false;
+    return ConnectionResult::AddressDiscouraged;
   }
 
   // SECURITY: Prevent duplicate outbound connections to same peer
   // Bitcoin Core: AlreadyConnectedToAddress() check at net.cpp:2881
   // This prevents wasting connection slots and eclipse attack vulnerabilities
   if (already_connected_to_address(address, port)) {
-    LOG_NET_TRACE("already connected to {}:{}, skipping duplicate", address, port);
-    return false;
+    return ConnectionResult::AlreadyConnected;
   }
 
   // Check if we can add more outbound connections
-  bool needs_more = peer_manager_->needs_more_outbound();
-  size_t outbound = peer_manager_->outbound_count();
-  LOG_NET_TRACE("connect_to(): needs_more_outbound={}, outbound_count={}", needs_more, outbound);
-  if (!needs_more) {
-    LOG_NET_TRACE("connect_to() failed: don't need more outbound connections");
-    return false;
+  if (!peer_manager_->needs_more_outbound()) {
+    return ConnectionResult::NoSlotsAvailable;
   }
 
-  // We need to capture the peer_id in the connection callback, but we don't
-  // have it yet. Create connection first (won't complete immediately), then
-  // create peer, add to manager, THEN store peer_id so callback can find it.
-  auto peer_id_ptr = std::make_shared<std::optional<int>>(std::nullopt);
+  // Pre-allocate peer ID to avoid race condition where connection completes
+  // before peer is added to manager (can happen with localhost connections)
+  int peer_id = peer_manager_->allocate_peer_id();
 
   // Create async transport connection with callback
-  // The connection will be in "not open" state until the callback fires
+  // Peer ID is pre-allocated, so callback can safely access it immediately
   auto connection = transport_->connect(
-      address, port, [this, peer_id_ptr, address, port, addr](bool success) {
-        // This callback fires when TCP connection completes (can be very fast!)
-        // We need to ensure the peer is in peer_manager before this fires
-        LOG_NET_TRACE("CALLBACK FIRED for {}:{}, success={}", address, port, success);
-
-        // Wait briefly to ensure peer has been added to manager
-        // (This handles the race where connection completes before we add peer)
-        boost::asio::post(io_context_, [this, peer_id_ptr, address, port, addr, success]() {
-          if (!peer_id_ptr->has_value()) {
-            LOG_NET_TRACE("peer_id_ptr has no value, returning");
-            return;
-          }
-
-          int peer_id = peer_id_ptr->value();
-          LOG_NET_TRACE("Got peer_id={}", peer_id);
-
+      address, port, [this, peer_id, address, port, addr](bool success) {
+        // Post to io_context to decouple from transport callback context
+        boost::asio::post(io_context_, [this, peer_id, address, port, addr, success]() {
           auto peer_ptr = peer_manager_->get_peer(peer_id);
           if (!peer_ptr) {
-            LOG_NET_TRACE("Could not get peer {} from manager", peer_id);
-            return;
+            return;  // Peer was removed
           }
 
           if (success) {
             // Connection succeeded - mark address as good and start peer protocol
-            LOG_NET_TRACE("Connected to {}:{}, starting peer {}", address, port,
-                          peer_id);
+            LOG_NET_DEBUG("Connected to {}:{}", address, port);
             addr_manager_->good(addr);
             peer_ptr->start();
           } else {
-            // Connection failed - record attempt but keep address for retry (Bitcoin Core pattern)
-            LOG_NET_TRACE("Failed to connect to {}:{}, recording attempt and removing peer {}", address,
-                          port, peer_id);
+            // Connection failed - record attempt and remove peer
             addr_manager_->attempt(addr);
             peer_manager_->remove_peer(peer_id);
           }
@@ -384,20 +361,23 @@ bool NetworkManager::connect_to_with_permissions(const protocol::NetworkAddress 
 
   if (!connection) {
     LOG_NET_ERROR("Failed to create connection to {}:{}", address, port);
-    return false;
+    return ConnectionResult::TransportFailed;
   }
 
   // Get current blockchain height for VERSION message
   int32_t current_height = chainstate_manager_.GetChainHeight();
 
   // Create outbound peer with the connection (will be in CONNECTING state)
-  // Store target address for duplicate connection prevention (Bitcoin Core pattern)
   auto peer = Peer::create_outbound(io_context_, connection, config_.network_magic,
                                      current_height, address, port);
   if (!peer) {
     LOG_NET_ERROR("Failed to create peer for {}:{}", address, port);
-    return false;
+    connection->close();
+    return ConnectionResult::PeerCreationFailed;
   }
+
+  // Set the pre-allocated ID on the peer
+  peer->set_id(peer_id);
 
   // Use a node-wide nonce for self-connection detection and VERSION.nonce
   peer->set_local_nonce(local_nonce_);
@@ -405,18 +385,16 @@ bool NetworkManager::connect_to_with_permissions(const protocol::NetworkAddress 
   // Setup message handler before adding to manager
   setup_peer_message_handler(peer.get());
 
-  // Add to peer manager and get the assigned peer_id
-  int peer_id = peer_manager_->add_peer(std::move(peer), permissions);
-  if (peer_id < 0) {
-    LOG_NET_ERROR("Failed to add peer to peer manager");
-    return false;
+  // Add to peer manager with pre-allocated ID
+  bool added = peer_manager_->add_peer_with_id(peer_id, std::move(peer), permissions);
+  if (!added) {
+    LOG_NET_ERROR("Failed to add peer {} to peer manager", peer_id);
+    // Close the connection to cancel the pending callback
+    connection->close();
+    return ConnectionResult::PeerManagerFailed;
   }
 
-  // Store the peer_id so the callback can use it
-  *peer_id_ptr = peer_id;
-  LOG_NET_TRACE("Added peer {} to manager, stored in callback ptr", peer_id);
-
-  return true;
+  return ConnectionResult::Success;
 }
 
 void NetworkManager::disconnect_from(int peer_id) {
@@ -455,9 +433,9 @@ void NetworkManager::bootstrap_from_fixed_seeds(const chain::ChainParams &params
 
   LOG_NET_INFO("Bootstrapping from {} fixed seed nodes", fixed_seeds.size());
 
-  // Use AddressManager's time format (seconds since epoch via system_clock)
-  uint32_t current_time = static_cast<uint32_t>(
-      std::chrono::system_clock::now().time_since_epoch().count() / 1000000000);
+  // Use AddressManager's time format (seconds since epoch)
+  // Use util::GetTime() for consistency and testability (supports mock time)
+  uint32_t current_time = static_cast<uint32_t>(util::GetTime());
   size_t added_count = 0;
 
   // Parse each "IP:port" string and add to AddressManager
@@ -555,10 +533,8 @@ void NetworkManager::attempt_outbound_connections() {
     return;
   }
 
-  const int nTries = 100;
-
-  // Check if we need more outbound connections
-  for (int i = 0; i < nTries && peer_manager_->needs_more_outbound(); i++) {
+  // Try multiple addresses per cycle to fill outbound connection slots quickly
+  for (int i = 0; i < MAX_CONNECTION_ATTEMPTS_PER_CYCLE && peer_manager_->needs_more_outbound(); i++) {
     // Select an address from the address manager
     auto maybe_addr = addr_manager_->select();
     if (!maybe_addr) {
@@ -589,10 +565,15 @@ void NetworkManager::attempt_outbound_connections() {
     // Try to connect
     // Bitcoin Core: Don't mark as failed here for other failure cases
     // The connection callback will mark as failed for actual network errors
-    if (!connect_to(addr)) {
-      LOG_NET_TRACE("Failed to initiate connection to {}:{}", ip_str, addr.port);
+    ConnectionResult result = connect_to(addr);
+    if (result != ConnectionResult::Success) {
       // Note: Don't call addr_manager_->failed() here
       // Real connection failures are handled in the connection callback
+      // Only log if it's not a common case (slots full, already connected)
+      if (result != ConnectionResult::NoSlotsAvailable && 
+          result != ConnectionResult::AlreadyConnected) {
+        LOG_NET_DEBUG("Connection initiation failed to {}:{}", ip_str, addr.port);
+      }
     }
   }
 }
@@ -755,11 +736,7 @@ void NetworkManager::test_hook_header_sync_process_timers() {
 }
 
 void NetworkManager::schedule_next_feeler() {
-  LOG_NET_TRACE("schedule_next_feeler: ENTER (running={}, has_timer={})",
-                running_.load(std::memory_order_acquire), (feeler_timer_ != nullptr));
-
   if (!running_.load(std::memory_order_acquire) || !feeler_timer_) {
-    LOG_NET_TRACE("schedule_next_feeler: ABORT (not running or no timer)");
     return;
   }
 
@@ -770,11 +747,8 @@ void NetworkManager::schedule_next_feeler() {
   auto delay = std::chrono::seconds(std::max(1, static_cast<int>(delay_s)));
 
   feeler_timer_->expires_after(delay);
-  LOG_NET_TRACE("schedule_next_feeler: Timer set for {}s (Poisson)", delay.count());
 
   feeler_timer_->async_wait([this](const boost::system::error_code &ec) {
-    LOG_NET_TRACE("schedule_next_feeler: Timer fired (ec={}, running={})",
-                  ec.message(), running_.load(std::memory_order_acquire));
     if (!ec && running_.load(std::memory_order_acquire)) {
       attempt_feeler_connection();
       schedule_next_feeler();
@@ -783,74 +757,44 @@ void NetworkManager::schedule_next_feeler() {
 }
 
 void NetworkManager::attempt_feeler_connection() {
-  LOG_NET_TRACE("attempt_feeler_connection: ENTER (running={})",
-                running_.load(std::memory_order_acquire));
-
   if (!running_.load(std::memory_order_acquire)) {
-    LOG_NET_TRACE("attempt_feeler_connection: ABORT (not running)");
     return;
   }
 
   // Get address from "new" table (addresses we've heard about but never connected to)
-  LOG_NET_TRACE("attempt_feeler_connection: Selecting address from NEW table");
   auto addr = addr_manager_->select_new_for_feeler();
   if (!addr) {
-    LOG_NET_TRACE("attempt_feeler_connection: No address found in NEW table");
     return;
   }
 
   // Convert NetworkAddress to IP string
   auto addr_str_opt = network_address_to_string(*addr);
   if (!addr_str_opt) {
-    LOG_NET_TRACE("attempt_feeler_connection: Address conversion failed");
     return;
   }
 
   std::string address = *addr_str_opt;
   uint16_t port = addr->port;
 
-  LOG_NET_TRACE("attempt_feeler_connection: Selected address={}:{}", address, port);
-
-  // Create peer_id container for async callback
-  auto peer_id_ptr = std::make_shared<std::optional<int>>(std::nullopt);
-
-  // Create async transport connection with callback (same pattern as connect_to())
-  LOG_NET_TRACE("attempt_feeler_connection: Creating transport connection to {}:{}", address, port);
+  // Pre-allocate peer ID (same fix as connect_to_with_permissions)
+  int peer_id = peer_manager_->allocate_peer_id();
 
   auto connection = transport_->connect(
-      address, port, [this, peer_id_ptr, address, port, addr](bool success) {
-        LOG_NET_TRACE("attempt_feeler_connection: TCP callback fired (success={}, peer_id_set={})",
-                      success, peer_id_ptr->has_value());
-
-        // Callback fires when TCP connection completes
-        boost::asio::post(io_context_, [this, peer_id_ptr, address, port, addr, success]() {
-          LOG_NET_TRACE("attempt_feeler_connection: Posted callback executing (peer_id_set={})",
-                        peer_id_ptr->has_value());
-
-          if (!peer_id_ptr->has_value()) {
-            LOG_NET_TRACE("attempt_feeler_connection: Callback aborted (peer_id not set)");
-            return;
-          }
-
-          int peer_id = peer_id_ptr->value();
-          LOG_NET_TRACE("attempt_feeler_connection: Looking up peer_id={}", peer_id);
+      address, port, [this, peer_id, address, port, addr](bool success) {
+        // Post to io_context to decouple from transport callback
+        boost::asio::post(io_context_, [this, peer_id, address, port, addr, success]() {
           auto peer_ptr = peer_manager_->get_peer(peer_id);
           if (!peer_ptr) {
-            LOG_NET_TRACE("attempt_feeler_connection: Peer {} not found in manager", peer_id);
-            return;
+            return;  // Peer was removed
           }
 
           if (success) {
-            // Connection succeeded - mark address as good and start peer protocol
-            // The peer will auto-disconnect after VERACK (see handle_verack())
-            LOG_NET_TRACE("attempt_feeler_connection: Connection SUCCESS - marking address good, starting peer {}",
-                          peer_id);
+            // Connection succeeded - mark address as good and start peer
+            // Feeler will auto-disconnect after VERACK
             addr_manager_->good(*addr);
             peer_ptr->start();
           } else {
-            // Connection failed - record attempt but keep address for retry
-            LOG_NET_TRACE("attempt_feeler_connection: Connection FAILED - recording attempt and removing peer {}",
-                          peer_id);
+            // Connection failed - record attempt and remove peer
             addr_manager_->attempt(*addr);
             peer_manager_->remove_peer(peer_id);
           }
@@ -858,38 +802,39 @@ void NetworkManager::attempt_feeler_connection() {
       });
 
   if (!connection) {
-    LOG_NET_TRACE("attempt_feeler_connection: Transport connection creation FAILED");
     addr_manager_->attempt(*addr);
     return;
   }
 
-  LOG_NET_TRACE("attempt_feeler_connection: Transport connection created successfully");
-
   // Get current blockchain height for VERSION message
   int32_t current_height = chainstate_manager_.GetChainHeight();
-  LOG_NET_TRACE("attempt_feeler_connection: Current chain height={}", current_height);
 
-  // Create peer with FEELER connection type (doesn't count against outbound limit)
-  LOG_NET_TRACE("attempt_feeler_connection: Creating FEELER peer object");
+  // Create peer with FEELER connection type
   auto peer = Peer::create_outbound(io_context_, connection, config_.network_magic,
                                      current_height, address, port,
                                      ConnectionType::FEELER);
-
-  // Setup message handler before adding to manager
-  LOG_NET_TRACE("attempt_feeler_connection: Setting up message handler");
-  setup_peer_message_handler(peer.get());
-
-  // Add to peer manager and store ID for callback
-  LOG_NET_TRACE("attempt_feeler_connection: Adding peer to manager");
-  int peer_id = peer_manager_->add_peer(peer);
-  if (peer_id < 0) {
-    LOG_NET_TRACE("attempt_feeler_connection: Failed to add peer to manager (peer_id={})", peer_id);
+  if (!peer) {
+    LOG_NET_ERROR("Failed to create feeler peer");
+    connection->close();
     return;
   }
 
-  // Store peer_id for callback access
-  *peer_id_ptr = peer_id;
-  LOG_NET_TRACE("attempt_feeler_connection: EXIT (peer_id={}, waiting for TCP callback)", peer_id);
+  // Set pre-allocated ID
+  peer->set_id(peer_id);
+
+  // Set local nonce
+  peer->set_local_nonce(local_nonce_);
+
+  // Setup message handler
+  setup_peer_message_handler(peer.get());
+
+  // Add to peer manager with pre-allocated ID
+  bool added = peer_manager_->add_peer_with_id(peer_id, std::move(peer));
+  if (!added) {
+    LOG_NET_ERROR("Failed to add feeler peer {} to manager", peer_id);
+    connection->close();
+    return;
+  }
 }
 
 void NetworkManager::check_initial_sync() {

@@ -768,9 +768,9 @@ std::string RPCServer::HandleAddNode(const std::vector<std::string> &params) {
 
     // Connect to the node
     LOG_INFO("RPC addnode: calling network_manager_.connect_to()");
-    bool success = network_manager_.connect_to(addr);
-    LOG_INFO("RPC addnode: connect_to() returned {}", success);
-    if (!success) {
+    auto result = network_manager_.connect_to(addr);
+    LOG_INFO("RPC addnode: connect_to() returned result");
+    if (result != network::ConnectionResult::Success) {
       LOG_INFO("RPC addnode: connect_to() failed");
       return "{\"error\":\"Failed to connect to node\"}\n";
     }

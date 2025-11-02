@@ -140,6 +140,108 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
   return peer_id;  // Return the assigned ID
 }
 
+bool PeerManager::add_peer_with_id(int peer_id, PeerPtr peer, NetPermissionFlags permissions,
+                                   const std::string &address) {
+  if (!peer) {
+    return false;
+  }
+
+  // Verify peer ID matches
+  if (peer->id() != peer_id) {
+    LOG_NET_ERROR("add_peer_with_id: peer ID mismatch (expected={}, got={})", peer_id, peer->id());
+    return false;
+  }
+
+  std::unique_lock<std::mutex> lock(mutex_);
+
+  // Reject additions during bulk shutdown
+  if (stopping_all_) {
+    LOG_NET_TRACE("add_peer_with_id: rejected while disconnect_all in progress");
+    return false;
+  }
+
+  // Check if peer_id already exists (shouldn't happen, but defensive)
+  if (peers_.find(peer_id) != peers_.end()) {
+    LOG_NET_ERROR("add_peer_with_id: peer_id {} already exists", peer_id);
+    return false;
+  }
+
+  // Check connection limits
+  bool is_inbound = peer->is_inbound();
+  bool is_feeler_new = peer->is_feeler();
+  size_t current_inbound = 0;
+  size_t current_outbound_nonfeeler = 0;
+
+  for (const auto &[id, p] : peers_) {
+    if (p->is_inbound()) {
+      current_inbound++;
+    } else {
+      if (!p->is_feeler()) {
+        current_outbound_nonfeeler++;
+      }
+    }
+  }
+
+  // Check outbound limit
+  if (!is_inbound && !is_feeler_new && current_outbound_nonfeeler >= config_.max_outbound_peers) {
+    return false;
+  }
+
+  // Check inbound limit - try eviction if at capacity
+  if (is_inbound && current_inbound >= config_.max_inbound_peers) {
+    lock.unlock();
+    bool evicted = evict_inbound_peer();
+    lock.lock();
+
+    if (!evicted) {
+      LOG_NET_TRACE("add_peer_with_id: inbound at capacity and eviction failed");
+      return false;
+    }
+    // Recompute inbound counts after eviction
+    if (is_inbound) {
+      size_t inbound_now = 0;
+      for (const auto &kv : peers_) {
+        if (kv.second && kv.second->is_inbound()) inbound_now++;
+      }
+      if (inbound_now >= config_.max_inbound_peers) {
+        LOG_NET_TRACE("add_peer_with_id: inbound still at capacity after eviction");
+        return false;
+      }
+    }
+  }
+
+  // Enforce per-IP inbound limit
+  if (is_inbound) {
+    const std::string new_addr = normalize_ip_string(peer->address());
+    int same_ip_inbound = 0;
+    for (const auto& [id, p] : peers_) {
+      if (p->is_inbound() && normalize_ip_string(p->address()) == new_addr) {
+        same_ip_inbound++;
+        if (same_ip_inbound >= MAX_INBOUND_PER_IP) {
+          return false;
+        }
+      }
+    }
+  }
+
+  // Add peer with pre-allocated ID
+  peers_[peer_id] = std::move(peer);
+  peer_created_at_[peer_id] = std::chrono::steady_clock::now();
+
+  LOG_NET_DEBUG("Added connection with pre-allocated peer_id={}", peer_id);
+
+  // Initialize misbehavior tracking
+  std::string peer_address = address.empty() ? peers_[peer_id]->address() : address;
+  peer_misbehavior_[peer_id] = PeerMisbehaviorData{
+      .misbehavior_score = 0,
+      .should_discourage = false,
+      .num_unconnecting_headers_msgs = 0,
+      .permissions = permissions,
+      .address = peer_address};
+
+  return true;
+}
+
 void PeerManager::remove_peer(int peer_id) {
   PeerPtr peer;
   std::string addr_str_after;
