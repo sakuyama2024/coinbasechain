@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_set>
+#include <atomic>
 
 namespace coinbasechain {
 namespace network {
@@ -52,6 +53,7 @@ struct PeerMisbehaviorData {
   int misbehavior_score{0};
   bool should_discourage{false};
   int num_unconnecting_headers_msgs{0};
+  bool unconnecting_penalized{false};
   NetPermissionFlags permissions{NetPermissionFlags::None};
   std::string address;
   // Track duplicates of invalid headers reported by this peer to avoid double-penalty
@@ -87,6 +89,9 @@ public:
 
   ~PeerManager();
 
+  // Shutdown: disable callbacks and mark as shutting down to avoid UAF during destructor
+  void Shutdown();
+
   // Add a peer (with optional permissions)
   // Returns the assigned peer_id on success, -1 on failure
   int add_peer(PeerPtr peer, NetPermissionFlags permissions = NetPermissionFlags::None,
@@ -99,6 +104,7 @@ public:
   PeerPtr get_peer(int peer_id);
 
   // Find peer ID by address:port (thread-safe)
+  // Contract: if port != 0, requires exact address:port match; returns -1 if no exact match even if IP matches on a different port.
   // Returns -1 if not found
   int find_peer_by_address(const std::string &address, uint16_t port);
 
@@ -183,11 +189,14 @@ private:
   std::map<int, PeerMisbehaviorData> peer_misbehavior_;
 
   // Get next available peer ID
-  int next_peer_id_ = 0;
+  std::atomic<int> next_peer_id_{0};
   int allocate_peer_id();
   
   // Callback for peer disconnect events
   std::function<void(int)> peer_disconnect_callback_;
+
+  // Shutdown flag to guard callbacks during destruction
+  bool shutting_down_{false};
 };
 
 } // namespace network

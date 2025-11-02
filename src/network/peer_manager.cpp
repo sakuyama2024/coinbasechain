@@ -11,9 +11,18 @@ PeerManager::PeerManager(boost::asio::io_context &io_context,
                          AddressManager &addr_manager, const Config &config)
     : io_context_(io_context), addr_manager_(addr_manager), config_(config) {}
 
-PeerManager::~PeerManager() { disconnect_all(); }
+PeerManager::~PeerManager() {
+  Shutdown();
+  disconnect_all();
+}
 
-int PeerManager::allocate_peer_id() { return next_peer_id_++; }
+void PeerManager::Shutdown() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  shutting_down_ = true;
+  peer_disconnect_callback_ = {};
+}
+
+int PeerManager::allocate_peer_id() { return next_peer_id_.fetch_add(1, std::memory_order_relaxed); }
 
 int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
                           const std::string &address) {
@@ -113,6 +122,9 @@ void PeerManager::remove_peer(int peer_id) {
   std::string addr_str_after;
   uint16_t addr_port_after = 0;
 
+  std::function<void(int)> cb;
+  bool skip_callbacks = false;
+
   {
     std::lock_guard<std::mutex> lock(mutex_);
     LOG_NET_TRACE("remove_peer({}): peers_.size() BEFORE = {}", peer_id, peers_.size());
@@ -146,6 +158,10 @@ void PeerManager::remove_peer(int peer_id) {
     // Also remove misbehavior tracking data
     peer_misbehavior_.erase(peer_id);
 
+    // Snapshot callback state
+    cb = peer_disconnect_callback_;
+    skip_callbacks = shutting_down_;
+
     LOG_NET_TRACE("remove_peer({}): peers_.size() AFTER = {}", peer_id, peers_.size());
     LOG_NET_TRACE("remove_peer: erased peer {} from map (map size now: {})",
                  peer_id, peers_.size());
@@ -165,8 +181,8 @@ void PeerManager::remove_peer(int peer_id) {
 
   // Notify callback (e.g., HeaderSyncManager) that peer disconnected
   // Do this after removing from map but before disconnecting
-  if (peer_disconnect_callback_) {
-    peer_disconnect_callback_(peer_id);
+  if (cb && !skip_callbacks) {
+    cb(peer_id);
   }
 
   // Disconnect outside the lock
@@ -396,29 +412,10 @@ bool PeerManager::evict_inbound_peer() {
   }
 
   if (worst_peer_id >= 0) {
-    // Evict this peer
-    PeerPtr peer_to_disconnect;
-    auto it = peers_.find(worst_peer_id);
-    if (it != peers_.end()) {
-      peer_to_disconnect = it->second;
-      peers_.erase(it);
-      peer_misbehavior_.erase(worst_peer_id);
-    }
-    // Unlock before disconnecting to avoid callbacks under lock
+    // Unlock and reuse standard removal path to preserve invariants
     lock.unlock();
-
-    // Notify callback (e.g., HeaderSyncManager) that peer disconnected
-    // This is critical: without this, sync can get stuck when sync peer is evicted
-    // Pattern matches remove_peer() to ensure consistent disconnect notification
-    if (peer_disconnect_callback_) {
-      peer_disconnect_callback_(worst_peer_id);
-    }
-
-    if (peer_to_disconnect) {
-      peer_to_disconnect->disconnect();
-      return true;
-    }
-    return false;
+    remove_peer(worst_peer_id);
+    return true;
   }
 
   return false;
@@ -427,19 +424,23 @@ bool PeerManager::evict_inbound_peer() {
 void PeerManager::disconnect_all() {
   std::map<int, PeerPtr> peers_to_disconnect;
 
+  std::function<void(int)> cb;
+  bool skip_callbacks = false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     peers_to_disconnect = peers_;
     peers_.clear();
     peer_misbehavior_.clear();
+    cb = peer_disconnect_callback_;
+    skip_callbacks = shutting_down_;
   }
 
   // Notify callback for each peer (matches remove_peer/evict_inbound_peer pattern)
   // Even during shutdown when io_context is stopped, invoking callbacks ensures
   // consistency and defensive programming (e.g., clearing stale sync peer state)
-  for (const auto &[id, peer] : peers_to_disconnect) {
-    if (peer_disconnect_callback_) {
-      peer_disconnect_callback_(id);
+  if (cb && !skip_callbacks) {
+    for (const auto &[id, peer] : peers_to_disconnect) {
+      cb(id);
     }
   }
 
@@ -641,6 +642,9 @@ void PeerManager::IncrementUnconnectingHeaders(int peer_id) {
     }
 
     PeerMisbehaviorData &data = it->second;
+    if (data.unconnecting_penalized) {
+      return; // already penalized; do nothing further
+    }
     data.num_unconnecting_headers_msgs++;
 
     LOG_NET_TRACE("IncrementUnconnectingHeaders: peer {} now has {} unconnecting msgs (threshold={})",
@@ -650,6 +654,7 @@ void PeerManager::IncrementUnconnectingHeaders(int peer_id) {
       LOG_NET_TRACE("peer {} ({}) sent too many unconnecting headers ({} >= {})",
                    peer_id, data.address, data.num_unconnecting_headers_msgs,
                    MAX_UNCONNECTING_HEADERS);
+      data.unconnecting_penalized = true; // latch to avoid repeated penalties
       threshold_exceeded = true; // call Misbehaving() after releasing the lock
     }
   }
