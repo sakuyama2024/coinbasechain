@@ -43,9 +43,20 @@
 #include <random>
 #include <set>
 #include <vector>
+#include <array>
 
 namespace coinbasechain {
 namespace network {
+
+/**
+ * AddressKey - Efficient binary key for address lookup (16-byte IP + 2-byte port)
+ */
+struct AddressKey {
+  std::array<uint8_t,16> ip{};
+  uint16_t port{0};
+  auto operator<=>(const AddressKey&) const = default;
+  bool operator==(const AddressKey&) const = default;
+};
 
 /**
  * AddrInfo - Extended address information with connection history
@@ -70,8 +81,8 @@ struct AddrInfo {
   // Check if address is terrible (too many failed attempts, etc.)
   bool is_terrible(uint32_t now) const;
 
-  // Get key for this address (IP:port)
-  std::string get_key() const;
+  // Get binary key for this address (IP:port)
+  AddressKey get_key() const;
 };
 
 /**
@@ -124,10 +135,14 @@ private:
   mutable std::mutex mutex_;
 
   // "tried" table: addresses we've successfully connected to
-  std::map<std::string, AddrInfo> tried_;
+  std::map<AddressKey, AddrInfo> tried_;
 
   // "new" table: addresses we've heard about but haven't connected to
-  std::map<std::string, AddrInfo> new_;
+  std::map<AddressKey, AddrInfo> new_;
+
+  // Auxiliary vectors for O(1) uniform selection
+  std::vector<AddressKey> tried_keys_;
+  std::vector<AddressKey> new_keys_;
 
   // Random number generator for selection
   std::mt19937 rng_;
