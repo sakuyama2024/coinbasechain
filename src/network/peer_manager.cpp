@@ -62,6 +62,22 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
     return -1;
   }
 
+  // Check bans BEFORE slot accounting (unless peer has NoBan permission)
+  if (!HasPermission(permissions, NetPermissionFlags::NoBan)) {
+    std::string peer_addr = address.empty() ? peer->address() : address;
+    std::string normalized_addr = normalize_ip_string(peer_addr);
+
+    if (IsBanned(normalized_addr)) {
+      LOG_NET_TRACE("add_peer: rejecting banned address {}", normalized_addr);
+      return -1;
+    }
+
+    if (IsDiscouraged(normalized_addr)) {
+      LOG_NET_TRACE("add_peer: rejecting discouraged address {}", normalized_addr);
+      return -1;
+    }
+  }
+
   // Check connection limits
   bool is_inbound = peer->is_inbound();
   bool is_feeler_new = peer->is_feeler();
@@ -164,6 +180,22 @@ bool PeerManager::add_peer_with_id(int peer_id, PeerPtr peer, NetPermissionFlags
     return false;
   }
 
+  // Check bans BEFORE slot accounting (unless peer has NoBan permission)
+  if (!HasPermission(permissions, NetPermissionFlags::NoBan)) {
+    std::string peer_addr = address.empty() ? peer->address() : address;
+    std::string normalized_addr = normalize_ip_string(peer_addr);
+
+    if (IsBanned(normalized_addr)) {
+      LOG_NET_TRACE("add_peer_with_id: rejecting banned address {}", normalized_addr);
+      return false;
+    }
+
+    if (IsDiscouraged(normalized_addr)) {
+      LOG_NET_TRACE("add_peer_with_id: rejecting discouraged address {}", normalized_addr);
+      return false;
+    }
+  }
+
   // Check connection limits
   bool is_inbound = peer->is_inbound();
   bool is_feeler_new = peer->is_feeler();
@@ -259,6 +291,14 @@ void PeerManager::remove_peer(int peer_id) {
   int misbehavior_score = state.misbehavior.misbehavior_score;
   if (state.misbehavior.should_discourage) {
     disconnect_reason = "misbehavior (score: " + std::to_string(misbehavior_score) + ")";
+
+    // Discourage the peer's address (internal call - NoBan already checked when setting should_discourage)
+    if (peer) {
+      std::string normalized_addr = normalize_ip_string(state.misbehavior.address);
+      Discourage(normalized_addr);
+      LOG_NET_TRACE("remove_peer: discouraged {} due to misbehavior (score={})",
+                    normalized_addr, misbehavior_score);
+    }
   }
 
   // Decide whether to mark as good in addrman
