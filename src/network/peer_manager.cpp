@@ -362,6 +362,7 @@ bool PeerManager::evict_inbound_peer() {
 
   std::vector<EvictionCandidate> candidates;
   auto now = std::chrono::steady_clock::now();
+  static constexpr std::chrono::seconds kRecentProtectWindow{10};
 
   for (const auto &[id, peer] : peers_) {
     // Only consider inbound peers
@@ -369,10 +370,8 @@ bool PeerManager::evict_inbound_peer() {
       continue;
     }
 
-    // Protect recently connected peers (within 10 seconds)
-    auto connection_age = std::chrono::duration_cast<std::chrono::seconds>(
-        now - peer->stats().connected_time);
-    if (connection_age.count() < 10) {
+    // Protect recently connected peers
+    if ((now - peer->stats().connected_time) < kRecentProtectWindow) {
       continue;
     }
 
@@ -487,11 +486,12 @@ void PeerManager::process_periodic() {
       if (peer->is_feeler()) {
         auto it_ct = peer_created_at_.find(id);
         if (it_ct != peer_created_at_.end()) {
-          auto age = std::chrono::duration_cast<std::chrono::seconds>(
-              std::chrono::steady_clock::now() - it_ct->second);
-          if (age.count() >= FEELER_MAX_LIFETIME_SEC) {
+          auto age = std::chrono::steady_clock::now() - it_ct->second;
+          if (age >= FEELER_MAX_LIFETIME) {
             LOG_NET_TRACE("process_periodic: feeler peer={} exceeded lifetime ({}s >= {}s), marking for removal",
-                          id, age.count(), FEELER_MAX_LIFETIME_SEC);
+                          id,
+                          std::chrono::duration_cast<std::chrono::seconds>(age).count(),
+                          FEELER_MAX_LIFETIME.count());
             to_remove.push_back(id);
           }
         }

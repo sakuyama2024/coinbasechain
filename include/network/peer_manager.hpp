@@ -89,7 +89,7 @@ public:
                        const Config &config = Config{});
 
   // Max lifetime for a feeler connection before forced removal (defense-in-depth)
-  static constexpr int FEELER_MAX_LIFETIME_SEC = 120;
+  static constexpr std::chrono::seconds FEELER_MAX_LIFETIME{120};
 
   ~PeerManager();
 
