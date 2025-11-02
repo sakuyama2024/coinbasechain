@@ -3,9 +3,28 @@
 #include "network/protocol.hpp"
 #include <algorithm>
 #include <boost/asio/ip/address.hpp>
+#include <limits>
 
 namespace coinbasechain {
 namespace network {
+
+namespace {
+// Normalize an IP string; map IPv4-mapped IPv6 to dotted-quad IPv4.
+static std::string normalize_ip_string(const std::string& s) {
+  try {
+    boost::system::error_code ec;
+    auto ip = boost::asio::ip::make_address(s, ec);
+    if (ec) return s;
+    if (ip.is_v6() && ip.to_v6().is_v4_mapped()) {
+      auto v4 = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, ip.to_v6());
+      return v4.to_string();
+    }
+    return ip.to_string();
+  } catch (...) {
+    return s;
+  }
+}
+} // namespace
 
 PeerManager::PeerManager(boost::asio::io_context &io_context,
                          AddressManager &addr_manager, const Config &config)
@@ -31,6 +50,12 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
   }
 
   std::unique_lock<std::mutex> lock(mutex_);
+
+  // Reject additions during bulk shutdown
+  if (stopping_all_) {
+    LOG_NET_TRACE("add_peer: rejected while disconnect_all in progress");
+    return -1;
+  }
 
   // Check connection limits
   bool is_inbound = peer->is_inbound();
@@ -66,30 +91,26 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
       LOG_NET_TRACE("add_peer: inbound at capacity and eviction failed (likely all peers protected by recent-connection window)");
       return -1; // Couldn't evict anyone, reject connection
     }
-    // Successfully evicted a peer, continue with adding new peer
+    // Recompute inbound counts after eviction to avoid TOCTOU
+    if (is_inbound) {
+      size_t inbound_now = 0;
+      for (const auto &kv : peers_) {
+        if (kv.second && kv.second->is_inbound()) inbound_now++;
+      }
+      if (inbound_now >= config_.max_inbound_peers) {
+        LOG_NET_TRACE("add_peer: inbound still at capacity after eviction, rejecting");
+        return -1;
+      }
+    }
+    // Successfully evicted and capacity confirmed; continue
   }
 
-  // Enforce per-IP inbound limit before adding
+  // Enforce per-IP inbound limit before adding (fresh check under lock)
   if (is_inbound) {
-    // Normalize address
-    auto normalize = [](const std::string& s) -> std::string {
-      try {
-        boost::system::error_code ec;
-        auto ip = boost::asio::ip::make_address(s, ec);
-        if (ec) return s;
-        if (ip.is_v6() && ip.to_v6().is_v4_mapped()) {
-          auto v4 = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, ip.to_v6());
-          return v4.to_string();
-        }
-        return ip.to_string();
-      } catch (...) {
-        return s;
-      }
-    };
-    const std::string new_addr = normalize(peer->address());
+    const std::string new_addr = normalize_ip_string(peer->address());
     int same_ip_inbound = 0;
     for (const auto& [id, p] : peers_) {
-      if (p->is_inbound() && normalize(p->address()) == new_addr) {
+      if (p->is_inbound() && normalize_ip_string(p->address()) == new_addr) {
         same_ip_inbound++;
         if (same_ip_inbound >= MAX_INBOUND_PER_IP) {
           return -1; // Reject new inbound from same IP
@@ -206,27 +227,11 @@ int PeerManager::find_peer_by_address(const std::string &address,
                                       uint16_t port) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  // Normalize input address (convert IPv4-mapped IPv6 to IPv4 dotted-quad)
-  auto normalize = [](const std::string& s) -> std::string {
-    try {
-      boost::system::error_code ec;
-      auto ip = boost::asio::ip::make_address(s, ec);
-      if (ec) return s;
-      if (ip.is_v6() && ip.to_v6().is_v4_mapped()) {
-        auto v4 = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, ip.to_v6());
-        return v4.to_string();
-      }
-      return ip.to_string();
-    } catch (...) {
-      return s;
-    }
-  };
-
-  const std::string needle_addr = normalize(address);
+  const std::string needle_addr = normalize_ip_string(address);
 
   for (const auto &[id, peer] : peers_) {
     if (!peer) continue;
-    const std::string peer_addr = normalize(peer->address());
+    const std::string peer_addr = normalize_ip_string(peer->address());
     if (peer_addr != needle_addr) continue;
     if (port != 0) {
       if (peer->port() == port) return id;
@@ -319,32 +324,19 @@ bool PeerManager::can_accept_inbound() const {
 }
 
 bool PeerManager::can_accept_inbound_from(const std::string& address) const {
-  // Enforce global inbound limit AND per-IP limit
-  if (!can_accept_inbound()) return false;
-
-  // Normalize address (map IPv4-mapped IPv6 to IPv4 dotted-quad)
-  auto normalize = [](const std::string& s) -> std::string {
-    try {
-      boost::system::error_code ec;
-      auto ip = boost::asio::ip::make_address(s, ec);
-      if (ec) return s;
-      if (ip.is_v6() && ip.to_v6().is_v4_mapped()) {
-        auto v4 = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, ip.to_v6());
-        return v4.to_string();
-      }
-      return ip.to_string();
-    } catch (...) {
-      return s;
-    }
-  };
-
-  const std::string needle = normalize(address);
-
   std::lock_guard<std::mutex> lock(mutex_);
+  // Check global inbound limit under the same lock
+  size_t inbound_now = 0;
+  for (const auto &kv : peers_) {
+    if (kv.second && kv.second->is_inbound()) inbound_now++;
+  }
+  if (inbound_now >= config_.max_inbound_peers) return false;
+
+  const std::string needle = normalize_ip_string(address);
   int same_ip_inbound = 0;
   for (const auto& [id, peer] : peers_) {
     if (!peer || !peer->is_inbound()) continue;
-    if (normalize(peer->address()) == needle) {
+    if (normalize_ip_string(peer->address()) == needle) {
       same_ip_inbound++;
       if (same_ip_inbound >= MAX_INBOUND_PER_IP) {
         return false;
@@ -353,7 +345,6 @@ bool PeerManager::can_accept_inbound_from(const std::string& address) const {
   }
   return true;
 }
-
 bool PeerManager::evict_inbound_peer() {
   std::unique_lock<std::mutex> lock(mutex_);
 
@@ -398,15 +389,18 @@ bool PeerManager::evict_inbound_peer() {
   // Evict the peer with the worst (highest) ping time, or oldest connection if
   // no ping data
   int worst_peer_id = -1;
-  int64_t worst_ping = -1;
   auto oldest_connected = std::chrono::steady_clock::time_point::max();
+  // Map unknown ping (-1) to a large sentinel so we prefer evicting unknowns
+  auto map_ping = [](int64_t p){ return p < 0 ? std::numeric_limits<int64_t>::max()/2 : p; };
+  int64_t worst_score = std::numeric_limits<int64_t>::min();
 
   for (const auto &candidate : candidates) {
-    if (candidate.ping_time_ms > worst_ping) {
-      worst_ping = candidate.ping_time_ms;
+    int64_t cand = map_ping(candidate.ping_time_ms);
+    if (cand > worst_score) {
+      worst_score = cand;
       worst_peer_id = candidate.peer_id;
       oldest_connected = candidate.connected_time;
-    } else if (candidate.ping_time_ms == worst_ping) {
+    } else if (cand == worst_score) {
       // Tie-breaker: prefer evicting older connection
       if (candidate.connected_time < oldest_connected) {
         worst_peer_id = candidate.peer_id;
@@ -432,19 +426,20 @@ void PeerManager::disconnect_all() {
   bool skip_callbacks = false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    stopping_all_ = true;
     peers_to_disconnect = peers_;
     cb = peer_disconnect_callback_;
     skip_callbacks = shutting_down_;
   }
 
-  // Notify callbacks before erasing maps so callbacks can still query peers_
+  // Notify callbacks after snapshot; peers_ still populated for lookup, add_peer() is rejected
   if (cb && !skip_callbacks) {
     for (const auto &[id, peer] : peers_to_disconnect) {
       cb(id);
     }
   }
 
-  // Now clear internal maps
+  // Now clear internal maps and disconnect peers
   {
     std::lock_guard<std::mutex> lock(mutex_);
     peers_.clear();
@@ -457,6 +452,12 @@ void PeerManager::disconnect_all() {
     if (peer) {
       peer->disconnect();
     }
+  }
+
+  // Allow add_peer() after bulk disconnect completes
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    stopping_all_ = false;
   }
 }
 

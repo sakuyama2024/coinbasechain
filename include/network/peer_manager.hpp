@@ -207,6 +207,8 @@ private:
 
   // Shutdown flag to guard callbacks during destruction
   bool shutting_down_{false};
+  // In-progress bulk shutdown (disconnect_all); reject add_peer while true
+  bool stopping_all_{false};
 };
 
 } // namespace network
