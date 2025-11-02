@@ -949,15 +949,11 @@ bool NetworkManager::handle_message(PeerPtr peer,
     }
   }
 
-  // Try MessageDispatcher first (new handler registry pattern)
-  if (message_dispatcher_ && message_dispatcher_->Dispatch(peer, msg->command(), msg.get())) {
-    return true;
-  }
-
-  // Fall back to MessageRouter if no handler registered in MessageDispatcher
-  // (During transition, MessageRouter provides handlers for all messages)
-  if (message_router_) {
-    return message_router_->RouteMessage(peer, std::move(msg));
+  // Route via MessageDispatcher (handler registry pattern)
+  // All protocol message handlers are registered in MessageDispatcher
+  // MessageRouter still exists but only provides handler implementations
+  if (message_dispatcher_) {
+    return message_dispatcher_->Dispatch(peer, msg->command(), msg.get());
   }
 
   return false;

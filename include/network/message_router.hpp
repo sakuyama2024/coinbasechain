@@ -25,8 +25,10 @@ class PeerManager;
 
 namespace network {
 
-// MessageRouter - Routes incoming protocol messages to appropriate handlers
-// Coordinates message handling between specialized managers
+// MessageRouter - Provides message handler implementations
+// NOTE: Message routing is now handled by MessageDispatcher (handler registry pattern)
+// This class provides the actual handler implementations and will be phased out as
+// handlers are migrated to specialized managers (Phase 4 refactoring)
 class MessageRouter {
 public:
   MessageRouter(AddressManager* addr_mgr,
@@ -34,8 +36,9 @@ public:
                 BlockRelayManager* block_relay,
                 PeerManager* peer_mgr = nullptr);
 
-  // Route incoming message to appropriate handler
-  // Returns true if message was handled successfully
+  // DEPRECATED: Route message to handler (kept for test compatibility)
+  // Production code should use MessageDispatcher instead
+  // This will be removed when MessageRouter is phased out (Phase 4)
   bool RouteMessage(PeerPtr peer, std::unique_ptr<message::Message> msg);
 
   // Debug stats snapshot for GETADDR handling (for tests/triage)

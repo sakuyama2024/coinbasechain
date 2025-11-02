@@ -30,61 +30,41 @@ MessageRouter::MessageRouter(AddressManager* addr_mgr,
       });
 }
 
+// NOTE: RouteMessage() is deprecated - routing is now handled by MessageDispatcher
+// This method is kept temporarily for backward compatibility with tests
+// and will be removed when MessageRouter is fully phased out (Phase 4)
 bool MessageRouter::RouteMessage(PeerPtr peer, std::unique_ptr<message::Message> msg) {
   if (!msg || !peer) {
     return false;
   }
 
   const std::string &command = msg->command();
-  LOG_NET_TRACE("MessageRouter: routing peer={} command={}", peer->id(), command);
 
-  // Route to appropriate handler based on message type
+  // Dispatch to appropriate handler
   if (command == protocol::commands::VERACK) {
     return handle_verack(peer);
   }
-
-if (command == protocol::commands::ADDR) {
+  if (command == protocol::commands::ADDR) {
     auto *addr_msg = dynamic_cast<message::AddrMessage *>(msg.get());
-    if (!addr_msg) {
-      LOG_NET_ERROR("MessageRouter: bad payload type for ADDR from peer {}", peer ? peer->id() : -1);
-      return false;
-    }
-    return handle_addr(peer, addr_msg);
+    return addr_msg ? handle_addr(peer, addr_msg) : false;
   }
-
   if (command == protocol::commands::GETADDR) {
     return handle_getaddr(peer);
   }
-
-if (command == protocol::commands::INV) {
+  if (command == protocol::commands::INV) {
     auto *inv_msg = dynamic_cast<message::InvMessage *>(msg.get());
-    if (!inv_msg) {
-      LOG_NET_ERROR("MessageRouter: bad payload type for INV from peer {}", peer ? peer->id() : -1);
-      return false;
-    }
-    return handle_inv(peer, inv_msg);
+    return inv_msg ? handle_inv(peer, inv_msg) : false;
   }
-
-if (command == protocol::commands::HEADERS) {
+  if (command == protocol::commands::HEADERS) {
     auto *headers_msg = dynamic_cast<message::HeadersMessage *>(msg.get());
-    if (!headers_msg) {
-      LOG_NET_ERROR("MessageRouter: bad payload type for HEADERS from peer {}", peer ? peer->id() : -1);
-      return false;
-    }
-    return handle_headers(peer, headers_msg);
+    return headers_msg ? handle_headers(peer, headers_msg) : false;
   }
-
-if (command == protocol::commands::GETHEADERS) {
+  if (command == protocol::commands::GETHEADERS) {
     auto *getheaders_msg = dynamic_cast<message::GetHeadersMessage *>(msg.get());
-    if (!getheaders_msg) {
-      LOG_NET_ERROR("MessageRouter: bad payload type for GETHEADERS from peer {}", peer ? peer->id() : -1);
-      return false;
-    }
-    return handle_getheaders(peer, getheaders_msg);
+    return getheaders_msg ? handle_getheaders(peer, getheaders_msg) : false;
   }
 
-  // Unknown message - log and return true (not an error)
-  LOG_NET_TRACE("MessageRouter: unhandled message type: {}", command);
+  // Unknown message - not an error
   return true;
 }
 
