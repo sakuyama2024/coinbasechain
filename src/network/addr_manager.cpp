@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fcntl.h>
 #include <unistd.h>
+#include <limits>
 
 namespace coinbasechain {
 namespace network {
@@ -17,14 +18,14 @@ namespace network {
 // Constants
 // An address in the NEW table is considered "stale" if we haven't heard about it for this many days.
 // Stale NEW entries are removed by cleanup_stale(); TRIED entries are retained even if old (they worked before).
-static constexpr uint32_t STALE_AFTER_DAYS = 30;
+static constexpr int64_t STALE_AFTER_DAYS = 30;
 
 // After this many consecutive failed connection attempts:
 // - NEW: entry is considered "terrible" and may be removed
 // - TRIED: entry is demoted back to NEW; further failures there may remove it
 static constexpr uint32_t MAX_FAILURES = 10;
 
-static constexpr uint32_t SECONDS_PER_DAY = 86400; // Seconds in one day (utility for time math)
+static constexpr int64_t SECONDS_PER_DAY = 86400; // Seconds in one day (utility for time math)
 // Selection tuning constants:
 // - SELECT_MAX_CHECKS: number of random probes into a table (TRIED/NEW) to find an eligible
 //   address before falling back; prevents O(N) scans in large tables.
@@ -47,12 +48,12 @@ AddressKey AddrInfo::get_key() const {
   return k;
 }
 
-bool AddrInfo::is_stale(uint32_t now) const {
+bool AddrInfo::is_stale(int64_t now) const {
   if (timestamp == 0 || timestamp > now) return false; // avoid underflow and treat future/zero as not stale
   return (now - timestamp) > (STALE_AFTER_DAYS * SECONDS_PER_DAY);
 }
 
-bool AddrInfo::is_terrible(uint32_t now) const {
+bool AddrInfo::is_terrible(int64_t now) const {
   // Too many failed attempts
   if (attempts >= MAX_FAILURES) {
     return true;
@@ -70,27 +71,27 @@ bool AddrInfo::is_terrible(uint32_t now) const {
 
 AddressManager::AddressManager() : rng_(std::random_device{}()) {}
 
-uint32_t AddressManager::now() const {
-  return static_cast<uint32_t>(util::GetTime());
+int64_t AddressManager::now() const {
+  return util::GetTime();
 }
 
 bool AddressManager::add(const protocol::NetworkAddress &addr,
-                         uint32_t timestamp) {
+                         int64_t timestamp) {
   std::lock_guard<std::mutex> lock(mutex_);
   return add_internal(addr, timestamp);
 }
 
 bool AddressManager::add_internal(const protocol::NetworkAddress &addr,
-                                  uint32_t timestamp) {
+                                  int64_t timestamp) {
   // Minimal validation: non-zero port and non-zero IP
   if (addr.port == 0) return false;
   bool all_zero = true; for (auto b : addr.ip) { if (b != 0) { all_zero = false; break; } }
   if (all_zero) return false;
 
-  const uint32_t now_s = now();
+  const int64_t now_s = now();
   // Clamp future or absurdly old timestamps to now
-  const uint32_t TEN_YEARS = 10u * 365u * 24u * 60u * 60u;
-  uint32_t eff_ts = (timestamp == 0 ? now_s : timestamp);
+  const int64_t TEN_YEARS = 10ll * 365ll * 24ll * 60ll * 60ll;
+  int64_t eff_ts = (timestamp == 0 ? now_s : timestamp);
   if (eff_ts > now_s || now_s - eff_ts > TEN_YEARS) eff_ts = now_s;
 
   AddrInfo info(addr, eff_ts);
@@ -144,7 +145,7 @@ void AddressManager::attempt(const protocol::NetworkAddress &addr) {
 
   AddrInfo probe(addr);
   AddressKey key = probe.get_key();
-  uint32_t t = now();
+  int64_t t = now();
 
   // Update in new table
   if (auto it = new_.find(key); it != new_.end()) {
@@ -164,7 +165,7 @@ void AddressManager::good(const protocol::NetworkAddress &addr) {
 
   AddrInfo info(addr);
   AddressKey key = info.get_key();
-  uint32_t current_time = now();
+  int64_t current_time = now();
 
   // Logging: avoid formatting AddressKey directly
   LOG_NET_TRACE("AddressManager::good() called (port={})", addr.port);
@@ -244,7 +245,7 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
   std::uniform_int_distribution<int> dist(0, 99);
   bool use_tried = !tried_.empty() && (dist(rng_) < SELECT_TRIED_BIAS_PERCENT || new_.empty());
 
-  const uint32_t now_ts = now();
+  const int64_t now_ts = now();
 
   auto ok = [&](const AddrInfo& info) -> bool {
     if (info.last_try == 0) return true;
@@ -344,7 +345,7 @@ AddressManager::get_addresses(size_t max_count) {
   std::vector<protocol::TimestampedAddress> result;
   result.reserve(std::min(max_count, tried_.size() + new_.size()));
 
-  const uint32_t now_s = now();
+  const int64_t now_s = now();
 
   // Add tried addresses first (filter invalid/terrible defensively)
   for (const auto &[key, info] : tried_) {
@@ -353,7 +354,10 @@ AddressManager::get_addresses(size_t max_count) {
     bool all_zero = true; for (auto b : info.address.ip) { if (b != 0) { all_zero = false; break; } }
     if (all_zero) continue;
     if (info.is_terrible(now_s)) continue;
-    result.push_back({info.timestamp, info.address});
+    {
+      uint32_t ts = static_cast<uint32_t>(std::clamp<int64_t>(info.timestamp, 0, std::numeric_limits<uint32_t>::max()));
+      result.emplace_back(ts, info.address);
+    }
   }
 
   // Add new addresses (skip invalid/terrible)
@@ -363,7 +367,10 @@ AddressManager::get_addresses(size_t max_count) {
     bool all_zero = true; for (auto b : info.address.ip) { if (b != 0) { all_zero = false; break; } }
     if (all_zero) continue;
     if (info.is_terrible(now_s)) continue;
-    result.push_back({info.timestamp, info.address});
+    {
+      uint32_t ts = static_cast<uint32_t>(std::clamp<int64_t>(info.timestamp, 0, std::numeric_limits<uint32_t>::max()));
+      result.emplace_back(ts, info.address);
+    }
   }
 
   // Shuffle for privacy
@@ -389,7 +396,7 @@ size_t AddressManager::new_count() const {
 
 void AddressManager::cleanup_stale() {
   std::lock_guard<std::mutex> lock(mutex_);
-  uint32_t current_time = now();
+  int64_t current_time = now();
 
   // Remove stale/terrible addresses from new table and keep keys in sync
   for (auto it = new_.begin(); it != new_.end();) {
@@ -615,9 +622,9 @@ bool AddressManager::Load(const std::string &filepath) {
         addr.port = addr_json["port"].get<uint16_t>();
         addr.services = addr_json["services"].get<uint64_t>();
 
-        AddrInfo info(addr, addr_json["timestamp"].get<uint32_t>());
-        info.last_try = addr_json["last_try"].get<uint32_t>();
-        info.last_success = addr_json["last_success"].get<uint32_t>();
+        AddrInfo info(addr, addr_json["timestamp"].get<int64_t>());
+        info.last_try = addr_json["last_try"].get<int64_t>();
+        info.last_success = addr_json["last_success"].get<int64_t>();
         info.attempts = addr_json["attempts"].get<int>();
         info.tried = true;
 
@@ -642,9 +649,9 @@ bool AddressManager::Load(const std::string &filepath) {
         addr.port = addr_json["port"].get<uint16_t>();
         addr.services = addr_json["services"].get<uint64_t>();
 
-        AddrInfo info(addr, addr_json["timestamp"].get<uint32_t>());
-        info.last_try = addr_json["last_try"].get<uint32_t>();
-        info.last_success = addr_json["last_success"].get<uint32_t>();
+        AddrInfo info(addr, addr_json["timestamp"].get<int64_t>());
+        info.last_try = addr_json["last_try"].get<int64_t>();
+        info.last_success = addr_json["last_success"].get<int64_t>();
         info.attempts = addr_json["attempts"].get<int>();
         info.tried = false;
 
