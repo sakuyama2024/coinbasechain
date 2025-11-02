@@ -25,20 +25,25 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
 
   // Check connection limits
   bool is_inbound = peer->is_inbound();
+  bool is_feeler_new = peer->is_feeler();
   size_t current_inbound = 0;
-  size_t current_outbound = 0;
+  size_t current_outbound_nonfeeler = 0;
 
   for (const auto &[id, p] : peers_) {
     if (p->is_inbound()) {
       current_inbound++;
     } else {
-      current_outbound++;
+      // Outbound: only count full-relay (exclude feelers from slot consumption)
+      if (!p->is_feeler()) {
+        current_outbound_nonfeeler++;
+      }
     }
   }
 
   // Check outbound limit (no eviction for outbound)
-  if (!is_inbound && current_outbound >= config_.max_outbound_peers) {
-    return -1; // Too many outbound connections
+  // Do not count feeler connections against outbound capacity, and do not gate them here
+  if (!is_inbound && !is_feeler_new && current_outbound_nonfeeler >= config_.max_outbound_peers) {
+    return -1; // Too many outbound full-relay connections
   }
 
   // Check inbound limit - try eviction if at capacity
@@ -49,6 +54,7 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
     lock.lock();
 
     if (!evicted) {
+      LOG_NET_TRACE("add_peer: inbound at capacity and eviction failed (likely all peers protected by recent-connection window)");
       return -1; // Couldn't evict anyone, reject connection
     }
     // Successfully evicted a peer, continue with adding new peer
@@ -104,6 +110,8 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
 
 void PeerManager::remove_peer(int peer_id) {
   PeerPtr peer;
+  std::string addr_str_after;
+  uint16_t addr_port_after = 0;
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -125,22 +133,11 @@ void PeerManager::remove_peer(int peer_id) {
       misbehavior_score = mis_it->second.misbehavior_score;
     }
 
-    // If this was a well-behaved outbound peer that had completed handshake,
-    // update addrman as "good" so we keep it eligible for future reconnects.
+    // Decide whether to mark as good in addrman (perform update after releasing lock)
     if (peer && peer->successfully_connected() && misbehavior_score == 0 &&
         !peer->is_inbound() && !peer->is_feeler()) {
-      const std::string& addr_str = peer->target_address();
-      uint16_t port = peer->target_port();
-      if (!addr_str.empty() && port != 0) {
-        try {
-          auto net_addr = protocol::NetworkAddress::from_string(addr_str, port);
-          addr_manager_.good(net_addr);
-          LOG_NET_TRACE("Updated addrman for disconnected peer {}:{}", addr_str, port);
-        } catch (const std::exception& e) {
-          LOG_NET_WARN("Failed to update addrman for disconnected peer {}:{}: {}",
-                       addr_str, port, e.what());
-        }
-      }
+      addr_str_after = peer->target_address();
+      addr_port_after = peer->target_port();
     }
 
     // Erase peer from map
@@ -154,6 +151,18 @@ void PeerManager::remove_peer(int peer_id) {
                  peer_id, peers_.size());
   }
   
+  // After releasing lock: update addrman for good outbound peers (avoid lock-order risks)
+  if (addr_port_after != 0 && !addr_str_after.empty()) {
+    try {
+      auto net_addr = protocol::NetworkAddress::from_string(addr_str_after, addr_port_after);
+      addr_manager_.good(net_addr);
+      LOG_NET_TRACE("Updated addrman for disconnected peer {}:{}", addr_str_after, addr_port_after);
+    } catch (const std::exception& e) {
+      LOG_NET_WARN("Failed to update addrman for disconnected peer {}:{}: {}",
+                   addr_str_after, addr_port_after, e.what());
+    }
+  }
+
   // Notify callback (e.g., HeaderSyncManager) that peer disconnected
   // Do this after removing from map but before disconnecting
   if (peer_disconnect_callback_) {
