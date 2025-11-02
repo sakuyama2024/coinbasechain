@@ -98,29 +98,12 @@ NetworkManager::NetworkManager(
       chainstate_manager, *peer_manager_, header_sync_manager_.get());
 
   // Create MessageRouter
+  // Note: All peer lifecycle callbacks now use NetworkNotifications
   message_router_ = std::make_unique<MessageRouter>(
       addr_manager_.get(), header_sync_manager_.get(), block_relay_manager_.get(), peer_manager_.get());
-  
-  // Register callback for peer disconnects (Bitcoin Core FinalizeNode equivalent)
-  // This allows HeaderSyncManager to clear sync state when sync peer disconnects
-  peer_manager_->SetPeerDisconnectCallback([this](int peer_id) {
-    if (header_sync_manager_) {
-      header_sync_manager_->OnPeerDisconnected(static_cast<uint64_t>(peer_id));
-    }
-    if (block_relay_manager_) {
-      block_relay_manager_->OnPeerDisconnected(peer_id);
-    }
-    if (message_router_) {
-      message_router_->OnPeerDisconnected(peer_id);
-    }
-  });
 }
 
 NetworkManager::~NetworkManager() {
-  // Prevent callbacks from firing into partially destroyed objects
-  if (peer_manager_) {
-    peer_manager_->SetPeerDisconnectCallback({});
-  }
   stop();
 }
 

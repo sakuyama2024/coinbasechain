@@ -252,22 +252,10 @@ TEST_CASE("Pre-VERACK gating: peer state flag controls gating", "[network][gatin
 }
 
 /**
- * Test: OnPeerDisconnected cleanup
- * Verifies that peer state is properly cleaned up on disconnect
+ * Note: OnPeerDisconnected cleanup test removed
+ * Reason: OnPeerDisconnected is now private and automatically called via NetworkNotifications.
+ * The cleanup behavior is now tested through integration tests with PeerManager.
  */
-TEST_CASE("Pre-VERACK gating: OnPeerDisconnected cleanup", "[network][gating][lifecycle]") {
-  MessageRouter router(nullptr, nullptr, nullptr, nullptr);
-
-  int peer_id = 42;
-
-  // Should not crash when cleaning up peer that never existed
-  router.OnPeerDisconnected(peer_id);
-
-  // Multiple cleanups should be idempotent
-  router.OnPeerDisconnected(peer_id);
-
-  REQUIRE(true);  // Just verify no crash
-}
 
 /**
  * Test: Unknown message types bypass gating (unhandled)

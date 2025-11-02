@@ -13,6 +13,7 @@
 #include "network/peer_manager.hpp"
 #include "network/peer.hpp"
 #include "network/addr_manager.hpp"
+#include "network/notifications.hpp"
 #include "util/uint.hpp"
 #include <boost/asio.hpp>
 
@@ -558,7 +559,7 @@ TEST_CASE("PeerManager - Feeler lifetime is enforced", "[network][peer_manager][
     REQUIRE(pm.get_peer(fid) == nullptr);
 }
 
-TEST_CASE("PeerManager - disconnect_all invokes callback before erasing peers", "[network][peer_manager][unit][callbacks]") {
+TEST_CASE("PeerManager - disconnect_all publishes notifications before erasing peers", "[network][peer_manager][unit][notifications]") {
     TestPeerFixture fixture;
     PeerManager pm(fixture.io_context, fixture.addr_manager);
 
@@ -566,15 +567,16 @@ TEST_CASE("PeerManager - disconnect_all invokes callback before erasing peers", 
     int id = pm.add_peer(p);
     REQUIRE(id >= 0);
 
-    bool saw_peer_in_callback = false;
-    pm.SetPeerDisconnectCallback([&](int peer_id){
-        // Peer should still be retrievable during callback
-        auto found = pm.get_peer(peer_id);
-        saw_peer_in_callback = (found != nullptr);
-    });
+    bool saw_peer_in_notification = false;
+    auto sub = coinbasechain::NetworkEvents().SubscribePeerDisconnected(
+        [&](int peer_id, const std::string&, const std::string&){
+            // Peer should still be retrievable during notification
+            auto found = pm.get_peer(peer_id);
+            saw_peer_in_notification = (found != nullptr);
+        });
 
     pm.disconnect_all();
-    REQUIRE(saw_peer_in_callback);
+    REQUIRE(saw_peer_in_notification);
     REQUIRE(pm.peer_count() == 0);
 }
 

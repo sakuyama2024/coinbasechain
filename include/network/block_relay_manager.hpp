@@ -5,8 +5,6 @@
 #include "network/message.hpp"
 #include "util/uint.hpp"
 #include <memory>
-#include <unordered_map>
-#include <mutex>
 
 namespace coinbasechain {
 
@@ -49,20 +47,14 @@ public:
   // Handle incoming INV message from a peer
   bool HandleInvMessage(PeerPtr peer, message::InvMessage* msg);
 
-  // Cleanup hook: called when a peer disconnects
-  void OnPeerDisconnected(int peer_id);
-
 private:
   validation::ChainstateManager& chainstate_manager_;
   PeerManager& peer_manager_;
   HeaderSyncManager* header_sync_manager_; // Optional - for INV->GETHEADERS coordination
 
-  // Per-peer last announced block to avoid re-announcing the same tip in tight loops
-  std::unordered_map<int, uint256> last_announced_to_peer_;
-  // Per-peer last announcement time (unix seconds via util::GetTime)
-  std::unordered_map<int, int64_t> last_announce_time_s_;
-  // Mutex to guard per-peer announcement tracking
-  mutable std::mutex announce_mutex_;
+  // Note: Per-peer announcement tracking (last announced block/time) is now stored
+  // in PeerManager's consolidated PerPeerState. No separate maps or mutex needed.
+  // Cleanup is automatic via PerPeerState removal - no subscription needed.
 };
 
 } // namespace network

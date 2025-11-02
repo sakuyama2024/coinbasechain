@@ -2,6 +2,8 @@
 
 #include "network/peer.hpp"
 #include "network/message.hpp"
+#include "network/notifications.hpp"
+#include "network/peer_state.hpp"  // For AddressKey, LearnedEntry, LearnedMap
 #include <memory>
 #include <array>
 #include <unordered_map>
@@ -36,9 +38,6 @@ public:
   // Returns true if message was handled successfully
   bool RouteMessage(PeerPtr peer, std::unique_ptr<message::Message> msg);
 
-  // Peer lifecycle - cleanup per-peer state on disconnect
-  void OnPeerDisconnected(int peer_id);
-
   // Debug stats snapshot for GETADDR handling (for tests/triage)
   struct GetAddrDebugStats {
     uint64_t total{0};
@@ -56,41 +55,19 @@ public:
   void TestSeedRng(uint64_t seed);
 
 private:
+  // Peer lifecycle - cleanup per-peer state on disconnect (via NetworkNotifications)
+  void OnPeerDisconnected(int peer_id);
+
   AddressManager* addr_manager_;
   HeaderSyncManager* header_sync_manager_;
   BlockRelayManager* block_relay_manager_;
   PeerManager* peer_manager_;
 
-  // AddressKey for binary IP:port keying (avoids string encode/decode)
-  struct AddressKey {
-    std::array<uint8_t,16> ip{};
-    uint16_t port{0};
-    struct Hasher {
-      size_t operator()(const AddressKey& k) const noexcept {
-        // FNV-1a 64-bit
-        uint64_t h = 1469598103934665603ULL;
-        auto mix = [&](uint8_t b){ h ^= b; h *= 1099511628211ULL; };
-        for (auto b : k.ip) mix(b);
-        mix(static_cast<uint8_t>(k.port >> 8));
-        mix(static_cast<uint8_t>(k.port & 0xFF));
-        return static_cast<size_t>(h);
-      }
-    };
-    bool operator==(const AddressKey& o) const noexcept {
-      return port == o.port && ip == o.ip;
-    }
-  };
+  // Note: AddressKey, LearnedEntry, and LearnedMap are now defined in peer_state.hpp
+  // and shared across PeerManager and MessageRouter
 
-  // Learned address entry (preserves services and timestamp)
-  struct LearnedEntry {
-    protocol::TimestampedAddress ts_addr{};
-    int64_t last_seen_s{0};
-  };
-
-  using LearnedMap = std::unordered_map<AddressKey, LearnedEntry, AddressKey::Hasher>;
-
-  // GETADDR policy: once-per-connection tracking
-  std::unordered_set<int> getaddr_replied_;
+  // Note: Per-peer GETADDR reply tracking and learned addresses are now stored
+  // in PeerManager's consolidated PerPeerState. No separate maps needed.
 
   // Echo suppression TTL (do not echo back addresses learned from the requester within TTL)
   static constexpr int64_t ECHO_SUPPRESS_TTL_SEC = 600; // 10 minutes
@@ -98,10 +75,7 @@ private:
   // Cap per-peer learned cache to bound memory
   static constexpr size_t MAX_LEARNED_PER_PEER = 2000;
 
-  // Per-peer learned addresses (for echo suppression)
-  std::unordered_map<int, LearnedMap> learned_addrs_by_peer_;
-
-  // Mutex guarding per-peer GETADDR/echo-suppression maps and recent ring
+  // Mutex guarding recent ring buffer (recent_addrs_)
   mutable std::mutex addr_mutex_;
 
   // Recently learned addresses (global ring buffer) to improve GETADDR responsiveness
@@ -123,8 +97,11 @@ private:
   // RNG for GETADDR reply randomization
   std::mt19937 rng_;
 
-  // Helper to build binary key
-  static AddressKey MakeKey(const protocol::NetworkAddress& a);
+  // NetworkNotifications subscription (RAII cleanup on destruction)
+  NetworkNotifications::Subscription peer_disconnect_subscription_;
+
+  // Helper to build binary key (uses shared AddressKey from peer_state.hpp)
+  static network::AddressKey MakeKey(const protocol::NetworkAddress& a);
 
   // Message-specific handlers
   bool handle_verack(PeerPtr peer);

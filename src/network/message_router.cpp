@@ -22,7 +22,13 @@ MessageRouter::MessageRouter(AddressManager* addr_mgr,
       header_sync_manager_(header_sync),
       block_relay_manager_(block_relay),
       peer_manager_(peer_mgr),
-      rng_(std::random_device{}()) {}
+      rng_(std::random_device{}()) {
+  // Subscribe to peer disconnect events
+  peer_disconnect_subscription_ = NetworkEvents().SubscribePeerDisconnected(
+      [this](int peer_id, const std::string&, const std::string&) {
+        OnPeerDisconnected(peer_id);
+      });
+}
 
 bool MessageRouter::RouteMessage(PeerPtr peer, std::unique_ptr<message::Message> msg) {
   if (!msg || !peer) {
@@ -160,47 +166,54 @@ bool MessageRouter::handle_addr(PeerPtr peer, message::AddrMessage* msg) {
 
   const int peer_id = peer->id();
   const int64_t now_s = util::GetTime();
+
+  // Update learned addresses via PeerManager
+  if (peer_manager_) {
+    peer_manager_->ModifyLearnedAddresses(peer_id, [&](LearnedMap& learned) {
+      // Prune old entries by TTL
+      for (auto it = learned.begin(); it != learned.end(); ) {
+        const int64_t age = now_s - it->second.last_seen_s;
+        if (age > ECHO_SUPPRESS_TTL_SEC) {
+          it = learned.erase(it);
+        } else {
+          ++it;
+        }
+      }
+
+      // Insert/update learned entries
+      for (const auto& ta : msg->addresses) {
+        network::AddressKey k = MakeKey(ta.address);
+        auto& e = learned[k];
+        if (e.last_seen_s == 0 || ta.timestamp >= e.ts_addr.timestamp) {
+          e.ts_addr = ta; // preserve services + latest timestamp
+        }
+        e.last_seen_s = now_s;
+      }
+
+      // Enforce per-peer cap by evicting oldest
+      while (learned.size() > MAX_LEARNED_PER_PEER) {
+        auto victim = learned.begin();
+        for (auto it = learned.begin(); it != learned.end(); ++it) {
+          if (it->second.last_seen_s < victim->second.last_seen_s) {
+            victim = it;
+          }
+        }
+        learned.erase(victim);
+      }
+    });
+  }
+
+  // Global recent ring (O(1) eviction)
   {
     std::lock_guard<std::mutex> g(addr_mutex_);
-    auto& learned = learned_addrs_by_peer_[peer_id];
-
-    // Prune old entries by TTL
-    for (auto it = learned.begin(); it != learned.end(); ) {
-      const int64_t age = now_s - it->second.last_seen_s;
-      if (age > ECHO_SUPPRESS_TTL_SEC) {
-        it = learned.erase(it);
-      } else {
-        ++it;
-      }
-    }
-
-    // Insert/update learned entries and record recent ring
     for (const auto& ta : msg->addresses) {
-      AddressKey k = MakeKey(ta.address);
-      auto& e = learned[k];
-      if (e.last_seen_s == 0 || ta.timestamp >= e.ts_addr.timestamp) {
-        e.ts_addr = ta; // preserve services + latest timestamp
-      }
-      e.last_seen_s = now_s;
-
-      // Global recent ring (O(1) eviction)
       recent_addrs_.push_back(ta);
       if (recent_addrs_.size() > RECENT_ADDRS_MAX) {
         recent_addrs_.pop_front();
       }
     }
-
-    // Enforce per-peer cap by evicting oldest
-    while (learned.size() > MAX_LEARNED_PER_PEER) {
-      auto victim = learned.begin();
-      for (auto it = learned.begin(); it != learned.end(); ++it) {
-        if (it->second.last_seen_s < victim->second.last_seen_s) {
-          victim = it;
-        }
-      }
-      learned.erase(victim);
-    }
   }
+
   return true;
 }
 
@@ -238,35 +251,35 @@ bool MessageRouter::handle_getaddr(PeerPtr peer) {
   const int64_t now_s = util::GetTime();
 
   // Once-per-connection gating (reply to GETADDR only once per connection)
-  {
-    std::lock_guard<std::mutex> g(addr_mutex_);
-    if (getaddr_replied_.count(peer_id)) {
-      {
-        std::lock_guard<std::mutex> sg(stats_mutex_);
-        stats_getaddr_ignored_repeat_++;
-      }
-      LOG_NET_DEBUG("GETADDR ignored: repeat on same connection peer={}", peer_id);
-      return true;
+  // Use PeerManager accessor
+  if (peer_manager_ && peer_manager_->HasRepliedToGetAddr(peer_id)) {
+    {
+      std::lock_guard<std::mutex> sg(stats_mutex_);
+      stats_getaddr_ignored_repeat_++;
     }
-    getaddr_replied_.insert(peer_id);
+    LOG_NET_DEBUG("GETADDR ignored: repeat on same connection peer={}", peer_id);
+    return true;
+  }
+  if (peer_manager_) {
+    peer_manager_->MarkGetAddrReplied(peer_id);
   }
 
-  // Copy suppression map for this peer while pruning old entries (under lock)
+  // Copy suppression map for this peer while pruning old entries
+  // Use PeerManager accessor
   LearnedMap suppression_map_copy;
-  {
-    std::lock_guard<std::mutex> g(addr_mutex_);
-    auto it = learned_addrs_by_peer_.find(peer_id);
-    if (it != learned_addrs_by_peer_.end()) {
-      // prune TTL in place before copying
-      for (auto lit = it->second.begin(); lit != it->second.end(); ) {
-        const int64_t age = now_s - lit->second.last_seen_s;
+  if (peer_manager_) {
+    auto learned_opt = peer_manager_->GetLearnedAddresses(peer_id);
+    if (learned_opt) {
+      // Prune TTL before copying
+      for (auto it = learned_opt->begin(); it != learned_opt->end(); ) {
+        const int64_t age = now_s - it->second.last_seen_s;
         if (age > ECHO_SUPPRESS_TTL_SEC) {
-          lit = it->second.erase(lit);
+          it = learned_opt->erase(it);
         } else {
-          ++lit;
+          ++it;
         }
       }
-      suppression_map_copy = it->second; // copy after pruning
+      suppression_map_copy = *learned_opt; // copy after pruning
     }
   }
 
@@ -329,9 +342,10 @@ bool MessageRouter::handle_getaddr(PeerPtr peer) {
   }
 
   // 3) Fallback: if still empty, include learned addresses from other peers (excluding requester)
-  if (response->addresses.empty()) {
-    std::lock_guard<std::mutex> g(addr_mutex_);
-    for (const auto& [other_peer_id, learned_map] : learned_addrs_by_peer_) {
+  // Use PeerManager accessor
+  if (response->addresses.empty() && peer_manager_) {
+    auto all_learned = peer_manager_->GetAllLearnedAddresses();
+    for (const auto& [other_peer_id, learned_map] : all_learned) {
       if (other_peer_id == peer_id) continue;
       for (const auto& [akey, entry] : learned_map) {
         if (response->addresses.size() >= protocol::MAX_ADDR_SIZE) break;
@@ -428,15 +442,16 @@ bool MessageRouter::handle_getheaders(PeerPtr peer, message::GetHeadersMessage* 
   return header_sync_manager_->HandleGetHeadersMessage(peer, msg);
 }
 
-// Helper to build binary key
-MessageRouter::AddressKey MessageRouter::MakeKey(const protocol::NetworkAddress& a) {
-  AddressKey k; k.ip = a.ip; k.port = a.port; return k;
+// Helper to build binary key (uses shared AddressKey from peer_state.hpp)
+network::AddressKey MessageRouter::MakeKey(const protocol::NetworkAddress& a) {
+  network::AddressKey k; k.ip = a.ip; k.port = a.port; return k;
 }
 
 void MessageRouter::OnPeerDisconnected(int peer_id) {
-  std::lock_guard<std::mutex> g(addr_mutex_);
-  getaddr_replied_.erase(peer_id);
-  learned_addrs_by_peer_.erase(peer_id);
+  // Note: Cleanup is now automatic via PerPeerState removal in PeerManager
+  // (getaddr_replied and learned_addresses are cleaned up when peer_states_ entry is removed)
+  // No action needed here
+  (void)peer_id;  // Unused parameter
 }
 
 MessageRouter::GetAddrDebugStats MessageRouter::GetGetAddrDebugStats() const {

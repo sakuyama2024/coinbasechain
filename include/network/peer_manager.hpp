@@ -15,7 +15,7 @@
  2. Connection policy: limit enforcement, feeler connections, eviction
  3. Misbehavior tracking: score accumulation, thresholds, disconnect decisions
  4. Permission system: NoBan and Manual flags to protect certain connections
- 5. Integration: callbacks for sync state cleanup on peer disconnect
+ 5. Integration: publishes NetworkNotifications for peer events
 
  Misbehavior system
  - Each peer has a misbehavior score; penalties are applied for protocol violations
@@ -59,8 +59,8 @@
 
  Threading
  - All public methods are thread-safe (protected by mutex_)
- - Shutdown() disables callbacks to prevent use-after-free during destruction
- - SetPeerDisconnectCallback: optional callback for sync state cleanup
+ - Shutdown() sets flag to prevent notifications during destruction
+ - Uses NetworkNotifications to publish peer disconnect events
 
  Differences from Bitcoin Core
  - Simpler permission model: only NoBan and Manual flags (no BloomFilter, etc.)
@@ -80,6 +80,9 @@
 
 #include "network/addr_manager.hpp"
 #include "network/peer.hpp"
+#include "network/peer_misbehavior.hpp"  // For PeerMisbehaviorData, NetPermissionFlags, etc.
+#include "network/peer_state.hpp"
+#include "util/threadsafe_containers.hpp"
 #include <functional>
 #include <map>
 #include <memory>
@@ -91,53 +94,8 @@
 namespace coinbasechain {
 namespace network {
 
-// DoS Protection Constants (from Bitcoin Core)
-static constexpr int DISCOURAGEMENT_THRESHOLD = 100;
-
-// Misbehavior penalties
-namespace MisbehaviorPenalty {
-static constexpr int INVALID_POW = 100;
-static constexpr int OVERSIZED_MESSAGE = 20;
-static constexpr int NON_CONTINUOUS_HEADERS = 20;
-static constexpr int LOW_WORK_HEADERS = 10;
-static constexpr int INVALID_HEADER = 100;
-static constexpr int TOO_MANY_UNCONNECTING = 100;  // Instant disconnect after threshold
-static constexpr int TOO_MANY_ORPHANS = 100;       // Instant disconnect
-}
-
-// Maximum unconnecting headers messages before penalty
-static constexpr int MAX_UNCONNECTING_HEADERS = 10;
-
-// Permission flags for peer connections
-enum class NetPermissionFlags : uint32_t {
-  None = 0,
-  NoBan = (1U << 0),
-  Manual = (1U << 1),
-};
-
-inline NetPermissionFlags operator|(NetPermissionFlags a, NetPermissionFlags b) {
-  return static_cast<NetPermissionFlags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
-}
-
-inline NetPermissionFlags operator&(NetPermissionFlags a, NetPermissionFlags b) {
-  return static_cast<NetPermissionFlags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
-}
-
-inline bool HasPermission(NetPermissionFlags flags, NetPermissionFlags check) {
-  return (flags & check) == check && static_cast<uint32_t>(check) != 0;
-}
-
-// Peer misbehavior tracking data
-struct PeerMisbehaviorData {
-  int misbehavior_score{0};
-  bool should_discourage{false};
-  int num_unconnecting_headers_msgs{0};
-  bool unconnecting_penalized{false};
-  NetPermissionFlags permissions{NetPermissionFlags::None};
-  std::string address;
-  // Track duplicates of invalid headers reported by this peer to avoid double-penalty
-  std::unordered_set<std::string> invalid_header_hashes;
-};
+// Note: DoS constants, MisbehaviorPenalty, NetPermissionFlags, and PeerMisbehaviorData
+// have been moved to peer_misbehavior.hpp to avoid circular dependencies with peer_state.hpp
 
 class PeerManager {
 public:
@@ -225,11 +183,6 @@ public:
 
   // Process periodic tasks (cleanup, connection maintenance)
   void process_periodic();
-  
-  // Set callback for peer disconnect events (for sync state cleanup)
-  void SetPeerDisconnectCallback(std::function<void(int)> callback) {
-    peer_disconnect_callback_ = std::move(callback);
-  }
 
   // Test-only: set a peer's creation time (used to simulate feeler aging)
   void TestOnlySetPeerCreatedAt(int peer_id, std::chrono::steady_clock::time_point tp);
@@ -258,6 +211,33 @@ public:
   int GetMisbehaviorScore(int peer_id) const;
   bool ShouldDisconnect(int peer_id) const;
 
+  // === PerPeerState Accessors (for BlockRelayManager, MessageRouter) ===
+  // Thread-safe accessors for consolidated per-peer state
+
+  // Block relay state accessors
+  std::optional<uint256> GetLastAnnouncedBlock(int peer_id) const;
+  int64_t GetLastAnnounceTime(int peer_id) const;  // Returns 0 if not found
+  void SetLastAnnouncedBlock(int peer_id, const uint256& hash, int64_t time_s);
+  std::vector<uint256> GetBlocksForInvRelay(int peer_id);
+  void AddBlockForInvRelay(int peer_id, const uint256& hash);
+  void ClearBlocksForInvRelay(int peer_id);
+
+  // Address discovery state accessors
+  bool HasRepliedToGetAddr(int peer_id) const;
+  void MarkGetAddrReplied(int peer_id);
+  void AddLearnedAddress(int peer_id, const AddressKey& key, const LearnedEntry& entry);
+  std::optional<LearnedMap> GetLearnedAddresses(int peer_id) const;
+  void ClearLearnedAddresses(int peer_id);
+  // In-place modification of learned addresses (for efficient bulk updates)
+  template <typename Func>
+  void ModifyLearnedAddresses(int peer_id, Func&& modifier) {
+    peer_states_.Modify(peer_id, [&](PerPeerState& state) {
+      modifier(state.learned_addresses);
+    });
+  }
+  // Get all peers' learned addresses (for iteration in GETADDR fallback)
+  std::vector<std::pair<int, LearnedMap>> GetAllLearnedAddresses() const;
+
 private:
   // === Internal Misbehavior Implementation ===
   // These should NEVER be called by external code
@@ -269,23 +249,18 @@ private:
   AddressManager &addr_manager_;
   Config config_;
 
-  mutable std::mutex mutex_;
-  std::map<int, PeerPtr> peers_;
-  std::map<int, PeerMisbehaviorData> peer_misbehavior_;
+  // === State Consolidation ===
+  // Unified per-peer state (replaces old peers_, peer_misbehavior_, peer_created_at_ maps)
+  // Thread-safe via ThreadSafeMap - no separate mutex needed
+  util::ThreadSafeMap<int, PerPeerState> peer_states_;
 
   // Get next available peer ID
   std::atomic<int> next_peer_id_{0};
-  
-  // Callback for peer disconnect events
-  std::function<void(int)> peer_disconnect_callback_;
 
-  // Track peer creation times (for feeler lifetime enforcement)
-  std::map<int, std::chrono::steady_clock::time_point> peer_created_at_;
-
-  // Shutdown flag to guard callbacks during destruction
-  bool shutting_down_{false};
-  // In-progress bulk shutdown (disconnect_all); reject add_peer while true
-  bool stopping_all_{false};
+  // Shutdown flag to guard callbacks during destruction (atomic for thread-safety)
+  std::atomic<bool> shutting_down_{false};
+  // In-progress bulk shutdown (disconnect_all); reject add_peer while true (atomic for thread-safety)
+  std::atomic<bool> stopping_all_{false};
 };
 
 } // namespace network
