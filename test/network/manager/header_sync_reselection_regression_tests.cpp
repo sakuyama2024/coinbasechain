@@ -83,10 +83,11 @@ TEST_CASE("HeaderSync - Reselection after stall and empty HEADERS can reuse peer
         other_peer_id = (sync_peer_id == p1.GetId()) ? p2.GetId() : p1.GetId();
     }
 
-    // Round 2: From current sync peer, send empty HEADERS to trigger ClearSyncPeer()
-    // Then verify that the SAME peer can be reselected (sync_started was cleared).
+    // Round 2: From current sync peer, send empty HEADERS.
+    // Bitcoin Core behavior: empty HEADERS does NOT trigger reselection.
+    // The sync peer should remain the same (Core's fSyncStarted persists).
     {
-        // Baseline counts on both peers before triggering reselection
+        // Baseline counts on both peers
         int gh_p1_base = net.CountCommandSent(victim.GetId(), p1.GetId(), commands::GETHEADERS);
         int gh_p2_base = net.CountCommandSent(victim.GetId(), p2.GetId(), commands::GETHEADERS);
 
@@ -99,19 +100,21 @@ TEST_CASE("HeaderSync - Reselection after stall and empty HEADERS can reuse peer
         full.insert(full.end(), hdr_bytes.begin(), hdr_bytes.end());
         full.insert(full.end(), payload.begin(), payload.end());
 
-        // Inject from current sync peer
+        // Inject empty HEADERS from current sync peer
         net.SendMessage(sync_peer_id, victim.GetId(), full);
         for (int i = 0; i < 5; ++i) { t += 200; net.AdvanceTime(t); }
 
-        // Poll for reselection to any peer (GETHEADERS should increase on either)
-        bool reselected = false;
+        // Verify NO reselection occurs (Bitcoin Core sticks with sync peer)
+        // Try multiple times to give reselection a chance (it shouldn't happen)
+        bool incorrectly_reselected = false;
         for (int i = 0; i < 20; ++i) {
             t += 200; net.AdvanceTime(t);
             victim.GetNetworkManager().test_hook_check_initial_sync();
             int gh_p1_now = net.CountCommandSent(victim.GetId(), p1.GetId(), commands::GETHEADERS);
             int gh_p2_now = net.CountCommandSent(victim.GetId(), p2.GetId(), commands::GETHEADERS);
-            if (gh_p1_now > gh_p1_base || gh_p2_now > gh_p2_base) { reselected = true; break; }
+            if (gh_p1_now > gh_p1_base || gh_p2_now > gh_p2_base) { incorrectly_reselected = true; break; }
         }
-        CHECK(reselected);
+        // Bitcoin Core behavior: should NOT reselect after empty headers
+        CHECK_FALSE(incorrectly_reselected);
     }
 }

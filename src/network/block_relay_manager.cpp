@@ -17,7 +17,9 @@ BlockRelayManager::BlockRelayManager(validation::ChainstateManager& chainstate,
                                      HeaderSyncManager* header_sync)
     : chainstate_manager_(chainstate),
       peer_manager_(peer_mgr),
-      header_sync_manager_(header_sync) {}
+      header_sync_manager_(header_sync) {
+  // Note: Peer cleanup is now handled automatically via PeerManager's PerPeerState
+}
 
 void BlockRelayManager::AnnounceTipToAllPeers() {
   // Periodic re-announcement to all connected peers
@@ -51,16 +53,14 @@ void BlockRelayManager::AnnounceTipToAllPeers() {
   for (const auto &peer : all_peers) {
     if (peer && peer->is_connected() && peer->state() == PeerState::READY) {
       // Check per-peer TTL; suppress re-announce of same tip within TTL regardless of queue state
-      bool same_tip = false;
-      bool within_ttl = false;
-      {
-        std::lock_guard<std::mutex> guard(announce_mutex_);
-        auto it_hash = last_announced_to_peer_.find(peer->id());
-        auto it_time = last_announce_time_s_.find(peer->id());
-        same_tip = (it_hash != last_announced_to_peer_.end() && it_hash->second == current_tip_hash);
-        const bool have_time = (it_time != last_announce_time_s_.end());
-        within_ttl = have_time && (now_s - it_time->second < REANNOUNCE_INTERVAL_SEC);
-      }
+      // Use PeerManager accessor to get last announced block info
+      auto last_announced = peer_manager_.GetLastAnnouncedBlock(peer->id());
+      bool same_tip = last_announced && (*last_announced == current_tip_hash);
+
+      // Get timestamp from PeerManager to check TTL
+      int64_t last_time = peer_manager_.GetLastAnnounceTime(peer->id());
+      bool within_ttl = same_tip && last_time > 0 && (now_s - last_time < REANNOUNCE_INTERVAL_SEC);
+
       if (same_tip && within_ttl) {
         // TTL suppression: do not refresh last_announce_time_s_ unless we enqueue
         // (suppression window stays fixed until a new enqueue occurs)
@@ -74,10 +74,8 @@ void BlockRelayManager::AnnounceTipToAllPeers() {
         // if already present, we leave timestamps unchanged to avoid extending TTL spuriously.
         if (std::find(queue.begin(), queue.end(), current_tip_hash) == queue.end()) {
           queue.push_back(current_tip_hash);
-          // Record last announcement (hash + time)
-          std::lock_guard<std::mutex> guard(announce_mutex_);
-          last_announced_to_peer_[peer->id()] = current_tip_hash;
-          last_announce_time_s_[peer->id()] = now_s;
+          // Record last announcement (hash + time) via PeerManager
+          peer_manager_.SetLastAnnouncedBlock(peer->id(), current_tip_hash, now_s);
         }
       });
     }
@@ -116,9 +114,8 @@ void BlockRelayManager::AnnounceTipToPeer(Peer* peer) {
     // Note: If already queued, we do NOT refresh last_announce_time_s_ here; TTL refresh only on enqueue.
     if (!already_queued) {
       queue.push_back(current_tip_hash);
-      std::lock_guard<std::mutex> guard(announce_mutex_);
-      last_announced_to_peer_[peer->id()] = current_tip_hash;
-      last_announce_time_s_[peer->id()] = now_s;
+      // Record last announcement via PeerManager
+      peer_manager_.SetLastAnnouncedBlock(peer->id(), current_tip_hash, now_s);
     }
   });
 }
@@ -207,12 +204,8 @@ void BlockRelayManager::RelayBlock(const uint256 &block_hash) {
         auto msg_copy = std::make_unique<message::InvMessage>();
         msg_copy->inventory = inv_msg->inventory;
         peer->send_message(std::move(msg_copy));
-        // Record last announcement (hash + time) so periodic reannounce TTL suppresses duplicates
-        {
-          std::lock_guard<std::mutex> guard(announce_mutex_);
-          last_announced_to_peer_[peer->id()] = block_hash;
-          last_announce_time_s_[peer->id()] = now_s;
-        }
+        // Record last announcement (hash + time) via PeerManager so periodic reannounce TTL suppresses duplicates
+        peer_manager_.SetLastAnnouncedBlock(peer->id(), block_hash, now_s);
       }
     }
   }
@@ -226,6 +219,11 @@ bool BlockRelayManager::HandleInvMessage(PeerPtr peer,
 
   LOG_NET_TRACE("Received INV with {} items from peer {}",
                 msg->inventory.size(), peer->id());
+
+  // Bitcoin Core behavior: Send at most ONE GETHEADERS per INV message, not one per block.
+  // Track whether we need to fetch headers and whether we found any new blocks.
+  bool should_request_headers = false;
+  bool found_new_block = false;
 
   // Process each inventory item
   for (const auto &inv : msg->inventory) {
@@ -245,46 +243,61 @@ bool BlockRelayManager::HandleInvMessage(PeerPtr peer,
         continue;
       }
 
-      // Request headers to get this new block
-      // Since this is headers-only, we request the header via GETHEADERS
+      found_new_block = true;
+
+      // Determine if we should request headers based on IBD status and sync peer
       if (header_sync_manager_) {
         const bool in_ibd = chainstate_manager_.IsInitialBlockDownload();
         if (in_ibd) {
           // During IBD, only request from our designated sync peer
-          if (header_sync_manager_->HasSyncPeer()) {
-            uint64_t sync_id = header_sync_manager_->GetSyncPeerId();
+          bool has_sync = header_sync_manager_->HasSyncPeer();
+          uint64_t sync_id = header_sync_manager_->GetSyncPeerId();
+          LOG_NET_TRACE("HandleInv: IBD mode, peer={}, has_sync={}, sync_id={}, peer_is_inbound={}",
+                        peer->id(), has_sync, sync_id, peer->is_inbound());
+          if (has_sync) {
             if (sync_id == static_cast<uint64_t>(peer->id())) {
-              header_sync_manager_->RequestHeadersFromPeer(peer);
+              should_request_headers = true;
             } else {
+              LOG_NET_TRACE("HandleInv: (IBD) peer {} is NOT sync peer (sync={}), ignoring INV", peer->id(), sync_id);
               // Ignore INV-driven requests from non-sync peers during IBD
             }
           } else {
             // No sync peer yet: adopt announcer as sync peer ONLY if outbound (Core parity)
+            // Bitcoin Core behavior: if nSyncStarted==0, adopt the first outbound peer that announces
             if (!peer->is_inbound()) {
-              LOG_NET_DEBUG("HandleInv: (IBD) adopting OUTBOUND peer={} and requesting headers", peer->id());
+              LOG_NET_DEBUG("HandleInv: (IBD) adopting OUTBOUND peer={}", peer->id());
               header_sync_manager_->SetSyncPeer(peer->id());
               peer->set_sync_started(true);
-              header_sync_manager_->RequestHeadersFromPeer(peer);
+              should_request_headers = true;
             } else {
               LOG_NET_TRACE("HandleInv: (IBD) ignoring inbound announcer for sync adoption (Core parity)");
             }
           }
         } else {
           // Post-IBD: Always request headers from the announcing peer, regardless of sync peer
-          LOG_NET_DEBUG("HandleInv: (post-IBD) requesting headers on INV from peer={}", peer->id());
-          header_sync_manager_->RequestHeadersFromPeer(peer);
+          should_request_headers = true;
         }
+      }
+
+      // Once we've decided to request headers, no need to keep checking
+      if (should_request_headers) {
+        break;
       }
     }
   }
 
-  return true;
-}
+  // Send at most ONE GETHEADERS per INV message (Bitcoin Core behavior)
+  if (should_request_headers && found_new_block && header_sync_manager_) {
+    const bool in_ibd = chainstate_manager_.IsInitialBlockDownload();
+    if (in_ibd) {
+      LOG_NET_DEBUG("HandleInv: (IBD) peer {} is sync peer, requesting headers", peer->id());
+    } else {
+      LOG_NET_DEBUG("HandleInv: (post-IBD) requesting headers from peer={}", peer->id());
+    }
+    header_sync_manager_->RequestHeadersFromPeer(peer);
+  }
 
-void BlockRelayManager::OnPeerDisconnected(int peer_id) {
-  std::lock_guard<std::mutex> guard(announce_mutex_);
-  last_announced_to_peer_.erase(peer_id);
-  last_announce_time_s_.erase(peer_id);
+  return true;
 }
 
 } // namespace network

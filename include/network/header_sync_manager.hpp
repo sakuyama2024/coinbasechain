@@ -25,6 +25,7 @@
 #include "chain/block.hpp"
 #include "network/peer.hpp"
 #include "network/message.hpp"
+#include "network/notifications.hpp"
 #include <cstdint>
 #include <mutex>
 #include <memory>
@@ -84,13 +85,13 @@ public:
   void SetSyncPeer(uint64_t peer_id);
   void ClearSyncPeer();
   
-  // Peer lifecycle - called when a peer disconnects
-  void OnPeerDisconnected(uint64_t peer_id);
-
 private:
   // Internal helpers (require sync_mutex_ held)
   void SetSyncPeerUnlocked(uint64_t peer_id);
   void ClearSyncPeerUnlocked();
+
+  // Peer lifecycle handler (private - called via NetworkNotifications)
+  void OnPeerDisconnected(uint64_t peer_id);
 
   // Component references
   validation::ChainstateManager& chainstate_manager_;
@@ -111,6 +112,9 @@ private:
 
   // Header batch tracking (protected by sync_mutex_)
   size_t last_batch_size_{0};  // Size of last headers batch received
+
+  // NetworkNotifications subscription (RAII cleanup on destruction)
+  NetworkNotifications::Subscription peer_disconnect_subscription_;
 };
 
 } // namespace network

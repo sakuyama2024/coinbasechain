@@ -1,4 +1,5 @@
 #include "network/peer_manager.hpp"
+#include "network/notifications.hpp"
 #include "util/logging.hpp"
 #include "network/protocol.hpp"
 #include <algorithm>
@@ -36,9 +37,7 @@ PeerManager::~PeerManager() {
 }
 
 void PeerManager::Shutdown() {
-  std::lock_guard<std::mutex> lock(mutex_);
-  shutting_down_ = true;
-  peer_disconnect_callback_ = {};
+  shutting_down_.store(true, std::memory_order_release);
 }
 
 int PeerManager::allocate_peer_id() { return next_peer_id_.fetch_add(1, std::memory_order_relaxed); }
@@ -49,10 +48,8 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
     return -1;
   }
 
-  std::unique_lock<std::mutex> lock(mutex_);
-
-  // Reject additions during bulk shutdown
-  if (stopping_all_) {
+  // Reject additions during bulk shutdown (atomic check)
+  if (stopping_all_.load(std::memory_order_acquire)) {
     LOG_NET_TRACE("add_peer: rejected while disconnect_all in progress");
     return -1;
   }
@@ -63,16 +60,17 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
   size_t current_inbound = 0;
   size_t current_outbound_nonfeeler = 0;
 
-  for (const auto &[id, p] : peers_) {
-    if (p->is_inbound()) {
+  // Count current connections using peer_states_
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
+    if (state.peer->is_inbound()) {
       current_inbound++;
     } else {
       // Outbound: only count full-relay (exclude feelers from slot consumption)
-      if (!p->is_feeler()) {
+      if (!state.peer->is_feeler()) {
         current_outbound_nonfeeler++;
       }
     }
-  }
+  });
 
   // Check outbound limit (no eviction for outbound)
   // Do not count feeler connections against outbound capacity, and do not gate them here
@@ -82,10 +80,7 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
 
   // Check inbound limit - try eviction if at capacity
   if (is_inbound && current_inbound >= config_.max_inbound_peers) {
-    // Release lock temporarily to call evict_inbound_peer (which locks internally)
-    lock.unlock();
     bool evicted = evict_inbound_peer();
-    lock.lock();
 
     if (!evicted) {
       LOG_NET_TRACE("add_peer: inbound at capacity and eviction failed (likely all peers protected by recent-connection window)");
@@ -94,9 +89,9 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
     // Recompute inbound counts after eviction to avoid TOCTOU
     if (is_inbound) {
       size_t inbound_now = 0;
-      for (const auto &kv : peers_) {
-        if (kv.second && kv.second->is_inbound()) inbound_now++;
-      }
+      peer_states_.ForEach([&](int id, const PerPeerState& state) {
+        if (state.peer && state.peer->is_inbound()) inbound_now++;
+      });
       if (inbound_now >= config_.max_inbound_peers) {
         LOG_NET_TRACE("add_peer: inbound still at capacity after eviction, rejecting");
         return -1;
@@ -105,37 +100,34 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
     // Successfully evicted and capacity confirmed; continue
   }
 
-  // Enforce per-IP inbound limit before adding (fresh check under lock)
+  // Enforce per-IP inbound limit before adding
   if (is_inbound) {
     const std::string new_addr = normalize_ip_string(peer->address());
     int same_ip_inbound = 0;
-    for (const auto& [id, p] : peers_) {
-      if (p->is_inbound() && normalize_ip_string(p->address()) == new_addr) {
+    peer_states_.ForEach([&](int id, const PerPeerState& state) {
+      if (state.peer->is_inbound() && normalize_ip_string(state.peer->address()) == new_addr) {
         same_ip_inbound++;
-        if (same_ip_inbound >= MAX_INBOUND_PER_IP) {
-          return -1; // Reject new inbound from same IP
-        }
       }
+    });
+    if (same_ip_inbound >= MAX_INBOUND_PER_IP) {
+      return -1; // Reject new inbound from same IP
     }
   }
 
   // Allocate ID and add peer
   int peer_id = allocate_peer_id();
   peer->set_id(peer_id);  // Set the ID on the peer object
-  peers_[peer_id] = std::move(peer);
-  // Record creation time (for feeler lifetime enforcement)
-  peer_created_at_[peer_id] = std::chrono::steady_clock::now();
+
+  // Create and insert PerPeerState
+  std::string peer_address = address.empty() ? peer->address() : address;
+  auto creation_time = std::chrono::steady_clock::now();
+
+  PerPeerState state(peer, creation_time);
+  state.misbehavior.permissions = permissions;
+  state.misbehavior.address = peer_address;
+  peer_states_.Insert(peer_id, std::move(state));
 
   LOG_NET_DEBUG("Added connection peer={}", peer_id);
-
-  // Initialize misbehavior tracking
-  std::string peer_address = address.empty() ? peers_[peer_id]->address() : address;
-  peer_misbehavior_[peer_id] = PeerMisbehaviorData{
-      .misbehavior_score = 0,
-      .should_discourage = false,
-      .num_unconnecting_headers_msgs = 0,
-      .permissions = permissions,
-      .address = peer_address};
 
   return peer_id;  // Return the assigned ID
 }
@@ -152,16 +144,14 @@ bool PeerManager::add_peer_with_id(int peer_id, PeerPtr peer, NetPermissionFlags
     return false;
   }
 
-  std::unique_lock<std::mutex> lock(mutex_);
-
-  // Reject additions during bulk shutdown
-  if (stopping_all_) {
+  // Reject additions during bulk shutdown (atomic check)
+  if (stopping_all_.load(std::memory_order_acquire)) {
     LOG_NET_TRACE("add_peer_with_id: rejected while disconnect_all in progress");
     return false;
   }
 
   // Check if peer_id already exists (shouldn't happen, but defensive)
-  if (peers_.find(peer_id) != peers_.end()) {
+  if (peer_states_.Get(peer_id).has_value()) {
     LOG_NET_ERROR("add_peer_with_id: peer_id {} already exists", peer_id);
     return false;
   }
@@ -172,15 +162,15 @@ bool PeerManager::add_peer_with_id(int peer_id, PeerPtr peer, NetPermissionFlags
   size_t current_inbound = 0;
   size_t current_outbound_nonfeeler = 0;
 
-  for (const auto &[id, p] : peers_) {
-    if (p->is_inbound()) {
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
+    if (state.peer->is_inbound()) {
       current_inbound++;
     } else {
-      if (!p->is_feeler()) {
+      if (!state.peer->is_feeler()) {
         current_outbound_nonfeeler++;
       }
     }
-  }
+  });
 
   // Check outbound limit
   if (!is_inbound && !is_feeler_new && current_outbound_nonfeeler >= config_.max_outbound_peers) {
@@ -189,9 +179,7 @@ bool PeerManager::add_peer_with_id(int peer_id, PeerPtr peer, NetPermissionFlags
 
   // Check inbound limit - try eviction if at capacity
   if (is_inbound && current_inbound >= config_.max_inbound_peers) {
-    lock.unlock();
     bool evicted = evict_inbound_peer();
-    lock.lock();
 
     if (!evicted) {
       LOG_NET_TRACE("add_peer_with_id: inbound at capacity and eviction failed");
@@ -200,9 +188,9 @@ bool PeerManager::add_peer_with_id(int peer_id, PeerPtr peer, NetPermissionFlags
     // Recompute inbound counts after eviction
     if (is_inbound) {
       size_t inbound_now = 0;
-      for (const auto &kv : peers_) {
-        if (kv.second && kv.second->is_inbound()) inbound_now++;
-      }
+      peer_states_.ForEach([&](int id, const PerPeerState& state) {
+        if (state.peer && state.peer->is_inbound()) inbound_now++;
+      });
       if (inbound_now >= config_.max_inbound_peers) {
         LOG_NET_TRACE("add_peer_with_id: inbound still at capacity after eviction");
         return false;
@@ -214,87 +202,71 @@ bool PeerManager::add_peer_with_id(int peer_id, PeerPtr peer, NetPermissionFlags
   if (is_inbound) {
     const std::string new_addr = normalize_ip_string(peer->address());
     int same_ip_inbound = 0;
-    for (const auto& [id, p] : peers_) {
-      if (p->is_inbound() && normalize_ip_string(p->address()) == new_addr) {
+    peer_states_.ForEach([&](int id, const PerPeerState& state) {
+      if (state.peer->is_inbound() && normalize_ip_string(state.peer->address()) == new_addr) {
         same_ip_inbound++;
-        if (same_ip_inbound >= MAX_INBOUND_PER_IP) {
-          return false;
-        }
       }
+    });
+    if (same_ip_inbound >= MAX_INBOUND_PER_IP) {
+      return false;
     }
   }
 
-  // Add peer with pre-allocated ID
-  peers_[peer_id] = std::move(peer);
-  peer_created_at_[peer_id] = std::chrono::steady_clock::now();
+  // Create and insert PerPeerState
+  std::string peer_address = address.empty() ? peer->address() : address;
+  auto creation_time = std::chrono::steady_clock::now();
+
+  PerPeerState state(peer, creation_time);
+  state.misbehavior.permissions = permissions;
+  state.misbehavior.address = peer_address;
+  peer_states_.Insert(peer_id, std::move(state));
 
   LOG_NET_DEBUG("Added connection with pre-allocated peer_id={}", peer_id);
-
-  // Initialize misbehavior tracking
-  std::string peer_address = address.empty() ? peers_[peer_id]->address() : address;
-  peer_misbehavior_[peer_id] = PeerMisbehaviorData{
-      .misbehavior_score = 0,
-      .should_discourage = false,
-      .num_unconnecting_headers_msgs = 0,
-      .permissions = permissions,
-      .address = peer_address};
 
   return true;
 }
 
 void PeerManager::remove_peer(int peer_id) {
-  PeerPtr peer;
+  // Get peer state and erase from map (thread-safe)
+  auto state_opt = peer_states_.Get(peer_id);
+  if (!state_opt) {
+    // Peer already removed - this is OK, just return silently
+    LOG_NET_TRACE("remove_peer({}): peer NOT FOUND in map", peer_id);
+    return;
+  }
+
+  const PerPeerState& state = *state_opt;
+  PeerPtr peer = state.peer;
+  std::string peer_address;
+  std::string disconnect_reason = "disconnected";
   std::string addr_str_after;
   uint16_t addr_port_after = 0;
 
-  std::function<void(int)> cb;
-  bool skip_callbacks = false;
-
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    LOG_NET_TRACE("remove_peer({}): peers_.size() BEFORE = {}", peer_id, peers_.size());
-
-    auto it = peers_.find(peer_id);
-    if (it == peers_.end()) {
-      // Peer already removed - this is OK, just return silently
-      LOG_NET_TRACE("remove_peer({}): peer NOT FOUND in map", peer_id);
-      return;
-    }
-
-    peer = it->second;
-
-    // Before erasing, capture misbehavior score for addrman update logic
-    int misbehavior_score = 0;
-    auto mis_it = peer_misbehavior_.find(peer_id);
-    if (mis_it != peer_misbehavior_.end()) {
-      misbehavior_score = mis_it->second.misbehavior_score;
-    }
-
-    // Decide whether to mark as good in addrman (perform update after releasing lock)
-    if (peer && peer->successfully_connected() && misbehavior_score == 0 &&
-        !peer->is_inbound() && !peer->is_feeler()) {
-      addr_str_after = peer->target_address();
-      addr_port_after = peer->target_port();
-    }
-
-    // Erase peer from map
-    peers_.erase(it);
-
-    // Also remove misbehavior tracking data
-    peer_misbehavior_.erase(peer_id);
-    // Remove creation time record
-    peer_created_at_.erase(peer_id);
-
-    // Snapshot callback state
-    cb = peer_disconnect_callback_;
-    skip_callbacks = shutting_down_;
-
-    LOG_NET_TRACE("remove_peer({}): peers_.size() AFTER = {}", peer_id, peers_.size());
-    LOG_NET_TRACE("remove_peer: erased peer {} from map (map size now: {})",
-                 peer_id, peers_.size());
+  // Capture peer address for notification
+  if (peer) {
+    peer_address = peer->address();
   }
-  
-  // After releasing lock: update addrman for good outbound peers (avoid lock-order risks)
+
+  // Before erasing, capture misbehavior score for addrman update logic
+  int misbehavior_score = state.misbehavior.misbehavior_score;
+  if (state.misbehavior.should_discourage) {
+    disconnect_reason = "misbehavior (score: " + std::to_string(misbehavior_score) + ")";
+  }
+
+  // Decide whether to mark as good in addrman
+  if (peer && peer->successfully_connected() && misbehavior_score == 0 &&
+      !peer->is_inbound() && !peer->is_feeler()) {
+    addr_str_after = peer->target_address();
+    addr_port_after = peer->target_port();
+  }
+
+  bool skip_notifications = shutting_down_.load(std::memory_order_acquire);
+
+  // Erase from peer_states_ (thread-safe)
+  peer_states_.Erase(peer_id);
+  LOG_NET_TRACE("remove_peer: erased peer {} from map", peer_id);
+
+  // Update addrman for good outbound peers
   if (addr_port_after != 0 && !addr_str_after.empty()) {
     try {
       auto net_addr = protocol::NetworkAddress::from_string(addr_str_after, addr_port_after);
@@ -306,13 +278,12 @@ void PeerManager::remove_peer(int peer_id) {
     }
   }
 
-  // Notify callback (e.g., HeaderSyncManager) that peer disconnected
-  // Do this after removing from map but before disconnecting
-  if (cb && !skip_callbacks) {
-    cb(peer_id);
+  // Publish disconnect notification (replaces callback)
+  if (!skip_notifications) {
+    NetworkEvents().NotifyPeerDisconnected(peer_id, peer_address, disconnect_reason);
   }
 
-  // Disconnect outside the lock
+  // Disconnect the peer
   if (peer) {
     LOG_NET_TRACE("remove_peer: calling disconnect() on peer {}", peer_id);
     peer->disconnect();
@@ -320,99 +291,114 @@ void PeerManager::remove_peer(int peer_id) {
 }
 
 PeerPtr PeerManager::get_peer(int peer_id) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto it = peers_.find(peer_id);
-  return (it != peers_.end()) ? it->second : nullptr;
+  auto state = peer_states_.Get(peer_id);
+  return state ? state->peer : nullptr;
 }
 
 int PeerManager::find_peer_by_address(const std::string &address,
                                       uint16_t port) {
-  std::lock_guard<std::mutex> lock(mutex_);
-
   const std::string needle_addr = normalize_ip_string(address);
+  int result = -1;
 
-  for (const auto &[id, peer] : peers_) {
-    if (!peer) continue;
-    const std::string peer_addr = normalize_ip_string(peer->address());
-    if (peer_addr != needle_addr) continue;
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
+    if (result != -1) return; // Already found
+    if (!state.peer) return;
+    const std::string peer_addr = normalize_ip_string(state.peer->address());
+    if (peer_addr != needle_addr) return;
     if (port != 0) {
-      if (peer->port() == port) return id;
-      continue;
+      if (state.peer->port() == port) result = id;
+      return;
     }
     // No port specified: return the first matching address
-    return id;
-  }
-  return -1; // Not found
+    result = id;
+  });
+
+  return result;
 }
 
 std::vector<PeerPtr> PeerManager::get_all_peers() {
-  std::lock_guard<std::mutex> lock(mutex_);
   std::vector<PeerPtr> result;
-  result.reserve(peers_.size());
 
-  for (const auto &[id, peer] : peers_) {
-    result.push_back(peer);
-  }
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
+    result.push_back(state.peer);
+  });
+
+  // Sort by peer ID to ensure deterministic iteration order
+  // (unordered_map iteration is non-deterministic)
+  std::sort(result.begin(), result.end(), [](const PeerPtr& a, const PeerPtr& b) {
+    return a->id() < b->id();
+  });
 
   return result;
 }
 
 std::vector<PeerPtr> PeerManager::get_outbound_peers() {
-  std::lock_guard<std::mutex> lock(mutex_);
   std::vector<PeerPtr> result;
 
-  for (const auto &[id, peer] : peers_) {
-    if (!peer->is_inbound()) {
-      result.push_back(peer);
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
+    if (!state.peer->is_inbound()) {
+      result.push_back(state.peer);
     }
-  }
+  });
+
+  // Sort by peer ID to ensure deterministic iteration order
+  // (unordered_map iteration is non-deterministic)
+  std::sort(result.begin(), result.end(), [](const PeerPtr& a, const PeerPtr& b) {
+    return a->id() < b->id();
+  });
 
   return result;
 }
 
 std::vector<PeerPtr> PeerManager::get_inbound_peers() {
-  std::lock_guard<std::mutex> lock(mutex_);
   std::vector<PeerPtr> result;
 
-  for (const auto &[id, peer] : peers_) {
-    if (peer->is_inbound()) {
-      result.push_back(peer);
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
+    if (state.peer->is_inbound()) {
+      result.push_back(state.peer);
     }
-  }
+  });
+
+  // Sort by peer ID to ensure deterministic iteration order
+  // (unordered_map iteration is non-deterministic)
+  std::sort(result.begin(), result.end(), [](const PeerPtr& a, const PeerPtr& b) {
+    return a->id() < b->id();
+  });
 
   return result;
 }
 
 size_t PeerManager::peer_count() const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  LOG_NET_TRACE("peer_count() called: returning {}", peers_.size());
-  return peers_.size();
+  size_t count = 0;
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
+    count++;
+  });
+  LOG_NET_TRACE("peer_count() called: returning {}", count);
+  return count;
 }
 
 size_t PeerManager::outbound_count() const {
-  std::lock_guard<std::mutex> lock(mutex_);
   size_t count = 0;
 
   // Count outbound peers (excluding feelers and manual which don't consume outbound slots)
   // Bitcoin Core pattern: Feelers and manual connections don't count against MAX_OUTBOUND_FULL_RELAY_CONNECTIONS
-  for (const auto &[id, peer] : peers_) {
-    if (!peer->is_inbound() && !peer->is_feeler() && !peer->is_manual()) {
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
+    if (!state.peer->is_inbound() && !state.peer->is_feeler() && !state.peer->is_manual()) {
       count++;
     }
-  }
+  });
 
   return count;
 }
 
 size_t PeerManager::inbound_count() const {
-  std::lock_guard<std::mutex> lock(mutex_);
   size_t count = 0;
 
-  for (const auto &[id, peer] : peers_) {
-    if (peer->is_inbound()) {
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
+    if (state.peer->is_inbound()) {
       count++;
     }
-  }
+  });
 
   return count;
 }
@@ -426,30 +412,25 @@ bool PeerManager::can_accept_inbound() const {
 }
 
 bool PeerManager::can_accept_inbound_from(const std::string& address) const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  // Check global inbound limit under the same lock
+  // Check global inbound limit
   size_t inbound_now = 0;
-  for (const auto &kv : peers_) {
-    if (kv.second && kv.second->is_inbound()) inbound_now++;
-  }
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
+    if (state.peer && state.peer->is_inbound()) inbound_now++;
+  });
   if (inbound_now >= config_.max_inbound_peers) return false;
 
   const std::string needle = normalize_ip_string(address);
   int same_ip_inbound = 0;
-  for (const auto& [id, peer] : peers_) {
-    if (!peer || !peer->is_inbound()) continue;
-    if (normalize_ip_string(peer->address()) == needle) {
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
+    if (!state.peer || !state.peer->is_inbound()) return;
+    if (normalize_ip_string(state.peer->address()) == needle) {
       same_ip_inbound++;
-      if (same_ip_inbound >= MAX_INBOUND_PER_IP) {
-        return false;
-      }
     }
-  }
-  return true;
+  });
+
+  return same_ip_inbound < MAX_INBOUND_PER_IP;
 }
 bool PeerManager::evict_inbound_peer() {
-  std::unique_lock<std::mutex> lock(mutex_);
-
   // Collect inbound peers that can be evicted
   // Protection rules (inspired by Bitcoin's SelectNodeToEvict):
   // 1. Never evict outbound peers
@@ -465,22 +446,22 @@ bool PeerManager::evict_inbound_peer() {
   std::vector<EvictionCandidate> candidates;
   auto now = std::chrono::steady_clock::now();
 
-  for (const auto &[id, peer] : peers_) {
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
     // Only consider inbound peers
-    if (!peer->is_inbound()) {
-      continue;
+    if (!state.peer->is_inbound()) {
+      return;
     }
 
     // Protect recently connected peers (within 10 seconds)
     auto connection_age = std::chrono::duration_cast<std::chrono::seconds>(
-        now - peer->stats().connected_time);
+        now - state.peer->stats().connected_time);
     if (connection_age.count() < 10) {
-      continue;
+      return;
     }
 
     candidates.push_back(
-        {id, peer->stats().connected_time, peer->stats().ping_time_ms});
-  }
+        {id, state.peer->stats().connected_time, state.peer->stats().ping_time_ms});
+  });
 
   // If no candidates, can't evict
   if (candidates.empty()) {
@@ -507,13 +488,16 @@ bool PeerManager::evict_inbound_peer() {
       if (candidate.connected_time < oldest_connected) {
         worst_peer_id = candidate.peer_id;
         oldest_connected = candidate.connected_time;
+      } else if (candidate.connected_time == oldest_connected) {
+        // Final tie-breaker: lower peer_id (deterministic for tests with simultaneous connections)
+        if (candidate.peer_id < worst_peer_id) {
+          worst_peer_id = candidate.peer_id;
+        }
       }
     }
   }
 
   if (worst_peer_id >= 0) {
-    // Unlock and reuse standard removal path to preserve invariants
-    lock.unlock();
     remove_peer(worst_peer_id);
     return true;
   }
@@ -522,34 +506,30 @@ bool PeerManager::evict_inbound_peer() {
 }
 
 void PeerManager::disconnect_all() {
+  // Set stopping flag to prevent new peers from being added
+  stopping_all_.store(true, std::memory_order_release);
+
+  bool skip_notifications = shutting_down_.load(std::memory_order_acquire);
+
+  // Get all peers to disconnect
   std::map<int, PeerPtr> peers_to_disconnect;
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
+    peers_to_disconnect[id] = state.peer;
+  });
 
-  std::function<void(int)> cb;
-  bool skip_callbacks = false;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    stopping_all_ = true;
-    peers_to_disconnect = peers_;
-    cb = peer_disconnect_callback_;
-    skip_callbacks = shutting_down_;
-  }
-
-  // Notify callbacks after snapshot; peers_ still populated for lookup, add_peer() is rejected
-  if (cb && !skip_callbacks) {
+  // Publish disconnect notifications for all peers
+  if (!skip_notifications) {
     for (const auto &[id, peer] : peers_to_disconnect) {
-      cb(id);
+      if (peer) {
+        NetworkEvents().NotifyPeerDisconnected(id, peer->address(), "shutdown");
+      }
     }
   }
 
-  // Now clear internal maps and disconnect peers
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    peers_.clear();
-    peer_misbehavior_.clear();
-    peer_created_at_.clear();
-  }
+  // Clear all peer states
+  peer_states_.Clear();
 
-  // Disconnect all peers outside the lock
+  // Disconnect all peers
   for (auto &[id, peer] : peers_to_disconnect) {
     if (peer) {
       peer->disconnect();
@@ -557,73 +537,67 @@ void PeerManager::disconnect_all() {
   }
 
   // Allow add_peer() after bulk disconnect completes
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    stopping_all_ = false;
-  }
+  stopping_all_.store(false, std::memory_order_release);
 }
 
 void PeerManager::TestOnlySetPeerCreatedAt(int peer_id, std::chrono::steady_clock::time_point tp) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  peer_created_at_[peer_id] = tp;
+  peer_states_.Modify(peer_id, [&](PerPeerState& state) {
+    state.created_at = tp;
+  });
 }
 
 void PeerManager::process_periodic() {
   std::vector<int> to_remove;
 
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
+  // Count peers for logging
+  size_t peer_count = 0;
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
+    peer_count++;
+  });
+  LOG_NET_TRACE("process_periodic() peers={}", peer_count);
 
-    // Log after acquiring lock to avoid data race on peers_/peer_misbehavior_
-    LOG_NET_TRACE("process_periodic() peers={} misbehavior_entries={}",
-                  peers_.size(), peer_misbehavior_.size());
+  // Find disconnected peers and peers marked for disconnection
+  peer_states_.ForEach([&](int id, const PerPeerState& state) {
+    if (!state.peer->is_connected()) {
+      LOG_NET_TRACE("process_periodic: peer={} not connected, marking for removal", id);
+      to_remove.push_back(id);
+      return;
+    }
 
-    // Find disconnected peers and peers marked for disconnection
-    for (const auto &[id, peer] : peers_) {
-      if (!peer->is_connected()) {
-        LOG_NET_TRACE("process_periodic: peer={} not connected, marking for removal", id);
+    // Enforce feeler max lifetime
+    if (state.peer->is_feeler()) {
+      auto age = std::chrono::duration_cast<std::chrono::seconds>(
+          std::chrono::steady_clock::now() - state.created_at);
+      if (age.count() >= FEELER_MAX_LIFETIME_SEC) {
+        LOG_NET_TRACE("process_periodic: feeler peer={} exceeded lifetime ({}s >= {}s), marking for removal",
+                      id, age.count(), FEELER_MAX_LIFETIME_SEC);
         to_remove.push_back(id);
-        continue;
-      }
-      // Enforce feeler max lifetime
-      if (peer->is_feeler()) {
-        auto it_ct = peer_created_at_.find(id);
-        if (it_ct != peer_created_at_.end()) {
-          auto age = std::chrono::duration_cast<std::chrono::seconds>(
-              std::chrono::steady_clock::now() - it_ct->second);
-          if (age.count() >= FEELER_MAX_LIFETIME_SEC) {
-            LOG_NET_TRACE("process_periodic: feeler peer={} exceeded lifetime ({}s >= {}s), marking for removal",
-                          id, age.count(), FEELER_MAX_LIFETIME_SEC);
-            to_remove.push_back(id);
-          }
-        }
+        return;
       }
     }
 
-    // Also find peers marked for disconnection due to misbehavior
-    for (const auto &[peer_id, data] : peer_misbehavior_) {
-      LOG_NET_TRACE("process_periodic: checking peer={} score={} should_discourage={}",
-                    peer_id, data.misbehavior_score, data.should_discourage);
+    // Check for peers marked for disconnection due to misbehavior
+    LOG_NET_TRACE("process_periodic: checking peer={} score={} should_discourage={}",
+                  id, state.misbehavior.misbehavior_score, state.misbehavior.should_discourage);
 
-      if (data.should_discourage) {
-        // Never disconnect peers with NoBan permission (matches Bitcoin)
-        if (HasPermission(data.permissions, NetPermissionFlags::NoBan)) {
-          LOG_NET_TRACE("process_periodic: skipping NoBan peer={} (score={} but protected)",
-                        peer_id, data.misbehavior_score);
-          continue;
-        }
+    if (state.misbehavior.should_discourage) {
+      // Never disconnect peers with NoBan permission (matches Bitcoin)
+      if (HasPermission(state.misbehavior.permissions, NetPermissionFlags::NoBan)) {
+        LOG_NET_TRACE("process_periodic: skipping NoBan peer={} (score={} but protected)",
+                      id, state.misbehavior.misbehavior_score);
+        return;
+      }
 
-        // Add to removal list if not already there
-        if (std::find(to_remove.begin(), to_remove.end(), peer_id) == to_remove.end()) {
-          to_remove.push_back(peer_id);
-          LOG_NET_TRACE("process_periodic: marking peer={} for removal (score={})",
-                        peer_id, data.misbehavior_score);
-          LOG_NET_INFO("process_periodic: Disconnecting misbehaving peer {} (score: {})",
-                       peer_id, data.misbehavior_score);
-        }
+      // Add to removal list if not already there
+      if (std::find(to_remove.begin(), to_remove.end(), id) == to_remove.end()) {
+        to_remove.push_back(id);
+        LOG_NET_TRACE("process_periodic: marking peer={} for removal (score={})",
+                      id, state.misbehavior.misbehavior_score);
+        LOG_NET_INFO("process_periodic: Disconnecting misbehaving peer {} (score: {})",
+                     id, state.misbehavior.misbehavior_score);
       }
     }
-  }
+  });
 
   LOG_NET_TRACE("process_periodic: removing {} peers", to_remove.size());
 
@@ -672,106 +646,94 @@ void PeerManager::ReportTooManyOrphans(int peer_id) {
 
 bool PeerManager::Misbehaving(int peer_id, int penalty,
                                const std::string &reason) {
-  std::lock_guard<std::mutex> lock(mutex_);
-
   LOG_NET_TRACE("Misbehaving() peer={} penalty={} reason={}", peer_id, penalty, reason);
 
-  auto it = peer_misbehavior_.find(peer_id);
-  if (it == peer_misbehavior_.end()) {
+  bool should_disconnect = false;
+
+  peer_states_.Modify(peer_id, [&](PerPeerState& state) {
+    PeerMisbehaviorData &data = state.misbehavior;
+
+    // Add penalty to score (always track, even for NoBan peers - matches Bitcoin)
+    int old_score = data.misbehavior_score;
+    data.misbehavior_score += penalty;
+
+    LOG_NET_TRACE("Misbehaving() peer={} score: {} -> {} (threshold={})",
+                  peer_id, old_score, data.misbehavior_score, DISCOURAGEMENT_THRESHOLD);
+
+    LOG_NET_TRACE("peer {} ({}) misbehavior +{}: {} (total score: {})", peer_id,
+                 data.address, penalty, reason, data.misbehavior_score);
+
+    // Check if threshold exceeded
+    if (data.misbehavior_score >= DISCOURAGEMENT_THRESHOLD && old_score < DISCOURAGEMENT_THRESHOLD) {
+      LOG_NET_TRACE("Misbehaving() peer={} THRESHOLD EXCEEDED", peer_id);
+
+      // Check if peer has NoBan permission (matches Bitcoin: track score but don't disconnect)
+      if (HasPermission(data.permissions, NetPermissionFlags::NoBan)) {
+        LOG_NET_TRACE("noban peer {} not punished (score {} >= threshold {})",
+                     peer_id, data.misbehavior_score, DISCOURAGEMENT_THRESHOLD);
+        // DO NOT set should_discourage for NoBan peers
+        return;
+      }
+
+      // Normal peer: mark for disconnection
+      data.should_discourage = true;
+      should_disconnect = true;
+      LOG_NET_TRACE("peer {} ({}) marked for disconnect (score {} >= threshold {})",
+                   peer_id, data.address, data.misbehavior_score,
+                   DISCOURAGEMENT_THRESHOLD);
+    }
+  });
+
+  if (!peer_states_.Get(peer_id)) {
     // Peer not found - may have been disconnected already
     LOG_NET_TRACE("Misbehaving() peer={} not found in map (already disconnected?)", peer_id);
     return false;
   }
 
-  PeerMisbehaviorData &data = it->second;
-
-  // Add penalty to score (always track, even for NoBan peers - matches Bitcoin)
-  int old_score = data.misbehavior_score;
-  data.misbehavior_score += penalty;
-
-  LOG_NET_TRACE("Misbehaving() peer={} score: {} -> {} (threshold={})",
-                peer_id, old_score, data.misbehavior_score, DISCOURAGEMENT_THRESHOLD);
-
-  LOG_NET_TRACE("peer {} ({}) misbehavior +{}: {} (total score: {})", peer_id,
-               data.address, penalty, reason, data.misbehavior_score);
-
-  // Check if threshold exceeded
-  if (data.misbehavior_score >= DISCOURAGEMENT_THRESHOLD && old_score < DISCOURAGEMENT_THRESHOLD) {
-    LOG_NET_TRACE("Misbehaving() peer={} THRESHOLD EXCEEDED", peer_id);
-
-    // Check if peer has NoBan permission (matches Bitcoin: track score but don't disconnect)
-    if (HasPermission(data.permissions, NetPermissionFlags::NoBan)) {
-      LOG_NET_TRACE("noban peer {} not punished (score {} >= threshold {})",
-                   peer_id, data.misbehavior_score, DISCOURAGEMENT_THRESHOLD);
-      // DO NOT set should_discourage for NoBan peers
-      return false;
-    }
-
-    // Normal peer: mark for disconnection
-    data.should_discourage = true;
-    LOG_NET_TRACE("peer {} ({}) marked for disconnect (score {} >= threshold {})",
-                 peer_id, data.address, data.misbehavior_score,
-                 DISCOURAGEMENT_THRESHOLD);
-    return true;
-  }
-
   LOG_NET_TRACE("Misbehaving() peer={} threshold not exceeded, continuing", peer_id);
-  return false;
+  return should_disconnect;
 }
 
 bool PeerManager::ShouldDisconnect(int peer_id) const {
-  std::lock_guard<std::mutex> lock(mutex_);
-
-  auto it = peer_misbehavior_.find(peer_id);
-  if (it == peer_misbehavior_.end()) {
+  auto state = peer_states_.Get(peer_id);
+  if (!state) {
     return false;
   }
 
   // Never disconnect peers with NoBan permission (matches Bitcoin)
-  if (HasPermission(it->second.permissions, NetPermissionFlags::NoBan)) {
+  if (HasPermission(state->misbehavior.permissions, NetPermissionFlags::NoBan)) {
     return false;
   }
 
-  return it->second.should_discourage;
+  return state->misbehavior.should_discourage;
 }
 
 int PeerManager::GetMisbehaviorScore(int peer_id) const {
-  std::lock_guard<std::mutex> lock(mutex_);
-
-  auto it = peer_misbehavior_.find(peer_id);
-  if (it == peer_misbehavior_.end()) {
+  auto state = peer_states_.Get(peer_id);
+  if (!state) {
     return 0;
   }
 
-return it->second.misbehavior_score;
+  return state->misbehavior.misbehavior_score;
 }
 
 void PeerManager::NoteInvalidHeaderHash(int peer_id, const uint256& hash) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto it = peer_misbehavior_.find(peer_id);
-  if (it == peer_misbehavior_.end()) return;
-  it->second.invalid_header_hashes.insert(hash.GetHex());
+  peer_states_.Modify(peer_id, [&](PerPeerState& state) {
+    state.misbehavior.invalid_header_hashes.insert(hash.GetHex());
+  });
 }
 
 bool PeerManager::HasInvalidHeaderHash(int peer_id, const uint256& hash) const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto it = peer_misbehavior_.find(peer_id);
-  if (it == peer_misbehavior_.end()) return false;
-  return it->second.invalid_header_hashes.find(hash.GetHex()) != it->second.invalid_header_hashes.end();
+  auto state = peer_states_.Get(peer_id);
+  if (!state) return false;
+  return state->misbehavior.invalid_header_hashes.find(hash.GetHex()) != state->misbehavior.invalid_header_hashes.end();
 }
 
 void PeerManager::IncrementUnconnectingHeaders(int peer_id) {
   bool threshold_exceeded = false;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
 
-    auto it = peer_misbehavior_.find(peer_id);
-    if (it == peer_misbehavior_.end()) {
-      LOG_NET_TRACE("IncrementUnconnectingHeaders: peer {} not found in misbehavior map", peer_id);
-      return;
-    }
-
-    PeerMisbehaviorData &data = it->second;
+  peer_states_.Modify(peer_id, [&](PerPeerState& state) {
+    PeerMisbehaviorData &data = state.misbehavior;
     if (data.unconnecting_penalized) {
       return; // already penalized; do nothing further
     }
@@ -785,9 +747,15 @@ void PeerManager::IncrementUnconnectingHeaders(int peer_id) {
                    peer_id, data.address, data.num_unconnecting_headers_msgs,
                    MAX_UNCONNECTING_HEADERS);
       data.unconnecting_penalized = true; // latch to avoid repeated penalties
-      threshold_exceeded = true; // call Misbehaving() after releasing the lock
+      threshold_exceeded = true;
     }
+  });
+
+  if (!peer_states_.Get(peer_id)) {
+    LOG_NET_TRACE("IncrementUnconnectingHeaders: peer {} not found in misbehavior map", peer_id);
+    return;
   }
+
   if (threshold_exceeded) {
     Misbehaving(peer_id, MisbehaviorPenalty::TOO_MANY_UNCONNECTING,
                 "too many unconnecting headers");
@@ -795,14 +763,95 @@ void PeerManager::IncrementUnconnectingHeaders(int peer_id) {
 }
 
 void PeerManager::ResetUnconnectingHeaders(int peer_id) {
-  std::lock_guard<std::mutex> lock(mutex_);
+  peer_states_.Modify(peer_id, [](PerPeerState& state) {
+    state.misbehavior.num_unconnecting_headers_msgs = 0;
+  });
+}
 
-  auto it = peer_misbehavior_.find(peer_id);
-  if (it == peer_misbehavior_.end()) {
-    return;
-  }
+// === PerPeerState Accessors ===
 
-  it->second.num_unconnecting_headers_msgs = 0;
+std::optional<uint256> PeerManager::GetLastAnnouncedBlock(int peer_id) const {
+  auto state = peer_states_.Get(peer_id);
+  if (!state) return std::nullopt;
+  return state->last_announced_block;
+}
+
+int64_t PeerManager::GetLastAnnounceTime(int peer_id) const {
+  auto state = peer_states_.Get(peer_id);
+  if (!state) return 0;
+  return state->last_announce_time_s;
+}
+
+void PeerManager::SetLastAnnouncedBlock(int peer_id, const uint256& hash, int64_t time_s) {
+  peer_states_.Modify(peer_id, [&](PerPeerState& state) {
+    state.last_announced_block = hash;
+    state.last_announce_time_s = time_s;
+  });
+}
+
+std::vector<uint256> PeerManager::GetBlocksForInvRelay(int peer_id) {
+  auto state = peer_states_.Get(peer_id);
+  if (!state) return {};
+  return state->blocks_for_inv_relay;
+}
+
+void PeerManager::AddBlockForInvRelay(int peer_id, const uint256& hash) {
+  peer_states_.Modify(peer_id, [&](PerPeerState& state) {
+    state.blocks_for_inv_relay.push_back(hash);
+  });
+}
+
+void PeerManager::ClearBlocksForInvRelay(int peer_id) {
+  peer_states_.Modify(peer_id, [](PerPeerState& state) {
+    state.blocks_for_inv_relay.clear();
+  });
+}
+
+bool PeerManager::HasRepliedToGetAddr(int peer_id) const {
+  auto state = peer_states_.Get(peer_id);
+  if (!state) return false;
+  return state->getaddr_replied;
+}
+
+void PeerManager::MarkGetAddrReplied(int peer_id) {
+  peer_states_.Modify(peer_id, [](PerPeerState& state) {
+    state.getaddr_replied = true;
+  });
+}
+
+void PeerManager::AddLearnedAddress(int peer_id, const AddressKey& key, const LearnedEntry& entry) {
+  peer_states_.Modify(peer_id, [&](PerPeerState& state) {
+    state.learned_addresses[key] = entry;
+  });
+}
+
+std::optional<LearnedMap> PeerManager::GetLearnedAddresses(int peer_id) const {
+  auto state = peer_states_.Get(peer_id);
+  if (!state) return std::nullopt;
+  return state->learned_addresses;
+}
+
+void PeerManager::ClearLearnedAddresses(int peer_id) {
+  peer_states_.Modify(peer_id, [](PerPeerState& state) {
+    state.learned_addresses.clear();
+  });
+}
+
+std::vector<std::pair<int, LearnedMap>> PeerManager::GetAllLearnedAddresses() const {
+  std::vector<std::pair<int, LearnedMap>> result;
+  peer_states_.ForEach([&](int peer_id, const PerPeerState& state) {
+    if (!state.learned_addresses.empty()) {
+      result.emplace_back(peer_id, state.learned_addresses);
+    }
+  });
+
+  // Sort by peer ID to ensure deterministic iteration order
+  // (unordered_map iteration is non-deterministic)
+  std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) {
+    return a.first < b.first;
+  });
+
+  return result;
 }
 
 } // namespace network

@@ -35,7 +35,13 @@ HeaderSyncManager::HeaderSyncManager(validation::ChainstateManager& chainstate,
                                      BanMan& ban_man)
     : chainstate_manager_(chainstate),
       peer_manager_(peer_mgr),
-      ban_man_(ban_man) {}
+      ban_man_(ban_man) {
+  // Subscribe to peer disconnect events
+  peer_disconnect_subscription_ = NetworkEvents().SubscribePeerDisconnected(
+      [this](int peer_id, const std::string&, const std::string&) {
+        OnPeerDisconnected(static_cast<uint64_t>(peer_id));
+      });
+}
 
 uint64_t HeaderSyncManager::GetSyncPeerId() const {
   std::lock_guard<std::mutex> lock(sync_mutex_);
@@ -56,17 +62,16 @@ void HeaderSyncManager::SetSyncPeer(uint64_t peer_id) {
 }
 
 void HeaderSyncManager::ClearSyncPeerUnlocked() {
-  uint64_t prev_sync = sync_state_.sync_peer_id;
-  if (prev_sync != NO_SYNC_PEER) {
-    auto peer_ptr = peer_manager_.get_peer(static_cast<int>(prev_sync));
-    if (peer_ptr) {
-      peer_ptr->set_sync_started(false);
-    }
-  }
-  // Clear current sync peer and allow re-selection on next maintenance
+  // Clear current sync peer and allow re-selection on next maintenance.
+  // NOTE: We do NOT clear peer->sync_started() here. That flag persists for the
+  // lifetime of the connection (Bitcoin Core's fSyncStarted semantics) to indicate
+  // "we've already attempted sync with this peer". This prevents re-selecting the
+  // same peer that just gave us empty headers.
+  // Bitcoin Core: stickiness comes from fSyncStarted persisting, NOT from time-based cooldown.
   sync_state_.sync_peer_id = NO_SYNC_PEER;
   sync_state_.sync_start_time_us = 0;
-  sync_state_.last_headers_received_us = 0;
+  // Preserve timestamp for debugging/future use
+  // sync_state_.last_headers_received_us = 0;
 }
 
 void HeaderSyncManager::ClearSyncPeer() {
@@ -80,7 +85,6 @@ void HeaderSyncManager::OnPeerDisconnected(uint64_t peer_id) {
   std::lock_guard<std::mutex> lock(sync_mutex_);
   if (sync_state_.sync_peer_id == peer_id) {
     LOG_NET_DEBUG("Sync peer {} disconnected, clearing sync state", peer_id);
-    // Use ClearSyncPeerUnlocked to properly clear fSyncStarted flag
     ClearSyncPeerUnlocked();
   }
 }
@@ -119,27 +123,33 @@ void HeaderSyncManager::CheckInitialSync() {
   // Prefer to run initial sync when in IBD (Bitcoin Core behavior).
   // If there is no current sync peer, we may (re)select one even post-IBD;
   // the resulting GETHEADERS is harmless if fully synced.
+  // Bitcoin Core uses nSyncStarted counter - only selects new sync peer when nSyncStarted==0.
   if (HasSyncPeer()) {
+    LOG_NET_TRACE("CheckInitialSync: already have sync peer, returning");
     return;
   }
 
   // Protect peer selection with mutex to prevent races
   std::lock_guard<std::mutex> lock(sync_mutex_);
   if (sync_state_.sync_peer_id != NO_SYNC_PEER) {
+    LOG_NET_TRACE("CheckInitialSync: sync peer set while acquiring lock, returning");
     return;
   }
 
+  LOG_NET_DEBUG("CheckInitialSync: selecting new sync peer");
+
   // Outbound-only sync peer selection (Bitcoin Core parity)
   auto outbound_peers = peer_manager_.get_outbound_peers();
+  LOG_NET_DEBUG("CheckInitialSync: found {} outbound peers", outbound_peers.size());
   for (const auto &peer : outbound_peers) {
     if (!peer) continue;
-    if (peer->sync_started()) continue; // Already started with this peer
+    LOG_NET_DEBUG("CheckInitialSync: checking peer {}, sync_started={}", peer->id(), peer->sync_started());
+    if (peer->sync_started()) {
+      continue; // Already started with this peer
+    }
     if (peer->is_feeler()) continue;    // Skip feelers - they auto-disconnect on VERACK
     // Gate initial sync on completed handshake to avoid protocol violations
     if (!peer->successfully_connected()) continue; // Wait until VERACK
-
-    int current_height = chainstate_manager_.GetChainHeight();
-    LOG_NET_DEBUG("initial getheaders ({}) peer={}", current_height, peer->id());
 
     SetSyncPeerUnlocked(peer->id());
     peer->set_sync_started(true);  // CNodeState::fSyncStarted
@@ -237,9 +247,11 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   // Empty reply: peer has no more headers to offer from our locator.
   // Clear current sync peer so the next CheckInitialSync() can choose another peer
   // (or do nothing if we're already up-to-date). No penalty for empty replies.
+  // Bitcoin Core: Does NOT clear sync peer on empty headers - sticks with initial sync peer.
+  // This prevents cycling through peers and ensures IBD INV gating works correctly.
   if (headers.empty()) {
-    LOG_NET_DEBUG("received headers (0) peer={}", peer_id);
-    ClearSyncPeer();
+    LOG_NET_DEBUG("received headers (0) peer={} - keeping as sync peer", peer_id);
+    // Do NOT clear sync peer here - Bitcoin Core keeps the sync peer even after empty headers
     return true;
   }
 
