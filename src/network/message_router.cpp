@@ -106,7 +106,6 @@ bool MessageRouter::handle_verack(PeerPtr peer) {
   }
 
   // Mark outbound connections as successful in address manager
-  // Bitcoin Core: Does this in PeerManagerImpl::FinalizeNode() for all outbound types
   // This saves the address to the "tried" table for reconnection on restart
   // Note: FEELER connections are marked good in NetworkManager before peer->start()
   if (!peer->is_inbound() && !peer->is_feeler() && addr_manager_) {

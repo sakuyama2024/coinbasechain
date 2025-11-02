@@ -25,7 +25,6 @@ class PeerManager;
  * to these anchors before accepting other connections, making it harder for
  * an attacker to isolate the node.
  *
- * Extracted from NetworkManager to improve modularity and maintainability.
  */
 class AnchorManager {
 public:
