@@ -31,11 +31,9 @@ namespace coinbasechain {
 namespace network {
 
 HeaderSyncManager::HeaderSyncManager(validation::ChainstateManager& chainstate,
-                                     PeerManager& peer_mgr,
-                                     BanMan& ban_man)
+                                     PeerManager& peer_mgr)
     : chainstate_manager_(chainstate),
-      peer_manager_(peer_mgr),
-      ban_man_(ban_man) {
+      peer_manager_(peer_mgr) {
   // Subscribe to peer disconnect events
   peer_disconnect_subscription_ = NetworkEvents().SubscribePeerDisconnected(
       [this](int peer_id, const std::string&, const std::string&) {
@@ -262,7 +260,6 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
     peer_manager_.ReportOversizedMessage(peer_id);
     // Check if peer should be disconnected
     if (peer_manager_.ShouldDisconnect(peer_id)) {
-      ban_man_.Discourage(peer->address());
       peer_manager_.remove_peer(peer_id);
     }
     ClearSyncPeer();
@@ -281,7 +278,6 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
     peer_manager_.IncrementUnconnectingHeaders(peer_id);
     // Check if peer should be disconnected (but continue processing as orphan chain)
     if (peer_manager_.ShouldDisconnect(peer_id)) {
-      ban_man_.Discourage(peer->address());
       peer_manager_.remove_peer(peer_id);
     }
     // Do NOT ClearSyncPeer() and do NOT return; proceed to treat batch as orphans
@@ -298,7 +294,6 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
     LOG_NET_ERROR("headers failed PoW commitment check from peer={}", peer_id);
     peer_manager_.ReportInvalidPoW(peer_id);
     if (peer_manager_.ShouldDisconnect(peer_id)) {
-      ban_man_.Discourage(peer->address());
       peer_manager_.remove_peer(peer_id);
     }
     ClearSyncPeer();
@@ -311,7 +306,6 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
     LOG_NET_ERROR("non-continuous headers from peer={}", peer_id);
     peer_manager_.ReportNonContinuousHeaders(peer_id);
     if (peer_manager_.ShouldDisconnect(peer_id)) {
-      ban_man_.Discourage(peer->address());
       peer_manager_.remove_peer(peer_id);
     }
     ClearSyncPeer();
@@ -391,7 +385,6 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
                         peer_id);
           peer_manager_.ReportTooManyOrphans(peer_id);
           if (peer_manager_.ShouldDisconnect(peer_id)) {
-            ban_man_.Discourage(peer->address());
             peer_manager_.remove_peer(peer_id);
           }
           ClearSyncPeer();
@@ -428,7 +421,6 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
         peer_manager_.ReportInvalidHeader(peer_id, "duplicate-invalid");
         peer_manager_.NoteInvalidHeaderHash(peer_id, h);
         if (peer_manager_.ShouldDisconnect(peer_id)) {
-          ban_man_.Discourage(peer->address());
           peer_manager_.remove_peer(peer_id);
         }
         ClearSyncPeer();
@@ -451,7 +443,6 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
         peer_manager_.ReportInvalidHeader(peer_id, reason);
         peer_manager_.NoteInvalidHeaderHash(peer_id, h);
         if (peer_manager_.ShouldDisconnect(peer_id)) {
-          ban_man_.Discourage(peer->address());
           peer_manager_.remove_peer(peer_id);
         }
         ClearSyncPeer();

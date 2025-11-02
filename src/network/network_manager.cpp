@@ -61,10 +61,9 @@ NetworkManager::NetworkManager(
   addr_manager_ = std::make_unique<AddressManager>();
   peer_manager_ = std::make_unique<PeerManager>(io_context_, *addr_manager_);
 
-  // Create BanMan (with datadir for persistent bans)
-  ban_man_ = std::make_unique<BanMan>(config_.datadir);
+  // Load persistent bans from disk (if datadir is configured)
   if (!config_.datadir.empty()) {
-    ban_man_->Load(); // Load existing bans from disk
+    peer_manager_->LoadBans(config_.datadir);
   }
 
   // Create NAT manager if enabled
@@ -80,11 +79,11 @@ NetworkManager::NetworkManager(
         return network_address_to_string(addr);
       },
       // Callback to connect to an address (mark anchors as NoBan if requested)
-      // Only whitelist in BanMan if noban permission is explicitly set
+      // Only whitelist if noban permission is explicitly set
       [this](const protocol::NetworkAddress& addr, bool noban) {
         auto ip_opt = network_address_to_string(addr);
-        if (ip_opt && ban_man_ && noban) {
-          ban_man_->AddToWhitelist(*ip_opt);
+        if (ip_opt && noban) {
+          peer_manager_->AddToWhitelist(*ip_opt);
         }
         connect_to_with_permissions(addr, noban ? NetPermissionFlags::NoBan : NetPermissionFlags::None);
       }
@@ -92,7 +91,7 @@ NetworkManager::NetworkManager(
 
   // Create HeaderSyncManager
   header_sync_manager_ = std::make_unique<HeaderSyncManager>(
-      chainstate_manager, *peer_manager_, *ban_man_);
+      chainstate_manager, *peer_manager_);
 
   // Create BlockRelayManager
   block_relay_manager_ = std::make_unique<BlockRelayManager>(
@@ -360,12 +359,12 @@ ConnectionResult NetworkManager::connect_to_with_permissions(const protocol::Net
   uint16_t port = addr.port;
 
   // Check if address is banned
-  if (ban_man_ && ban_man_->IsBanned(address)) {
+  if (peer_manager_->IsBanned(address)) {
     return ConnectionResult::AddressBanned;
   }
 
   // Check if address is discouraged
-  if (ban_man_ && ban_man_->IsDiscouraged(address)) {
+  if (peer_manager_->IsDiscouraged(address)) {
     return ConnectionResult::AddressDiscouraged;
   }
 
@@ -652,14 +651,14 @@ void NetworkManager::handle_inbound_connection(
   std::string remote_address = connection->remote_address();
 
   // Check if address is banned
-  if (ban_man_ && ban_man_->IsBanned(remote_address)) {
+  if (peer_manager_->IsBanned(remote_address)) {
     LOG_NET_INFO("Rejected banned address: {}", remote_address);
     connection->close();
     return;
   }
 
-  // Check if address is discouraged 
-  if (ban_man_ && ban_man_->IsDiscouraged(remote_address)) {
+  // Check if address is discouraged
+  if (peer_manager_->IsDiscouraged(remote_address)) {
     LOG_NET_INFO("Rejected discouraged address: {}", remote_address);
     connection->close();
     return;
@@ -711,10 +710,8 @@ void NetworkManager::run_maintenance() {
   }
 
   // Sweep expired bans and discouraged entries
-  if (ban_man_) {
-    ban_man_->SweepBanned();
-    ban_man_->SweepDiscouraged();
-  }
+  peer_manager_->SweepBanned();
+  peer_manager_->SweepDiscouraged();
 
   // Periodically announce our tip to peers (Bitcoin Core pattern: queue only, SendMessages loop flushes)
   if (block_relay_manager_) {

@@ -42,7 +42,6 @@ namespace network {
 
 // Forward declarations
 class PeerManager;
-class BanMan;
 
 /**
  * HeaderSyncManager - Manages blockchain header synchronization
@@ -58,8 +57,7 @@ class HeaderSyncManager {
 public:
   static constexpr uint64_t NO_SYNC_PEER = std::numeric_limits<uint64_t>::max();
   HeaderSyncManager(validation::ChainstateManager& chainstate,
-                    PeerManager& peer_mgr,
-                    BanMan& ban_man);
+                    PeerManager& peer_mgr);
 
   // Message handlers
   bool HandleHeadersMessage(PeerPtr peer, message::HeadersMessage* msg);
@@ -96,7 +94,6 @@ private:
   // Component references
   validation::ChainstateManager& chainstate_manager_;
   PeerManager& peer_manager_;
-  BanMan& ban_man_;  // Required
 
   // Serialized sync state (single domain under sync_mutex_)
   struct SyncState {

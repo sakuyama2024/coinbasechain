@@ -301,28 +301,21 @@ size_t SimulatedNode::GetInboundPeerCount() const {
 
 bool SimulatedNode::IsBanned(const std::string& address) const {
     if (network_manager_) {
-        return const_cast<network::NetworkManager*>(network_manager_.get())->ban_man().IsBanned(address);
+        return const_cast<network::NetworkManager*>(network_manager_.get())->peer_manager().IsBanned(address);
     }
     return false;
 }
 
 void SimulatedNode::Ban(const std::string& address, int64_t ban_time_seconds) {
     if (network_manager_) {
-        network_manager_->ban_man().Ban(address, ban_time_seconds);
+        network_manager_->peer_manager().Ban(address, ban_time_seconds);
     }
 }
 
 void SimulatedNode::Unban(const std::string& address) {
     if (network_manager_) {
-        network_manager_->ban_man().Unban(address);
+        network_manager_->peer_manager().Unban(address);
     }
-}
-
-network::BanMan& SimulatedNode::GetBanMan() {
-    if (!network_manager_) {
-        throw std::runtime_error("NetworkManager not initialized");
-    }
-    return network_manager_->ban_man();
 }
 
 void SimulatedNode::ProcessEvents() {

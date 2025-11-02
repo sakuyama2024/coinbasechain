@@ -276,12 +276,12 @@ inline void TestOrchestrator::AssertPeerDiscouraged(
     SimulatedNode& victim,
     SimulatedNode& attacker
 ) {
-    bool discouraged = victim.GetBanMan().IsDiscouraged(attacker.GetAddress());
-    
+    bool discouraged = victim.GetNetworkManager().peer_manager().IsDiscouraged(attacker.GetAddress());
+
     INFO("Node " << victim.GetId() << " should discourage node " << attacker.GetId());
     INFO("Attacker address: " << attacker.GetAddress());
     INFO("Discouraged: " << (discouraged ? "YES" : "NO"));
-    
+
     REQUIRE(discouraged);
 }
 
@@ -289,12 +289,12 @@ inline void TestOrchestrator::AssertPeerNotDiscouraged(
     SimulatedNode& victim,
     SimulatedNode& attacker
 ) {
-    bool discouraged = victim.GetBanMan().IsDiscouraged(attacker.GetAddress());
-    
+    bool discouraged = victim.GetNetworkManager().peer_manager().IsDiscouraged(attacker.GetAddress());
+
     INFO("Node " << victim.GetId() << " should NOT discourage node " << attacker.GetId());
     INFO("Attacker address: " << attacker.GetAddress());
     INFO("Discouraged: " << (discouraged ? "YES" : "NO"));
-    
+
     REQUIRE_FALSE(discouraged);
 }
 

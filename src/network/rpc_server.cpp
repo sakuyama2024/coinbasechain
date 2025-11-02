@@ -885,7 +885,7 @@ std::string RPCServer::HandleSetBan(const std::vector<std::string> &params) {
     }
 
     // Ban the canonical address
-    network_manager_.ban_man().Ban(canon_addr, offset);
+    network_manager_.peer_manager().Ban(canon_addr, offset);
 
     std::ostringstream oss;
     if (mode == "permanent") {
@@ -924,12 +924,12 @@ std::string RPCServer::HandleSetBan(const std::vector<std::string> &params) {
           canon_addr = v6.to_string();
         }
       }
-      network_manager_.ban_man().Unban(canon_addr);
+      network_manager_.peer_manager().Unban(canon_addr);
       if (canon_addr != address) {
-        network_manager_.ban_man().Unban(address); // legacy fallback
+        network_manager_.peer_manager().Unban(address); // legacy fallback
       }
     } else {
-      network_manager_.ban_man().Unban(address);
+      network_manager_.peer_manager().Unban(address);
     }
 
     std::ostringstream oss;
@@ -946,7 +946,7 @@ std::string RPCServer::HandleSetBan(const std::vector<std::string> &params) {
 
 std::string
 RPCServer::HandleListBanned(const std::vector<std::string> &params) {
-  auto banned = network_manager_.ban_man().GetBanned();
+  auto banned = network_manager_.peer_manager().GetBanned();
 
   std::ostringstream oss;
   oss << "[\n";

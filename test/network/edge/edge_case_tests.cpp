@@ -128,16 +128,16 @@ TEST_CASE("BanMan persistence - Unban persists correctly", "[network][banman][pe
 TEST_CASE("BanMan persistence - Clear all bans", "[network][banman][persistence]") {
     SimulatedNetwork network(12348);
     SimulatedNode node(1, &network);
-    node.GetBanMan().Ban("192.168.1.1", 0);
-    node.GetBanMan().Ban("192.168.1.2", 0);
-    node.GetBanMan().Ban("192.168.1.3", 0);
-    REQUIRE(node.GetBanMan().IsBanned("192.168.1.1"));
-    REQUIRE(node.GetBanMan().IsBanned("192.168.1.2"));
-    REQUIRE(node.GetBanMan().IsBanned("192.168.1.3"));
-    node.GetBanMan().ClearBanned();
-    REQUIRE_FALSE(node.GetBanMan().IsBanned("192.168.1.1"));
-    REQUIRE_FALSE(node.GetBanMan().IsBanned("192.168.1.2"));
-    REQUIRE_FALSE(node.GetBanMan().IsBanned("192.168.1.3"));
-    auto bans = node.GetBanMan().GetBanned();
+    node.GetNetworkManager().peer_manager().Ban("192.168.1.1", 0);
+    node.GetNetworkManager().peer_manager().Ban("192.168.1.2", 0);
+    node.GetNetworkManager().peer_manager().Ban("192.168.1.3", 0);
+    REQUIRE(node.GetNetworkManager().peer_manager().IsBanned("192.168.1.1"));
+    REQUIRE(node.GetNetworkManager().peer_manager().IsBanned("192.168.1.2"));
+    REQUIRE(node.GetNetworkManager().peer_manager().IsBanned("192.168.1.3"));
+    node.GetNetworkManager().peer_manager().ClearBanned();
+    REQUIRE_FALSE(node.GetNetworkManager().peer_manager().IsBanned("192.168.1.1"));
+    REQUIRE_FALSE(node.GetNetworkManager().peer_manager().IsBanned("192.168.1.2"));
+    REQUIRE_FALSE(node.GetNetworkManager().peer_manager().IsBanned("192.168.1.3"));
+    auto bans = node.GetNetworkManager().peer_manager().GetBanned();
     REQUIRE(bans.size() == 0);
 }

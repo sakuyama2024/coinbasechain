@@ -179,7 +179,7 @@ TEST_CASE("Anchors - Loaded anchors are whitelisted (NoBan)", "[network][anchor]
     orch.AdvanceTime(std::chrono::milliseconds(100));
 
     // Check that anchor address is whitelisted (cannot be banned)
-    auto& bm = n1.GetBanMan();
+    auto& bm = n1.GetNetworkManager().peer_manager();
     // 127.0.0.2 should be normal dotted-quad
     CHECK(bm.IsWhitelisted("127.0.0.2"));
     bm.Ban("127.0.0.2", 3600);

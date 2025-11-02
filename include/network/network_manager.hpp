@@ -62,7 +62,6 @@ enum class ConnectionResult {
 // Forward declarations
 class AddressManager;
 class AnchorManager;
-class BanMan;
 class BlockRelayManager;
 class HeaderSyncManager;
 class MessageDispatcher;
@@ -117,7 +116,6 @@ public:
   // Component access
   PeerManager &peer_manager() { return *peer_manager_; }
   AddressManager &address_manager() { return *addr_manager_; }
-  BanMan &ban_man() { return *ban_man_; }
 
   // Manual connection management
   ConnectionResult connect_to(const protocol::NetworkAddress &addr);
@@ -200,7 +198,6 @@ private:
   std::unique_ptr<PeerManager> peer_manager_;
   validation::ChainstateManager
       &chainstate_manager_; // Reference to Application's ChainstateManager
-  std::unique_ptr<BanMan> ban_man_;
   std::unique_ptr<NATManager> nat_manager_;
   std::unique_ptr<AnchorManager> anchor_manager_;
   std::unique_ptr<HeaderSyncManager> header_sync_manager_;

@@ -69,7 +69,6 @@ public:
     // Component access
     TestChainstateManager& GetChainstate() { return *chainstate_; }
     network::NetworkManager& GetNetworkManager() { return *network_manager_; }
-    network::BanMan& GetBanMan();
 
     // Test configuration
     void SetBypassPOWValidation(bool bypass) {
