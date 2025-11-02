@@ -460,6 +460,11 @@ void PeerManager::disconnect_all() {
   }
 }
 
+void PeerManager::TestOnlySetPeerCreatedAt(int peer_id, std::chrono::steady_clock::time_point tp) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  peer_created_at_[peer_id] = tp;
+}
+
 void PeerManager::process_periodic() {
   std::vector<int> to_remove;
 

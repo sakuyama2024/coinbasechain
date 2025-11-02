@@ -539,6 +539,78 @@ TEST_CASE("PeerManager - Feeler connections do not consume outbound slots", "[ne
     REQUIRE(pm.peer_count() == 3);
 }
 
+TEST_CASE("PeerManager - Feeler lifetime is enforced", "[network][peer_manager][unit][feeler]") {
+    TestPeerFixture fixture;
+    PeerManager pm(fixture.io_context, fixture.addr_manager);
+
+    // Add a feeler and artificially age it beyond lifetime
+    auto feeler = Peer::create_outbound(fixture.io_context, nullptr, 0x12345678, 0, "10.0.0.11", 8333, ConnectionType::FEELER);
+    int fid = pm.add_peer(feeler);
+    REQUIRE(fid >= 0);
+
+    // Backdate creation time by 5 minutes
+    pm.TestOnlySetPeerCreatedAt(fid, std::chrono::steady_clock::now() - std::chrono::minutes(5));
+
+    // Trigger periodic processing to enforce lifetime
+    pm.process_periodic();
+
+    // Feeler should be removed
+    REQUIRE(pm.get_peer(fid) == nullptr);
+}
+
+TEST_CASE("PeerManager - disconnect_all invokes callback before erasing peers", "[network][peer_manager][unit][callbacks]") {
+    TestPeerFixture fixture;
+    PeerManager pm(fixture.io_context, fixture.addr_manager);
+
+    auto p = fixture.create_test_peer("127.0.0.5", 8333);
+    int id = pm.add_peer(p);
+    REQUIRE(id >= 0);
+
+    bool saw_peer_in_callback = false;
+    pm.SetPeerDisconnectCallback([&](int peer_id){
+        // Peer should still be retrievable during callback
+        auto found = pm.get_peer(peer_id);
+        saw_peer_in_callback = (found != nullptr);
+    });
+
+    pm.disconnect_all();
+    REQUIRE(saw_peer_in_callback);
+    REQUIRE(pm.peer_count() == 0);
+}
+
+TEST_CASE("PeerManager - Concurrent add_peer yields unique IDs", "[network][peer_manager][unit][concurrency]") {
+    TestPeerFixture fixture;
+    PeerManager::Config cfg;
+    cfg.max_outbound_peers = 10000;
+    cfg.target_outbound_peers = 10000;
+    PeerManager pm(fixture.io_context, fixture.addr_manager, cfg);
+
+    const int threads = 8;
+    const int per_thread = 50;
+    std::vector<std::thread> ts;
+    std::mutex m;
+    std::vector<int> ids;
+    ts.reserve(threads);
+
+    for (int t = 0; t < threads; ++t) {
+        ts.emplace_back([&]{
+            for (int i = 0; i < per_thread; ++i) {
+                auto peer = fixture.create_test_peer("192.0.2." + std::to_string((i%200)+1), 8333);
+                int id = pm.add_peer(peer);
+                std::lock_guard<std::mutex> g(m);
+                ids.push_back(id);
+            }
+        });
+    }
+    for (auto &th : ts) th.join();
+
+    // All IDs should be non-negative and unique
+    REQUIRE(ids.size() == static_cast<size_t>(threads * per_thread));
+    std::set<int> uniq(ids.begin(), ids.end());
+    REQUIRE(uniq.size() == ids.size());
+    REQUIRE(pm.peer_count() == ids.size());
+}
+
 TEST_CASE("PeerManager - Config Defaults", "[network][peer_manager][unit]") {
     PeerManager::Config config;
 

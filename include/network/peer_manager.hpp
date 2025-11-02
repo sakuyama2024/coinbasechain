@@ -153,6 +153,9 @@ public:
     peer_disconnect_callback_ = std::move(callback);
   }
 
+  // Test-only: set a peer's creation time (used to simulate feeler aging)
+  void TestOnlySetPeerCreatedAt(int peer_id, std::chrono::steady_clock::time_point tp);
+
   // === Misbehavior Tracking (Public API) ===
   // These are the ONLY methods that external code (like HeaderSync) should call
   // All penalty application is handled internally
