@@ -6,6 +6,8 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <thread>
+#include <vector>
 
 namespace coinbasechain {
 namespace network {
@@ -84,13 +86,14 @@ private:
  * RealTransport - boost::asio implementation of Transport
  *
  * Manages io_context and provides connection factory methods.
+ * Networking reactor is expected to run single-threaded by default.
  */
 class RealTransport : public Transport {
 public:
   /**
    * Create transport with specified number of IO threads
    */
-  explicit RealTransport(size_t io_threads = 4);
+  explicit RealTransport(size_t io_threads = 1);
   ~RealTransport() override;
 
   // Transport interface
@@ -120,6 +123,7 @@ private:
       work_guard_;
   std::vector<std::thread> io_threads_;
   std::atomic<bool> running_{false};
+  size_t desired_io_threads_{1};
 
   // Acceptor for inbound connections
   std::unique_ptr<boost::asio::ip::tcp::acceptor> acceptor_;
@@ -128,5 +132,4 @@ private:
 
 } // namespace network
 } // namespace coinbasechain
-
 

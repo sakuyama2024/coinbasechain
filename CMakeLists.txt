@@ -383,7 +383,7 @@ set_target_properties(coinbasechain_tests PROPERTIES
 )
 
 # Register test with CTest
-add_test(NAME coinbasechain_tests COMMAND $<TARGET_FILE:coinbasechain_tests>)
+add_test(NAME coinbasechain_tests COMMAND ${CMAKE_BINARY_DIR}/bin/coinbasechain_tests)
 endif() # BUILD_LEGACY_TESTS
 
 # Add tools subdirectory

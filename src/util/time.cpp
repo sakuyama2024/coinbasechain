@@ -42,7 +42,7 @@ std::chrono::steady_clock::time_point GetSteadyTime() {
   int64_t mock = g_mock_time.load(std::memory_order_relaxed);
   if (mock != 0) {
     // When mock time is active, simulate steady clock
-    // We need to maintain the property that steady_clock advances monotonically
+    // Maintain the property that steady_clock advances monotonically
 
     std::lock_guard<std::mutex> lock(g_steady_mutex);
 

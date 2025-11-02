@@ -21,7 +21,7 @@ static std::vector<uint8_t> MakeWire(const std::string& cmd, const std::vector<u
     return full;
 }
 
-TEST_CASE("GETADDR: answered only for inbound peers", "[network][addr]") {
+TEST_CASE("GETADDR Core parity: inbound-only and once-per-connection", "[network][addr][parity]") {
     SimulatedNetwork net(2601);
     TestOrchestrator orch(&net);
 
@@ -29,24 +29,31 @@ TEST_CASE("GETADDR: answered only for inbound peers", "[network][addr]") {
     SimulatedNode inbound_peer(2, &net);
     SimulatedNode outbound_peer(3, &net);
 
-    // Case 1: inbound peer -> victim should respond with ADDR
     net.EnableCommandTracking(true);
+
+    // Inbound peer connects to victim
     REQUIRE(inbound_peer.ConnectTo(1));
     REQUIRE(orch.WaitForConnection(victim, inbound_peer));
+    // Ensure handshake completes
+    for (int i = 0; i < 12; ++i) orch.AdvanceTime(std::chrono::milliseconds(100));
 
-    std::vector<uint8_t> getaddr_payload; // empty
-    auto wire1 = MakeWire(commands::GETADDR, getaddr_payload);
-    net.SendMessage(inbound_peer.GetId(), victim.GetId(), wire1);
-    orch.AdvanceTime(std::chrono::milliseconds(200));
-    REQUIRE(net.CountCommandSent(victim.GetId(), inbound_peer.GetId(), commands::ADDR) >= 1);
+    // First GETADDR from inbound peer should elicit one ADDR reply
+    net.SendMessage(inbound_peer.GetId(), victim.GetId(), MakeWire(commands::GETADDR, {}));
+    orch.AdvanceTime(std::chrono::milliseconds(400));
+    REQUIRE(net.CountCommandSent(victim.GetId(), inbound_peer.GetId(), commands::ADDR) == 1);
 
-    // Case 2: victim is outbound to peer -> ignore GETADDR
+    // Second GETADDR on same connection should be ignored (once-per-connection)
+    net.SendMessage(inbound_peer.GetId(), victim.GetId(), MakeWire(commands::GETADDR, {}));
+    orch.AdvanceTime(std::chrono::milliseconds(400));
+    REQUIRE(net.CountCommandSent(victim.GetId(), inbound_peer.GetId(), commands::ADDR) == 1);
+
+    // Victim initiates outbound connection to another peer; GETADDR from that peer is ignored by victim
     REQUIRE(victim.ConnectTo(3));
     REQUIRE(orch.WaitForConnection(victim, outbound_peer));
+    for (int i = 0; i < 12; ++i) orch.AdvanceTime(std::chrono::milliseconds(100));
 
-    auto wire2 = MakeWire(commands::GETADDR, {});
-    net.SendMessage(outbound_peer.GetId(), victim.GetId(), wire2);
-    orch.AdvanceTime(std::chrono::milliseconds(200));
+    net.SendMessage(outbound_peer.GetId(), victim.GetId(), MakeWire(commands::GETADDR, {}));
+    orch.AdvanceTime(std::chrono::milliseconds(400));
     REQUIRE(net.CountCommandSent(victim.GetId(), outbound_peer.GetId(), commands::ADDR) == 0);
 }
 
@@ -72,10 +79,12 @@ TEST_CASE("ADDR response is capped at MAX_ADDR_SIZE", "[network][addr]") {
     net.EnableCommandTracking(true);
     REQUIRE(requester.ConnectTo(1));
     REQUIRE(orch.WaitForConnection(victim, requester));
+    // Ensure handshake completes before GETADDR
+    for (int i = 0; i < 12; ++i) orch.AdvanceTime(std::chrono::milliseconds(100));
 
     auto getaddr = MakeWire(commands::GETADDR, {});
     net.SendMessage(requester.GetId(), victim.GetId(), getaddr);
-    orch.AdvanceTime(std::chrono::milliseconds(300));
+    orch.AdvanceTime(std::chrono::milliseconds(400));
 
     auto payloads = net.GetCommandPayloads(victim.GetId(), requester.GetId(), commands::ADDR);
     REQUIRE_FALSE(payloads.empty());
@@ -139,10 +148,12 @@ TEST_CASE("GETADDR empty address manager sends zero addresses", "[network][addr]
 
     REQUIRE(requester.ConnectTo(1));
     REQUIRE(orch.WaitForConnection(victim, requester));
+    // Ensure handshake completes before GETADDR
+    for (int i = 0; i < 12; ++i) orch.AdvanceTime(std::chrono::milliseconds(100));
 
     auto getaddr = MakeWire(commands::GETADDR, {});
     net.SendMessage(requester.GetId(), victim.GetId(), getaddr);
-    orch.AdvanceTime(std::chrono::milliseconds(300));
+    orch.AdvanceTime(std::chrono::milliseconds(400));
 
     auto payloads = net.GetCommandPayloads(victim.GetId(), requester.GetId(), commands::ADDR);
 

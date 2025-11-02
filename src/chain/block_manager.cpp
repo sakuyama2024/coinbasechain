@@ -493,19 +493,31 @@ bool BlockManager::Load(const std::string &filepath, const uint256 &expected_gen
       return a->nHeight < b->nHeight;
     });
     for (CBlockIndex* pindex : by_height) {
+      // Height must be non-negative
+      if (pindex->nHeight < 0) {
+        LOG_CHAIN_ERROR("INVARIANT VIOLATION: Block {} has negative height {}",
+                        pindex->GetBlockHash().ToString().substr(0,16), pindex->nHeight);
+        return false;
+      }
+
       if (pindex->pprev) {
-        // Defensive: Verify parent-child height invariant
-        // Because we're iterating in height order, parent must have lower height
-        // If this fails, either heights are corrupted or pprev is broken
-        if (pindex->pprev->nHeight >= pindex->nHeight) {
+        // Defensive: Verify parent-child height invariant (exactly +1)
+        // Because we're iterating in height order, parent must have lower height and be exactly one less
+        if (pindex->pprev->nHeight + 1 != pindex->nHeight) {
           LOG_CHAIN_ERROR("INVARIANT VIOLATION: Block {} (height {}) has parent {} (height {}). "
-                         "Parent height must be less than child height!",
-                         pindex->GetBlockHash().ToString().substr(0, 16), pindex->nHeight,
-                         pindex->pprev->GetBlockHash().ToString().substr(0, 16), pindex->pprev->nHeight);
+                          "Expected parent height to be child-1.",
+                          pindex->GetBlockHash().ToString().substr(0, 16), pindex->nHeight,
+                          pindex->pprev->GetBlockHash().ToString().substr(0, 16), pindex->pprev->nHeight);
           return false;
         }
         pindex->nTimeMax = std::max<int64_t>(pindex->pprev->nTimeMax, pindex->GetBlockTime());
       } else {
+        // Genesis must have height 0
+        if (pindex->nHeight != 0) {
+          LOG_CHAIN_ERROR("INVARIANT VIOLATION: Genesis block {} has non-zero height {}",
+                          pindex->GetBlockHash().ToString().substr(0,16), pindex->nHeight);
+          return false;
+        }
         pindex->nTimeMax = pindex->GetBlockTime();
       }
 

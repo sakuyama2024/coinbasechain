@@ -23,11 +23,9 @@ TEST_CASE("InvalidateBlock - Basic invalidation with reorg (test2)", "[invalidat
     SimulatedNetwork network(25001);
     SetZeroLatency(network);
 
-    // Test scenario: Node builds chain, invalidates middle block, builds alternative chain
-    // This tests that InvalidateBlock properly rewinds the chain and allows reorg
     SimulatedNode node1(1, &network);
+    SimulatedNode node2(2, &network);
 
-    // Node1 mines initial chain A-B-C
     uint256 blockA = node1.MineBlock();
     uint256 blockB = node1.MineBlock();
     uint256 blockC = node1.MineBlock();
@@ -37,22 +35,34 @@ TEST_CASE("InvalidateBlock - Basic invalidation with reorg (test2)", "[invalidat
     CHECK(node1.GetTipHeight() == 3);
     CHECK(node1.GetTipHash() == blockC);
 
-    // Invalidate blockB - should rewind to blockA
-    bool invalidated = node1.GetChainstate().InvalidateBlock(blockB);
-    REQUIRE(invalidated);
-    CHECK(node1.GetTipHeight() == 1);
-    CHECK(node1.GetTipHash() == blockA);
+    node2.ConnectTo(1);
+    for (int i = 0; i < 20; i++) network.AdvanceTime(network.GetCurrentTime() + 100);
+    CHECK(node2.GetTipHeight() == 3);
+    CHECK(node2.GetTipHash() == blockC);
 
-    // Mine alternative chain D-E-F-G (longer than original B-C)
-    uint256 blockD = node1.MineBlock();
-    uint256 blockE = node1.MineBlock();
-    uint256 blockF = node1.MineBlock();
-    uint256 blockG = node1.MineBlock();
+    node2.DisconnectFrom(1);
     network.AdvanceTime(network.GetCurrentTime() + 100);
 
-    // Should be on new chain A-D-E-F-G (height 5)
-    CHECK(node1.GetTipHeight() == 5);
-    CHECK(node1.GetTipHash() == blockG);
+    // Invalidate blockB on node2 and build D,E,F
+    bool invalidated = node2.GetChainstate().InvalidateBlock(blockB);
+    REQUIRE(invalidated);
+    CHECK(node2.GetTipHeight() == 1);
+    CHECK(node2.GetTipHash() == blockA);
+
+    uint256 blockD = node2.MineBlock(); (void)blockD;
+    uint256 blockE = node2.MineBlock(); (void)blockE;
+    uint256 blockF = node2.MineBlock();
+    network.AdvanceTime(network.GetCurrentTime() + 100);
+    CHECK(node2.GetTipHeight() == 4);
+
+    node2.ConnectTo(1);
+    // With outbound-only header sync (Core parity), ensure the lagging node (node1)
+    // also has an OUTBOUND connection to the announcer so it will initiate GETHEADERS.
+    node1.ConnectTo(2);
+    for (int i = 0; i < 100; i++) network.AdvanceTime(network.GetCurrentTime() + 100);
+
+    CHECK(node1.GetTipHeight() == 4);
+    CHECK(node1.GetTipHash() == blockF);
 }
 
 TEST_CASE("InvalidateBlock - Competing chains (test2)", "[invalidateblock][functional][network]") {

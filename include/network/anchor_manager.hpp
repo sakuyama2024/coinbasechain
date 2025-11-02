@@ -31,8 +31,8 @@ public:
   // Callback type for converting NetworkAddress to IP string
   using AddressToStringCallback = std::function<std::optional<std::string>(const protocol::NetworkAddress&)>;
 
-  // Callback type for initiating connections
-  using ConnectCallback = std::function<void(const protocol::NetworkAddress&)>;
+  // Callback type for initiating connections (second parameter: noban flag)
+  using ConnectCallback = std::function<void(const protocol::NetworkAddress&, bool noban)>;
 
   AnchorManager(PeerManager& peer_mgr,
                 AddressToStringCallback addr_to_str_cb,

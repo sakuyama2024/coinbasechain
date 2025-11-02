@@ -1,134 +1,132 @@
 #include "network/addr_manager.hpp"
 #include "util/logging.hpp"
 #include "util/time.hpp"
+#include "util/sha256.hpp"
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
 #include <nlohmann/json.hpp>
 #include <sstream>
+#include <filesystem>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace coinbasechain {
 namespace network {
 
-// Constants (Bitcoin Core parity)
-static constexpr int64_t SECONDS_PER_DAY = 86400;
-static constexpr int64_t RECENT_TRY_SEC = 600; // 10 minutes
+// Constants
+// An address in the NEW table is considered "stale" if we haven't heard about it for this many days.
+// Stale NEW entries are removed by cleanup_stale(); TRIED entries are retained even if old (they worked before).
+static constexpr uint32_t STALE_AFTER_DAYS = 30;
 
-// Bitcoin Core staleness/terrible constants
-static constexpr int64_t ADDRMAN_HORIZON = 30 * SECONDS_PER_DAY;  // 30 days - how old addresses can maximally be
-static constexpr int32_t ADDRMAN_RETRIES = 3;                       // After how many failed attempts we give up on a new node
-static constexpr int32_t ADDRMAN_MAX_FAILURES = 10;                 // How many successive failures are allowed...
-static constexpr int64_t ADDRMAN_MIN_FAIL = 7 * SECONDS_PER_DAY;   // ...in at least this duration (7 days)
+// After this many consecutive failed connection attempts:
+// - NEW: entry is considered "terrible" and may be removed
+// - TRIED: entry is demoted back to NEW; further failures there may remove it
+static constexpr uint32_t MAX_FAILURES = 10;
+
+static constexpr uint32_t SECONDS_PER_DAY = 86400; // Seconds in one day (utility for time math)
+// Selection tuning constants:
+// - SELECT_MAX_CHECKS: number of random probes into a table (TRIED/NEW) to find an eligible
+//   address before falling back; prevents O(N) scans in large tables.
+static constexpr size_t SELECT_MAX_CHECKS = 64;
+// - SELECT_TRIED_BIAS_PERCENT: initial probability (0..100) to draw from TRIED vs NEW,
+//   preferring known-good peers while still exploring NEW.
+static constexpr int SELECT_TRIED_BIAS_PERCENT = 80;
+// - SELECT_COOLDOWN_SEC: minimum time since last_try before an address is eligible; avoids
+//   tight re-dial loops to the same peer.
+static constexpr uint32_t SELECT_COOLDOWN_SEC = 600;      // 10 minutes
+// - SELECT_ATTEMPT_BYPASS: after this many attempts, allow selection even if still in cooldown,
+//   so flakier addresses are not starved forever.
+static constexpr int SELECT_ATTEMPT_BYPASS = 30;
 
 // AddrInfo implementation
+std::string AddrInfo::get_key() const {
+  std::stringstream ss;
 
-AddressKey AddrInfo::get_key() const {
-  AddressKey key;
-  // Direct memory copy - no string formatting overhead
-  std::copy(std::begin(address.ip), std::end(address.ip), key.ip.begin());
-  key.port = address.port;
-  return key;
+  // Convert IP bytes to string
+  for (size_t i = 0; i < 16; i++) {
+    ss << std::hex << std::setw(2) << std::setfill('0')
+       << static_cast<int>(address.ip[i]);
+  }
+  ss << ":" << std::dec << address.port;
+
+  return ss.str();
 }
 
-bool AddrInfo::is_stale(int64_t now) const {
-  // Simple staleness check: address timestamp is older than HORIZON (30 days)
-  return (now - timestamp) > ADDRMAN_HORIZON;
+bool AddrInfo::is_stale(uint32_t now) const {
+  if (timestamp == 0 || timestamp > now) return false; // avoid underflow and treat future/zero as not stale
+  return (now - timestamp) > (STALE_AFTER_DAYS * SECONDS_PER_DAY);
 }
 
-bool AddrInfo::is_terrible(int64_t now) const {
-  // Bitcoin Core parity: Full IsTerrible() logic from addrman.cpp lines 71-94
-
-  // Never remove things tried in the last minute (grace period)
-  if (last_try > 0 && (now - last_try) <= 60) {
-    return false;
-  }
-
-  // Time traveler check: timestamp is more than 10 minutes in the future
-  if (timestamp > now + 600) {
+bool AddrInfo::is_terrible(uint32_t now) const {
+  // Too many failed attempts
+  if (attempts >= MAX_FAILURES) {
     return true;
   }
 
-  // Not seen in recent history (older than 30 days)
-  if ((now - timestamp) > ADDRMAN_HORIZON) {
-    return true;
-  }
-
-  // For new addresses: tried N times and never a success
-  // (last_success == 0 means never succeeded)
-  if (last_success == 0 && attempts >= ADDRMAN_RETRIES) {
-    return true;
-  }
-
-  // For tried addresses: N successive failures in the last week
-  // (Must have succeeded at least once, but has many recent failures)
-  if (last_success > 0 && (now - last_success) > ADDRMAN_MIN_FAIL &&
-      attempts >= ADDRMAN_MAX_FAILURES) {
+  // No success and too old
+  if (!tried && is_stale(now)) {
     return true;
   }
 
   return false;
 }
 
-double AddrInfo::GetChance(int64_t now) const {
-  double chance = 1.0;
-
-  // Deprioritize very recent attempts (Bitcoin Core: 1% chance if tried < 10min ago)
-  if (last_try > 0 && (now - last_try) < RECENT_TRY_SEC) {
-    chance *= 0.01;
-  }
-
-  // Deprioritize by failure count: 66% per failure, capped at 8 attempts
-  // After 8 failures: 0.66^8 = 3.57% chance (never zero!)
-  // Formula: chance *= 0.66^min(attempts, 8)
-  if (attempts > 0) {
-    int capped_attempts = std::min(attempts, 8);
-    chance *= std::pow(0.66, capped_attempts);
-  }
-
-  return chance;
-}
-
 // AddressManager implementation
 
 AddressManager::AddressManager() : rng_(std::random_device{}()) {}
 
+uint32_t AddressManager::now() const {
+  return static_cast<uint32_t>(util::GetTime());
+}
+
 bool AddressManager::add(const protocol::NetworkAddress &addr,
-                         int64_t timestamp) {
+                         uint32_t timestamp) {
   std::lock_guard<std::mutex> lock(mutex_);
   return add_internal(addr, timestamp);
 }
 
 bool AddressManager::add_internal(const protocol::NetworkAddress &addr,
-                                  int64_t timestamp) {
-  AddrInfo info(addr, timestamp == 0 ? util::GetTime() : timestamp);
-  AddressKey key = info.get_key();
+                                  uint32_t timestamp) {
+  // Minimal validation: non-zero port and non-zero IP
+  if (addr.port == 0) return false;
+  bool all_zero = true; for (auto b : addr.ip) { if (b != 0) { all_zero = false; break; } }
+  if (all_zero) return false;
+
+  const uint32_t now_s = now();
+  // Clamp future or absurdly old timestamps to now
+  const uint32_t TEN_YEARS = 10u * 365u * 24u * 60u * 60u;
+  uint32_t eff_ts = (timestamp == 0 ? now_s : timestamp);
+  if (eff_ts > now_s || now_s - eff_ts > TEN_YEARS) eff_ts = now_s;
+
+  AddrInfo info(addr, eff_ts);
+  std::string key = info.get_key();
 
   // Check if already in tried table
-  if (tried_.find(key) != tried_.end()) {
+  if (auto it = tried_.find(key); it != tried_.end()) {
     // Update timestamp if newer
-    if (timestamp > tried_[key].timestamp) {
-      tried_[key].timestamp = timestamp;
+    if (eff_ts > it->second.timestamp) {
+      it->second.timestamp = eff_ts;
     }
     return false; // Already have it
   }
 
   // Check if already in new table
-  if (new_.find(key) != new_.end()) {
+  if (auto it = new_.find(key); it != new_.end()) {
     // Update timestamp if newer
-    if (timestamp > new_[key].timestamp) {
-      new_[key].timestamp = timestamp;
+    if (eff_ts > it->second.timestamp) {
+      it->second.timestamp = eff_ts;
     }
     return false; // Already have it
   }
 
   // Filter out terrible addresses
-  if (info.is_terrible(util::GetTime())) {
+  if (info.is_terrible(now_s)) {
     return false;
   }
 
   // Add to new table
   new_[key] = info;
-  new_keys_.push_back(key);
   return true;
 }
 
@@ -149,22 +147,20 @@ size_t AddressManager::add_multiple(
 void AddressManager::attempt(const protocol::NetworkAddress &addr) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  AddrInfo info(addr);
-  AddressKey key = info.get_key();
+  AddrInfo probe(addr);
+  std::string key = probe.get_key();
+  uint32_t t = now();
 
-  // Update in tried table (checked first since select() prefers tried 50% of time)
-  auto tried_it = tried_.find(key);
-  if (tried_it != tried_.end()) {
-    tried_it->second.last_try = util::GetTime();
-    tried_it->second.attempts++;
+  // Update in new table
+  if (auto it = new_.find(key); it != new_.end()) {
+    it->second.last_try = t;
+    it->second.attempts++;
     return;
   }
 
-  // Update in new table
-  auto new_it = new_.find(key);
-  if (new_it != new_.end()) {
-    new_it->second.last_try = util::GetTime();
-    new_it->second.attempts++;
+  // Update cooldown marker for tried entries as well
+  if (auto it = tried_.find(key); it != tried_.end()) {
+    it->second.last_try = t;
   }
 }
 
@@ -172,53 +168,44 @@ void AddressManager::good(const protocol::NetworkAddress &addr) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   AddrInfo info(addr);
-  AddressKey key = info.get_key();
-  int64_t current_time = util::GetTime();
+  std::string key = info.get_key();
+  uint32_t current_time = now();
 
-  LOG_NET_TRACE("AddressManager::good() called for address port={}", addr.port);
+  LOG_NET_TRACE("AddressManager::good() called for address: {}", key);
 
   // Check if in new table
   auto new_it = new_.find(key);
   if (new_it != new_.end()) {
     // Move from new to tried
-    LOG_NET_TRACE("Moving address port={} from 'new' to 'tried' table", addr.port);
+    LOG_NET_TRACE("Moving address {} from 'new' to 'tried' table", key);
     new_it->second.tried = true;
     new_it->second.last_success = current_time;
     new_it->second.attempts = 0; // Reset failure count
 
     tried_[key] = new_it->second;
-    tried_keys_.push_back(key);
     new_.erase(new_it);
-
-    // Remove key from new_keys_ vector (swap-and-pop for O(1) removal)
-    auto vec_it = std::find(new_keys_.begin(), new_keys_.end(), key);
-    if (vec_it != new_keys_.end()) {
-      *vec_it = new_keys_.back();
-      new_keys_.pop_back();
-    }
-
-    LOG_NET_TRACE("Address port={} successfully moved to 'tried'. New size: {}, Tried size: {}",
-                  addr.port, new_.size(), tried_.size());
+    LOG_NET_TRACE("Address {} successfully moved to 'tried'. New size: {}, Tried size: {}",
+                  key, new_.size(), tried_.size());
     return;
   }
 
   // Already in tried table
   auto tried_it = tried_.find(key);
   if (tried_it != tried_.end()) {
-    LOG_NET_TRACE("Updating existing address port={} in 'tried' table", addr.port);
+    LOG_NET_TRACE("Updating existing address {} in 'tried' table", key);
     tried_it->second.last_success = current_time;
     tried_it->second.attempts = 0; // Reset failure count
     return;
   }
 
-  LOG_NET_WARN("AddressManager::good() called for unknown address port={}", addr.port);
+  LOG_NET_WARN("AddressManager::good() called for unknown address: {}", key);
 }
 
 void AddressManager::failed(const protocol::NetworkAddress &addr) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   AddrInfo info(addr);
-  AddressKey key = info.get_key();
+  std::string key = info.get_key();
 
   // Update in new table
   auto new_it = new_.find(key);
@@ -226,15 +213,8 @@ void AddressManager::failed(const protocol::NetworkAddress &addr) {
     new_it->second.attempts++;
 
     // Remove if too many failures
-    if (new_it->second.is_terrible(util::GetTime())) {
+    if (new_it->second.is_terrible(now())) {
       new_.erase(new_it);
-
-      // Remove key from new_keys_ vector (swap-and-pop)
-      auto vec_it = std::find(new_keys_.begin(), new_keys_.end(), key);
-      if (vec_it != new_keys_.end()) {
-        *vec_it = new_keys_.back();
-        new_keys_.pop_back();
-      }
     }
     return;
   }
@@ -242,90 +222,98 @@ void AddressManager::failed(const protocol::NetworkAddress &addr) {
   // Update in tried table
   auto tried_it = tried_.find(key);
   if (tried_it != tried_.end()) {
-    // Just increment attempts - tried addresses stay in tried permanently
-    // They become less likely to be selected via GetChance() penalty
-    // Bitcoin Core parity: no table movement based on failure count
     tried_it->second.attempts++;
+
+    // Move back to new table if too many failures
+    if (tried_it->second.attempts >= MAX_FAILURES) {
+      tried_it->second.tried = false;
+      new_[key] = tried_it->second;
+      tried_.erase(tried_it);
+    }
   }
 }
 
 std::optional<protocol::NetworkAddress> AddressManager::select() {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  // Return early if no addresses available
-  if (tried_.empty() && new_.empty()) {
-    return std::nullopt;
-  }
+  // Prefer tried addresses (SELECT_TRIED_BIAS_PERCENT% of the time)
+  std::uniform_int_distribution<int> dist(0, 99);
+  bool use_tried = !tried_.empty() && (dist(rng_) < SELECT_TRIED_BIAS_PERCENT || new_.empty());
 
-  const int64_t now_ts = util::GetTime();
-  double chance_factor = 1.0;
+  const uint32_t now_ts = now();
 
-  // Bitcoin Core parity: Infinite loop with escalating chance_factor
-  // Ensures eventual selection even for addresses with low GetChance()
-  // (e.g., 8+ failures have 3.57% chance, will be selected after ~28 iterations)
-  while (true) {
-    // Select tried or new table with 50% probability (Bitcoin Core parity)
-    // Only roll dice when both tables are non-empty (optimization)
-    bool use_tried;
-    if (tried_.empty()) {
-      use_tried = false; // Must use new
-    } else if (new_.empty()) {
-      use_tried = true; // Must use tried
-    } else {
-      // Both non-empty, roll the dice (50/50)
-      std::uniform_int_distribution<int> dist(0, 99);
-      use_tried = (dist(rng_) < 50);
-    }
+  auto ok = [&](const AddrInfo& info) -> bool {
+    if (info.last_try == 0) return true;
+    if (now_ts - info.last_try >= SELECT_COOLDOWN_SEC) return true;
+    if (info.attempts >= SELECT_ATTEMPT_BYPASS) return true;
+    return false;
+  };
 
-    if (use_tried && !tried_keys_.empty()) {
-      // Select random address from tried table (O(1) random access)
-      std::uniform_int_distribution<size_t> idx_dist(0, tried_keys_.size() - 1);
-      const AddressKey& key = tried_keys_[idx_dist(rng_)];
-      auto it = tried_.find(key);
-
-      if (it != tried_.end()) {
-        const AddrInfo& info = it->second;
-
-        // Probabilistic selection based on GetChance() * chance_factor
-        // GetChance() returns penalty based on attempts and recency
-        double selection_chance = chance_factor * info.GetChance(now_ts);
-
-        // Generate random value [0.0, 1.0) and accept if below selection_chance
-        std::uniform_real_distribution<double> prob_dist(0.0, 1.0);
-        if (prob_dist(rng_) < selection_chance) {
-          return info.address;
-        }
-      }
-    } else if (!new_keys_.empty()) {
-      // Select random address from new table (O(1) random access)
-      std::uniform_int_distribution<size_t> idx_dist(0, new_keys_.size() - 1);
-      const AddressKey& key = new_keys_[idx_dist(rng_)];
-      auto it = new_.find(key);
-
-      if (it != new_.end()) {
-        const AddrInfo& info = it->second;
-
-        // Probabilistic selection based on GetChance() * chance_factor
-        double selection_chance = chance_factor * info.GetChance(now_ts);
-
-        std::uniform_real_distribution<double> prob_dist(0.0, 1.0);
-        if (prob_dist(rng_) < selection_chance) {
-          return info.address;
-        }
+  if (use_tried && !tried_.empty()) {
+    std::uniform_int_distribution<size_t> idx_dist(0, tried_.size() - 1);
+    const size_t max_checks = std::min<size_t>(tried_.size(), SELECT_MAX_CHECKS);
+    for (size_t i = 0; i < max_checks; ++i) {
+      auto it = tried_.begin();
+      std::advance(it, idx_dist(rng_));
+      if (ok(it->second)) {
+        return it->second.address;
       }
     }
-
-    // Not selected - escalate chance_factor to ensure eventual selection
-    // Bitcoin Core uses 1.2 multiplier per iteration
-    chance_factor *= 1.2;
-
-    // Safety check: if chance_factor exceeds 100, something is very wrong
-    // (should select within ~28 iterations even for 3.57% chance addresses)
-    if (chance_factor > 100.0) {
-      LOG_NET_ERROR("AddressManager::select() infinite loop exceeded safety threshold");
-      return std::nullopt;
+    // None in tried passed cooldown; try NEW table instead before falling back
+    if (!new_.empty()) {
+      std::uniform_int_distribution<size_t> n_idx(0, new_.size() - 1);
+      const size_t n_checks = std::min<size_t>(new_.size(), SELECT_MAX_CHECKS);
+      for (size_t i = 0; i < n_checks; ++i) {
+        auto itn = new_.begin();
+        std::advance(itn, n_idx(rng_));
+        if (ok(itn->second)) {
+          return itn->second.address;
+        }
+      }
+      // Fallback to any NEW if all failed ok()
+      auto itn = new_.begin();
+      std::advance(itn, n_idx(rng_));
+      return itn->second.address;
     }
+    // As last resort, pick any tried (even if under cooldown)
+    auto it = tried_.begin();
+    std::advance(it, idx_dist(rng_));
+    return it->second.address;
   }
+
+  if (!new_.empty()) {
+    std::uniform_int_distribution<size_t> idx_dist(0, new_.size() - 1);
+    const size_t max_checks = std::min<size_t>(new_.size(), SELECT_MAX_CHECKS);
+    for (size_t i = 0; i < max_checks; ++i) {
+      auto it = new_.begin();
+      std::advance(it, idx_dist(rng_));
+      if (ok(it->second)) {
+        return it->second.address;
+      }
+    }
+    // Try TRIED as alternative if NEW had none eligible
+    if (!tried_.empty()) {
+      std::uniform_int_distribution<size_t> t_idx(0, tried_.size() - 1);
+      const size_t t_checks = std::min<size_t>(tried_.size(), SELECT_MAX_CHECKS);
+      for (size_t i = 0; i < t_checks; ++i) {
+        auto itt = tried_.begin();
+        std::advance(itt, t_idx(rng_));
+        if (ok(itt->second)) {
+          return itt->second.address;
+        }
+      }
+      // Fallback to any TRIED if all failed ok()
+      auto itt = tried_.begin();
+      std::advance(itt, t_idx(rng_));
+      return itt->second.address;
+    }
+    // Finally fallback to any NEW
+    auto it = new_.begin();
+    std::advance(it, idx_dist(rng_));
+    return it->second.address;
+  }
+
+  return std::nullopt;
 }
 
 std::optional<protocol::NetworkAddress>
@@ -334,53 +322,44 @@ AddressManager::select_new_for_feeler() {
 
   // FEELER connections test addresses from "new" table (never connected before)
   // This helps move working addresses from "new" to "tried"
-  if (new_keys_.empty()) {
+  if (new_.empty()) {
     return std::nullopt;
   }
 
-  // Select random address from "new" table only (O(1) random access)
-  std::uniform_int_distribution<size_t> idx_dist(0, new_keys_.size() - 1);
-  const AddressKey& key = new_keys_[idx_dist(rng_)];
-  auto it = new_.find(key);
-  if (it != new_.end()) {
-    return it->second.address;
-  }
-  return std::nullopt;
+  // Select random address from "new" table only
+  std::uniform_int_distribution<size_t> idx_dist(0, new_.size() - 1);
+  auto it = new_.begin();
+  std::advance(it, idx_dist(rng_));
+  return it->second.address;
 }
 
 std::vector<protocol::TimestampedAddress>
 AddressManager::get_addresses(size_t max_count) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  const int64_t now_ts = util::GetTime();
   std::vector<protocol::TimestampedAddress> result;
   result.reserve(std::min(max_count, tried_.size() + new_.size()));
 
-  // Add tried addresses first, filtering terrible ones (Bitcoin Core parity)
+  const uint32_t now_s = now();
+
+  // Add tried addresses first (filter invalid/terrible defensively)
   for (const auto &[key, info] : tried_) {
-    if (result.size() >= max_count)
-      break;
-
-    // Bitcoin Core: Filter terrible addresses (addrman.cpp line 838)
-    // Don't share addresses that are too old, have too many failures, etc.
-    if (info.is_terrible(now_ts)) {
-      continue;
-    }
-
-    result.push_back({static_cast<uint32_t>(info.timestamp), info.address});
+    if (result.size() >= max_count) break;
+    if (info.address.port == 0) continue;
+    bool all_zero = true; for (auto b : info.address.ip) { if (b != 0) { all_zero = false; break; } }
+    if (all_zero) continue;
+    if (info.is_terrible(now_s)) continue;
+    result.push_back({info.timestamp, info.address});
   }
 
-  // Add new addresses, filtering terrible ones
+  // Add new addresses (skip invalid/terrible)
   for (const auto &[key, info] : new_) {
-    if (result.size() >= max_count)
-      break;
-
-    // Filter terrible addresses
-    if (info.is_terrible(now_ts)) {
-      continue;
-    }
-
-    result.push_back({static_cast<uint32_t>(info.timestamp), info.address});
+    if (result.size() >= max_count) break;
+    if (info.address.port == 0) continue;
+    bool all_zero = true; for (auto b : info.address.ip) { if (b != 0) { all_zero = false; break; } }
+    if (all_zero) continue;
+    if (info.is_terrible(now_s)) continue;
+    result.push_back({info.timestamp, info.address});
   }
 
   // Shuffle for privacy
@@ -406,7 +385,7 @@ size_t AddressManager::new_count() const {
 
 void AddressManager::cleanup_stale() {
   std::lock_guard<std::mutex> lock(mutex_);
-  int64_t current_time = util::GetTime();
+  uint32_t current_time = now();
 
   // Remove stale addresses from new table
   for (auto it = new_.begin(); it != new_.end();) {
@@ -416,13 +395,6 @@ void AddressManager::cleanup_stale() {
     } else {
       ++it;
     }
-  }
-
-  // Rebuild new_keys_ vector to match new_ map after removals
-  new_keys_.clear();
-  new_keys_.reserve(new_.size());
-  for (const auto& [key, info] : new_) {
-    new_keys_.push_back(key);
   }
 
   // Keep tried addresses even if old (they worked before)
@@ -479,15 +451,74 @@ bool AddressManager::Save(const std::string &filepath) {
     }
     root["new"] = new_array;
 
-    // Write to file
-    std::ofstream file(filepath);
-    if (!file.is_open()) {
-      LOG_NET_ERROR("Failed to open file for writing: {}", filepath);
+    // Optional integrity checksum over tried+new arrays
+    try {
+      std::string payload = tried_array.dump() + new_array.dump();
+      unsigned char hash[CSHA256::OUTPUT_SIZE];
+      CSHA256().Write(reinterpret_cast<const unsigned char*>(payload.data()), payload.size()).Finalize(hash);
+      nlohmann::json checksum_arr = nlohmann::json::array();
+      for (size_t i = 0; i < CSHA256::OUTPUT_SIZE; ++i) checksum_arr.push_back(hash[i]);
+      root["checksum"] = checksum_arr;
+    } catch (...) {
+      // If checksum calculation fails, proceed without it
+    }
+
+    // Atomic write: write to temp then rename (with fsync for durability)
+    const std::string tmp = filepath + ".tmp";
+    std::string data = root.dump(2);
+
+    int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+      LOG_NET_ERROR("Failed to open temp peers file for writing: {}", tmp);
       return false;
     }
 
-    file << root.dump(2);
-    file.close();
+    size_t total = 0;
+    while (total < data.size()) {
+      ssize_t n = ::write(fd, data.data() + total, data.size() - total);
+      if (n <= 0) {
+        LOG_NET_ERROR("Failed to write temp peers file: {}", tmp);
+        ::close(fd);
+        std::error_code ec_remove;
+        std::filesystem::remove(tmp, ec_remove);
+        if (ec_remove) {
+          LOG_NET_ERROR("Failed to remove temp peers file {}: {}", tmp, ec_remove.message());
+        }
+        return false;
+      }
+      total += static_cast<size_t>(n);
+    }
+
+    if (::fsync(fd) != 0) {
+      LOG_NET_ERROR("fsync failed for temp peers file: {}", tmp);
+      ::close(fd);
+      std::error_code ec_remove;
+      std::filesystem::remove(tmp, ec_remove);
+      if (ec_remove) {
+        LOG_NET_ERROR("Failed to remove temp peers file {} after fsync failure: {}", tmp, ec_remove.message());
+      }
+      return false;
+    }
+
+    ::close(fd);
+
+    std::error_code ec;
+    std::filesystem::rename(tmp, filepath, ec);
+    if (ec) {
+      // Try replace by removing destination first
+      std::filesystem::remove(filepath, ec);
+      std::filesystem::rename(tmp, filepath, ec);
+      if (ec) {
+        LOG_NET_ERROR("Failed to atomically replace peers file: {} -> {}: {}", tmp, filepath, ec.message());
+        // Cleanup temp best-effort
+        std::error_code ec_remove;
+        std::filesystem::remove(tmp, ec_remove);
+        if (ec_remove) {
+          LOG_NET_ERROR("Failed to remove temp peers file {} after rename failure: {}", tmp, ec_remove.message());
+        }
+        return false;
+      }
+    }
 
     LOG_NET_TRACE("successfully saved {} addresses ({} tried, {} new)",
                   total_size, tried_.size(), new_.size());
@@ -527,6 +558,36 @@ bool AddressManager::Load(const std::string &filepath) {
       return false;
     }
 
+    // Verify optional checksum
+    bool checksum_ok = true;
+    if (root.contains("checksum") && root["checksum"].is_array()) {
+      try {
+        std::string payload = (root.contains("tried") ? root["tried"].dump() : std::string()) +
+                              (root.contains("new") ? root["new"].dump() : std::string());
+        unsigned char hash[CSHA256::OUTPUT_SIZE];
+        CSHA256().Write(reinterpret_cast<const unsigned char*>(payload.data()), payload.size()).Finalize(hash);
+        const auto& arr = root["checksum"];
+        if (arr.size() != CSHA256::OUTPUT_SIZE) {
+          checksum_ok = false;
+        } else {
+          for (size_t i = 0; i < CSHA256::OUTPUT_SIZE; ++i) {
+            uint32_t v = arr[i].get<uint32_t>();
+            if (v > 255 || static_cast<unsigned char>(v) != hash[i]) { checksum_ok = false; break; }
+          }
+        }
+      } catch (...) {
+        checksum_ok = false;
+      }
+      if (!checksum_ok) {
+        LOG_NET_ERROR("Peer address file checksum mismatch; refusing to load {}");
+        tried_.clear();
+        new_.clear();
+        return false;
+      }
+    } else {
+      LOG_NET_DEBUG("Peers file has no checksum (accepting for backwards compatibility)");
+    }
+
     // Clear existing data
     tried_.clear();
     new_.clear();
@@ -548,9 +609,9 @@ bool AddressManager::Load(const std::string &filepath) {
         addr.port = addr_json["port"].get<uint16_t>();
         addr.services = addr_json["services"].get<uint64_t>();
 
-        AddrInfo info(addr, addr_json["timestamp"].get<int64_t>());
-        info.last_try = addr_json["last_try"].get<int64_t>();
-        info.last_success = addr_json["last_success"].get<int64_t>();
+        AddrInfo info(addr, addr_json["timestamp"].get<uint32_t>());
+        info.last_try = addr_json["last_try"].get<uint32_t>();
+        info.last_success = addr_json["last_success"].get<uint32_t>();
         info.attempts = addr_json["attempts"].get<int>();
         info.tried = true;
 
@@ -575,27 +636,14 @@ bool AddressManager::Load(const std::string &filepath) {
         addr.port = addr_json["port"].get<uint16_t>();
         addr.services = addr_json["services"].get<uint64_t>();
 
-        AddrInfo info(addr, addr_json["timestamp"].get<int64_t>());
-        info.last_try = addr_json["last_try"].get<int64_t>();
-        info.last_success = addr_json["last_success"].get<int64_t>();
+        AddrInfo info(addr, addr_json["timestamp"].get<uint32_t>());
+        info.last_try = addr_json["last_try"].get<uint32_t>();
+        info.last_success = addr_json["last_success"].get<uint32_t>();
         info.attempts = addr_json["attempts"].get<int>();
         info.tried = false;
 
         new_[info.get_key()] = info;
       }
-    }
-
-    // Rebuild key vectors for O(1) random access
-    tried_keys_.clear();
-    tried_keys_.reserve(tried_.size());
-    for (const auto& [key, info] : tried_) {
-      tried_keys_.push_back(key);
-    }
-
-    new_keys_.clear();
-    new_keys_.reserve(new_.size());
-    for (const auto& [key, info] : new_) {
-      new_keys_.push_back(key);
     }
 
     // Calculate total size without calling size() to avoid recursive lock
@@ -607,9 +655,7 @@ bool AddressManager::Load(const std::string &filepath) {
   } catch (const std::exception &e) {
     LOG_NET_ERROR("Exception during Load: {}", e.what());
     tried_.clear();
-    tried_keys_.clear();
     new_.clear();
-    new_keys_.clear();
     return false;
   }
 }

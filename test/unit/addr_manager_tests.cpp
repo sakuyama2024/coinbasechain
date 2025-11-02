@@ -4,7 +4,6 @@
 #include "catch_amalgamated.hpp"
 #include "network/addr_manager.hpp"
 #include "network/protocol.hpp"
-#include "util/time.hpp"
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -67,13 +66,14 @@ TEST_CASE("AddressManager basic operations", "[network][addrman]") {
 
     SECTION("Add multiple addresses") {
         std::vector<TimestampedAddress> addresses;
-        int64_t current_time = coinbasechain::util::GetTime();
+        uint32_t current_time = static_cast<uint32_t>(
+            std::chrono::system_clock::now().time_since_epoch().count() / 1000000000);
 
         for (int i = 0; i < 10; i++) {
             std::string ip = "192.168.1." + std::to_string(i + 1);
             NetworkAddress addr = MakeAddress(ip, 8333);
             // Use timestamps from recent past (1 hour ago - 10 seconds ago)
-            addresses.push_back({static_cast<uint32_t>(current_time - 3600 + (i * 360)), addr});
+            addresses.push_back({current_time - 3600 + (i * 360), addr});
         }
 
         size_t added = addrman.add_multiple(addresses);
@@ -124,37 +124,39 @@ TEST_CASE("AddressManager state transitions", "[network][addrman]") {
         REQUIRE(addrman.new_count() == 0);
     }
 
-    SECTION("New address removed after ADDRMAN_RETRIES failures - Bitcoin Core parity") {
+    SECTION("Too many failures removes address") {
         REQUIRE(addrman.add(addr));
 
-        // Fail it 3 times (ADDRMAN_RETRIES = 3)
-        // Bitcoin Core: New addresses that never succeed are removed after 3 attempts
-        for (int i = 0; i < 3; i++) {
+        // Fail it many times (MAX_FAILURES = 10)
+        for (int i = 0; i < 15; i++) {
             addrman.failed(addr);
         }
 
-        // Address should be removed (is_terrible returns true after 3 failures with no success)
+        // Address should be removed from new table
         REQUIRE(addrman.size() == 0);
-        REQUIRE(addrman.new_count() == 0);
     }
 
-    SECTION("Failed tried address stays in tried - Bitcoin Core parity") {
+    SECTION("Failed tried address moves back to new") {
         REQUIRE(addrman.add(addr));
         addrman.good(addr);
         REQUIRE(addrman.tried_count() == 1);
 
-        // Fail it many times
-        for (int i = 0; i < 20; i++) {
+        // Fail it exactly MAX_FAILURES times (10)
+        for (int i = 0; i < 10; i++) {
             addrman.failed(addr);
         }
 
-        // Bitcoin Core parity: Tried addresses stay in tried table permanently
-        // They never move back to new table regardless of failure count
-        // They become less likely to be selected via GetChance() penalty
-        // (After 8 failures: 0.66^8 = 3.57% chance, but never removed)
-        REQUIRE(addrman.tried_count() == 1);
-        REQUIRE(addrman.new_count() == 0);
-        REQUIRE(addrman.size() == 1);
+        // Should move back to new table after reaching MAX_FAILURES
+        REQUIRE(addrman.tried_count() == 0);
+        REQUIRE(addrman.new_count() == 1);
+
+        // Additional failures in new table will eventually remove it
+        for (int i = 0; i < 5; i++) {
+            addrman.failed(addr);
+        }
+
+        // Now it should be removed entirely (too many failures)
+        REQUIRE(addrman.size() == 0);
     }
 }
 
@@ -200,10 +202,30 @@ TEST_CASE("AddressManager selection", "[network][addrman]") {
             }
         }
 
-        // Should select tried address about 50% of the time (Bitcoin Core parity)
-        // Allow variance: expect 35-65 out of 100 selections
-        REQUIRE(tried_count > 35);
-        REQUIRE(tried_count < 65);
+        // Should select tried address about 80% of the time
+        REQUIRE(tried_count > 60);
+    }
+
+    SECTION("Tried cooldown is honored (avoid immediate re-dial)") {
+        // One tried address, many new addresses; mark tried as just-attempted
+        NetworkAddress tried_addr = MakeAddress("10.0.0.2", 8333);
+        REQUIRE(addrman.add(tried_addr));
+        addrman.good(tried_addr);
+        addrman.attempt(tried_addr); // sets last_try for tried
+
+        for (int i = 0; i < 50; ++i) {
+            std::string ip = "192.168.50." + std::to_string(i + 1);
+            NetworkAddress addr = MakeAddress(ip, 8333);
+            addrman.add(addr);
+        }
+
+        // Over many selections, we should get ONLY new addresses while tried is under cooldown
+        for (int i = 0; i < 100; ++i) {
+            auto sel = addrman.select();
+            REQUIRE(sel.has_value());
+            // ensure it's not the tried 10.0.0.2
+            REQUIRE(!(sel->ip[12] == 10 && sel->ip[13] == 0 && sel->ip[14] == 0 && sel->ip[15] == 2));
+        }
     }
 
     SECTION("Get multiple addresses") {
@@ -330,6 +352,74 @@ TEST_CASE("AddressManager persistence", "[network][addrman]") {
     std::filesystem::remove(test_file);
 }
 
+TEST_CASE("AddressManager persistence checksum tamper detection", "[network][addrman]") {
+    std::filesystem::path test_file = std::filesystem::temp_directory_path() / "addrman_checksum_test.json";
+    std::filesystem::remove(test_file);
+
+    AddressManager addrman1;
+    for (int i = 0; i < 5; ++i) {
+        auto a = MakeAddress("203.0.113." + std::to_string(10 + i), 8333);
+        addrman1.add(a);
+        if (i % 2 == 0) addrman1.good(a);
+    }
+    REQUIRE(addrman1.Save(test_file.string()));
+
+    // Tamper file: flip one digit in port field text
+    {
+        std::string s;
+        {
+            std::ifstream f(test_file);
+            REQUIRE(f.is_open());
+            s.assign((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        }
+        auto pos = s.find("\"port\": 8333");
+        if (pos != std::string::npos) s.replace(pos, std::string("\"port\": 8333").size(), "\"port\": 8334");
+        std::ofstream f2(test_file, std::ios::trunc);
+        REQUIRE(f2.is_open());
+        f2 << s;
+    }
+
+    AddressManager addrman2;
+    // Expect checksum mismatch -> Load returns false and nothing loaded
+    REQUIRE_FALSE(addrman2.Load(test_file.string()));
+    REQUIRE(addrman2.size() == 0);
+
+    std::filesystem::remove(test_file);
+}
+
+TEST_CASE("AddressManager timestamp clamping and validation", "[network][addrman]") {
+    AddressManager addrman;
+
+    SECTION("Future timestamps are clamped and not considered stale") {
+        NetworkAddress addr = MakeAddress("203.0.113.10", 8333);
+        // Far future timestamp
+        uint32_t now_s = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+        uint32_t future = now_s + 10u * 365u * 24u * 60u * 60u; // +10 years
+
+        REQUIRE(addrman.add(addr, future));
+        REQUIRE(addrman.size() == 1);
+
+        // cleanup_stale must not remove it (future ts should not be stale)
+        addrman.cleanup_stale();
+        REQUIRE(addrman.size() == 1);
+
+        // Returned timestamp should be <= now (clamped)
+        auto addrs = addrman.get_addresses(10);
+        REQUIRE(addrs.size() == 1);
+        REQUIRE(addrs[0].timestamp <= static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count()));
+    }
+
+    SECTION("Reject invalid address (port zero)") {
+        NetworkAddress invalid{}; // zero port, zero ip
+        invalid.port = 0;
+        invalid.services = 1;
+        REQUIRE_FALSE(addrman.add(invalid));
+        REQUIRE(addrman.size() == 0);
+    }
+}
+
 TEST_CASE("AddressManager stale address cleanup", "[network][addrman]") {
     AddressManager addrman;
 
@@ -366,6 +456,17 @@ TEST_CASE("AddressManager stale address cleanup", "[network][addrman]") {
         // Cleanup should not remove recent addresses
         addrman.cleanup_stale();
         REQUIRE(addrman.size() == 10);
+    }
+
+    SECTION("get_addresses filters terrible entries from new table") {
+        // Add one address, then exceed failure threshold to make it terrible
+        NetworkAddress a = MakeAddress("198.51.100.23", 8333);
+        REQUIRE(addrman.add(a));
+        for (int i = 0; i < 20; ++i) addrman.failed(a); // attempts >= MAX_FAILURES
+
+        auto vec = addrman.get_addresses(10);
+        // Should be filtered out (terrible)
+        REQUIRE(vec.empty());
     }
 
     SECTION("Cleanup preserves tried addresses even if old") {

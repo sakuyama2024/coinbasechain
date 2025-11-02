@@ -22,6 +22,11 @@ class HeaderSyncManager;
 
 // BlockRelayManager - Handles block announcements and relay (inspired by Bitcoin's SendMessages)
 // Manages per-peer announcement queues, periodic flushing, and block relay to all peers
+// Policy notes:
+// - Immediate relays: callers enforce policy (e.g., not in IBD, recent-only via MAX_BLOCK_RELAY_AGE).
+//   See src/application.cpp BlockConnected subscriber for age gating.
+// - Periodic tip re-announcements: intentionally do not apply age gating here to aid
+//   partition healing; peers dedup via per-peer queues and TTL.
 class BlockRelayManager {
 public:
   BlockRelayManager(validation::ChainstateManager& chainstate,
@@ -52,8 +57,6 @@ private:
   PeerManager& peer_manager_;
   HeaderSyncManager* header_sync_manager_; // Optional - for INV->GETHEADERS coordination
 
-  // Last announced tip (for tracking)
-  uint256 last_announced_tip_;
   // Per-peer last announced block to avoid re-announcing the same tip in tight loops
   std::unordered_map<int, uint256> last_announced_to_peer_;
   // Per-peer last announcement time (unix seconds via util::GetTime)

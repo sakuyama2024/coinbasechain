@@ -106,7 +106,7 @@ constexpr unsigned int DEFAULT_MAX_INBOUND_CONNECTIONS = 125;
 constexpr int VERSION_HANDSHAKE_TIMEOUT_SEC = 60; // 1 minute for handshake
 constexpr int PING_INTERVAL_SEC = 120;            // 2 minutes between pings
 constexpr int PING_TIMEOUT_SEC = 20 * 60;         // 20 minutes - peer must respond to ping
-constexpr int INACTIVITY_TIMEOUT_SEC = 20 * 60;   // 20 minutesL
+constexpr int INACTIVITY_TIMEOUT_SEC = 20 * 60;   // 20 minutes
 
 // Block relay timing (Bitcoin Core behavior)
 constexpr int64_t MAX_BLOCK_RELAY_AGE = 10; // Only relay blocks received in last 10 seconds

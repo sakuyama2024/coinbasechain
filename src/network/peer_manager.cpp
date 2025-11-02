@@ -3,17 +3,45 @@
 #include "network/protocol.hpp"
 #include <algorithm>
 #include <boost/asio/ip/address.hpp>
+#include <limits>
 
 namespace coinbasechain {
 namespace network {
+
+namespace {
+// Normalize an IP string; map IPv4-mapped IPv6 to dotted-quad IPv4.
+static std::string normalize_ip_string(const std::string& s) {
+  try {
+    boost::system::error_code ec;
+    auto ip = boost::asio::ip::make_address(s, ec);
+    if (ec) return s;
+    if (ip.is_v6() && ip.to_v6().is_v4_mapped()) {
+      auto v4 = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, ip.to_v6());
+      return v4.to_string();
+    }
+    return ip.to_string();
+  } catch (...) {
+    return s;
+  }
+}
+} // namespace
 
 PeerManager::PeerManager(boost::asio::io_context &io_context,
                          AddressManager &addr_manager, const Config &config)
     : io_context_(io_context), addr_manager_(addr_manager), config_(config) {}
 
-PeerManager::~PeerManager() { disconnect_all(); }
+PeerManager::~PeerManager() {
+  Shutdown();
+  disconnect_all();
+}
 
-int PeerManager::allocate_peer_id() { return next_peer_id_++; }
+void PeerManager::Shutdown() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  shutting_down_ = true;
+  peer_disconnect_callback_ = {};
+}
+
+int PeerManager::allocate_peer_id() { return next_peer_id_.fetch_add(1, std::memory_order_relaxed); }
 
 int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
                           const std::string &address) {
@@ -23,22 +51,33 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
 
   std::unique_lock<std::mutex> lock(mutex_);
 
+  // Reject additions during bulk shutdown
+  if (stopping_all_) {
+    LOG_NET_TRACE("add_peer: rejected while disconnect_all in progress");
+    return -1;
+  }
+
   // Check connection limits
   bool is_inbound = peer->is_inbound();
+  bool is_feeler_new = peer->is_feeler();
   size_t current_inbound = 0;
-  size_t current_outbound = 0;
+  size_t current_outbound_nonfeeler = 0;
 
   for (const auto &[id, p] : peers_) {
     if (p->is_inbound()) {
       current_inbound++;
     } else {
-      current_outbound++;
+      // Outbound: only count full-relay (exclude feelers from slot consumption)
+      if (!p->is_feeler()) {
+        current_outbound_nonfeeler++;
+      }
     }
   }
 
   // Check outbound limit (no eviction for outbound)
-  if (!is_inbound && current_outbound >= config_.max_outbound_peers) {
-    return -1; // Too many outbound connections
+  // Do not count feeler connections against outbound capacity, and do not gate them here
+  if (!is_inbound && !is_feeler_new && current_outbound_nonfeeler >= config_.max_outbound_peers) {
+    return -1; // Too many outbound full-relay connections
   }
 
   // Check inbound limit - try eviction if at capacity
@@ -49,32 +88,29 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
     lock.lock();
 
     if (!evicted) {
+      LOG_NET_TRACE("add_peer: inbound at capacity and eviction failed (likely all peers protected by recent-connection window)");
       return -1; // Couldn't evict anyone, reject connection
     }
-    // Successfully evicted a peer, continue with adding new peer
+    // Recompute inbound counts after eviction to avoid TOCTOU
+    if (is_inbound) {
+      size_t inbound_now = 0;
+      for (const auto &kv : peers_) {
+        if (kv.second && kv.second->is_inbound()) inbound_now++;
+      }
+      if (inbound_now >= config_.max_inbound_peers) {
+        LOG_NET_TRACE("add_peer: inbound still at capacity after eviction, rejecting");
+        return -1;
+      }
+    }
+    // Successfully evicted and capacity confirmed; continue
   }
 
-  // Enforce per-IP inbound limit before adding
+  // Enforce per-IP inbound limit before adding (fresh check under lock)
   if (is_inbound) {
-    // Normalize address
-    auto normalize = [](const std::string& s) -> std::string {
-      try {
-        boost::system::error_code ec;
-        auto ip = boost::asio::ip::make_address(s, ec);
-        if (ec) return s;
-        if (ip.is_v6() && ip.to_v6().is_v4_mapped()) {
-          auto v4 = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, ip.to_v6());
-          return v4.to_string();
-        }
-        return ip.to_string();
-      } catch (...) {
-        return s;
-      }
-    };
-    const std::string new_addr = normalize(peer->address());
+    const std::string new_addr = normalize_ip_string(peer->address());
     int same_ip_inbound = 0;
     for (const auto& [id, p] : peers_) {
-      if (p->is_inbound() && normalize(p->address()) == new_addr) {
+      if (p->is_inbound() && normalize_ip_string(p->address()) == new_addr) {
         same_ip_inbound++;
         if (same_ip_inbound >= MAX_INBOUND_PER_IP) {
           return -1; // Reject new inbound from same IP
@@ -87,6 +123,8 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
   int peer_id = allocate_peer_id();
   peer->set_id(peer_id);  // Set the ID on the peer object
   peers_[peer_id] = std::move(peer);
+  // Record creation time (for feeler lifetime enforcement)
+  peer_created_at_[peer_id] = std::chrono::steady_clock::now();
 
   LOG_NET_DEBUG("Added connection peer={}", peer_id);
 
@@ -104,6 +142,11 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
 
 void PeerManager::remove_peer(int peer_id) {
   PeerPtr peer;
+  std::string addr_str_after;
+  uint16_t addr_port_after = 0;
+
+  std::function<void(int)> cb;
+  bool skip_callbacks = false;
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -125,22 +168,11 @@ void PeerManager::remove_peer(int peer_id) {
       misbehavior_score = mis_it->second.misbehavior_score;
     }
 
-    // If this was a well-behaved outbound peer that had completed handshake,
-    // update addrman as "good" so we keep it eligible for future reconnects.
+    // Decide whether to mark as good in addrman (perform update after releasing lock)
     if (peer && peer->successfully_connected() && misbehavior_score == 0 &&
         !peer->is_inbound() && !peer->is_feeler()) {
-      const std::string& addr_str = peer->target_address();
-      uint16_t port = peer->target_port();
-      if (!addr_str.empty() && port != 0) {
-        try {
-          auto net_addr = protocol::NetworkAddress::from_string(addr_str, port);
-          addr_manager_.good(net_addr);
-          LOG_NET_TRACE("Updated addrman for disconnected peer {}:{}", addr_str, port);
-        } catch (const std::exception& e) {
-          LOG_NET_WARN("Failed to update addrman for disconnected peer {}:{}: {}",
-                       addr_str, port, e.what());
-        }
-      }
+      addr_str_after = peer->target_address();
+      addr_port_after = peer->target_port();
     }
 
     // Erase peer from map
@@ -148,16 +180,34 @@ void PeerManager::remove_peer(int peer_id) {
 
     // Also remove misbehavior tracking data
     peer_misbehavior_.erase(peer_id);
+    // Remove creation time record
+    peer_created_at_.erase(peer_id);
+
+    // Snapshot callback state
+    cb = peer_disconnect_callback_;
+    skip_callbacks = shutting_down_;
 
     LOG_NET_TRACE("remove_peer({}): peers_.size() AFTER = {}", peer_id, peers_.size());
     LOG_NET_TRACE("remove_peer: erased peer {} from map (map size now: {})",
                  peer_id, peers_.size());
   }
   
+  // After releasing lock: update addrman for good outbound peers (avoid lock-order risks)
+  if (addr_port_after != 0 && !addr_str_after.empty()) {
+    try {
+      auto net_addr = protocol::NetworkAddress::from_string(addr_str_after, addr_port_after);
+      addr_manager_.good(net_addr);
+      LOG_NET_TRACE("Updated addrman for disconnected peer {}:{}", addr_str_after, addr_port_after);
+    } catch (const std::exception& e) {
+      LOG_NET_WARN("Failed to update addrman for disconnected peer {}:{}: {}",
+                   addr_str_after, addr_port_after, e.what());
+    }
+  }
+
   // Notify callback (e.g., HeaderSyncManager) that peer disconnected
   // Do this after removing from map but before disconnecting
-  if (peer_disconnect_callback_) {
-    peer_disconnect_callback_(peer_id);
+  if (cb && !skip_callbacks) {
+    cb(peer_id);
   }
 
   // Disconnect outside the lock
@@ -177,27 +227,11 @@ int PeerManager::find_peer_by_address(const std::string &address,
                                       uint16_t port) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  // Normalize input address (convert IPv4-mapped IPv6 to IPv4 dotted-quad)
-  auto normalize = [](const std::string& s) -> std::string {
-    try {
-      boost::system::error_code ec;
-      auto ip = boost::asio::ip::make_address(s, ec);
-      if (ec) return s;
-      if (ip.is_v6() && ip.to_v6().is_v4_mapped()) {
-        auto v4 = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, ip.to_v6());
-        return v4.to_string();
-      }
-      return ip.to_string();
-    } catch (...) {
-      return s;
-    }
-  };
-
-  const std::string needle_addr = normalize(address);
+  const std::string needle_addr = normalize_ip_string(address);
 
   for (const auto &[id, peer] : peers_) {
     if (!peer) continue;
-    const std::string peer_addr = normalize(peer->address());
+    const std::string peer_addr = normalize_ip_string(peer->address());
     if (peer_addr != needle_addr) continue;
     if (port != 0) {
       if (peer->port() == port) return id;
@@ -290,32 +324,19 @@ bool PeerManager::can_accept_inbound() const {
 }
 
 bool PeerManager::can_accept_inbound_from(const std::string& address) const {
-  // Enforce global inbound limit AND per-IP limit
-  if (!can_accept_inbound()) return false;
-
-  // Normalize address (map IPv4-mapped IPv6 to IPv4 dotted-quad)
-  auto normalize = [](const std::string& s) -> std::string {
-    try {
-      boost::system::error_code ec;
-      auto ip = boost::asio::ip::make_address(s, ec);
-      if (ec) return s;
-      if (ip.is_v6() && ip.to_v6().is_v4_mapped()) {
-        auto v4 = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, ip.to_v6());
-        return v4.to_string();
-      }
-      return ip.to_string();
-    } catch (...) {
-      return s;
-    }
-  };
-
-  const std::string needle = normalize(address);
-
   std::lock_guard<std::mutex> lock(mutex_);
+  // Check global inbound limit under the same lock
+  size_t inbound_now = 0;
+  for (const auto &kv : peers_) {
+    if (kv.second && kv.second->is_inbound()) inbound_now++;
+  }
+  if (inbound_now >= config_.max_inbound_peers) return false;
+
+  const std::string needle = normalize_ip_string(address);
   int same_ip_inbound = 0;
   for (const auto& [id, peer] : peers_) {
     if (!peer || !peer->is_inbound()) continue;
-    if (normalize(peer->address()) == needle) {
+    if (normalize_ip_string(peer->address()) == needle) {
       same_ip_inbound++;
       if (same_ip_inbound >= MAX_INBOUND_PER_IP) {
         return false;
@@ -324,7 +345,6 @@ bool PeerManager::can_accept_inbound_from(const std::string& address) const {
   }
   return true;
 }
-
 bool PeerManager::evict_inbound_peer() {
   std::unique_lock<std::mutex> lock(mutex_);
 
@@ -369,15 +389,18 @@ bool PeerManager::evict_inbound_peer() {
   // Evict the peer with the worst (highest) ping time, or oldest connection if
   // no ping data
   int worst_peer_id = -1;
-  int64_t worst_ping = -1;
   auto oldest_connected = std::chrono::steady_clock::time_point::max();
+  // Map unknown ping (-1) to a large sentinel so we prefer evicting unknowns
+  auto map_ping = [](int64_t p){ return p < 0 ? std::numeric_limits<int64_t>::max()/2 : p; };
+  int64_t worst_score = std::numeric_limits<int64_t>::min();
 
   for (const auto &candidate : candidates) {
-    if (candidate.ping_time_ms > worst_ping) {
-      worst_ping = candidate.ping_time_ms;
+    int64_t cand = map_ping(candidate.ping_time_ms);
+    if (cand > worst_score) {
+      worst_score = cand;
       worst_peer_id = candidate.peer_id;
       oldest_connected = candidate.connected_time;
-    } else if (candidate.ping_time_ms == worst_ping) {
+    } else if (cand == worst_score) {
       // Tie-breaker: prefer evicting older connection
       if (candidate.connected_time < oldest_connected) {
         worst_peer_id = candidate.peer_id;
@@ -387,29 +410,10 @@ bool PeerManager::evict_inbound_peer() {
   }
 
   if (worst_peer_id >= 0) {
-    // Evict this peer
-    PeerPtr peer_to_disconnect;
-    auto it = peers_.find(worst_peer_id);
-    if (it != peers_.end()) {
-      peer_to_disconnect = it->second;
-      peers_.erase(it);
-      peer_misbehavior_.erase(worst_peer_id);
-    }
-    // Unlock before disconnecting to avoid callbacks under lock
+    // Unlock and reuse standard removal path to preserve invariants
     lock.unlock();
-
-    // Notify callback (e.g., HeaderSyncManager) that peer disconnected
-    // This is critical: without this, sync can get stuck when sync peer is evicted
-    // Pattern matches remove_peer() to ensure consistent disconnect notification
-    if (peer_disconnect_callback_) {
-      peer_disconnect_callback_(worst_peer_id);
-    }
-
-    if (peer_to_disconnect) {
-      peer_to_disconnect->disconnect();
-      return true;
-    }
-    return false;
+    remove_peer(worst_peer_id);
+    return true;
   }
 
   return false;
@@ -418,20 +422,29 @@ bool PeerManager::evict_inbound_peer() {
 void PeerManager::disconnect_all() {
   std::map<int, PeerPtr> peers_to_disconnect;
 
+  std::function<void(int)> cb;
+  bool skip_callbacks = false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    stopping_all_ = true;
     peers_to_disconnect = peers_;
-    peers_.clear();
-    peer_misbehavior_.clear();
+    cb = peer_disconnect_callback_;
+    skip_callbacks = shutting_down_;
   }
 
-  // Notify callback for each peer (matches remove_peer/evict_inbound_peer pattern)
-  // Even during shutdown when io_context is stopped, invoking callbacks ensures
-  // consistency and defensive programming (e.g., clearing stale sync peer state)
-  for (const auto &[id, peer] : peers_to_disconnect) {
-    if (peer_disconnect_callback_) {
-      peer_disconnect_callback_(id);
+  // Notify callbacks after snapshot; peers_ still populated for lookup, add_peer() is rejected
+  if (cb && !skip_callbacks) {
+    for (const auto &[id, peer] : peers_to_disconnect) {
+      cb(id);
     }
+  }
+
+  // Now clear internal maps and disconnect peers
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    peers_.clear();
+    peer_misbehavior_.clear();
+    peer_created_at_.clear();
   }
 
   // Disconnect all peers outside the lock
@@ -440,6 +453,17 @@ void PeerManager::disconnect_all() {
       peer->disconnect();
     }
   }
+
+  // Allow add_peer() after bulk disconnect completes
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    stopping_all_ = false;
+  }
+}
+
+void PeerManager::TestOnlySetPeerCreatedAt(int peer_id, std::chrono::steady_clock::time_point tp) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  peer_created_at_[peer_id] = tp;
 }
 
 void PeerManager::process_periodic() {
@@ -457,6 +481,20 @@ void PeerManager::process_periodic() {
       if (!peer->is_connected()) {
         LOG_NET_TRACE("process_periodic: peer={} not connected, marking for removal", id);
         to_remove.push_back(id);
+        continue;
+      }
+      // Enforce feeler max lifetime
+      if (peer->is_feeler()) {
+        auto it_ct = peer_created_at_.find(id);
+        if (it_ct != peer_created_at_.end()) {
+          auto age = std::chrono::duration_cast<std::chrono::seconds>(
+              std::chrono::steady_clock::now() - it_ct->second);
+          if (age.count() >= FEELER_MAX_LIFETIME_SEC) {
+            LOG_NET_TRACE("process_periodic: feeler peer={} exceeded lifetime ({}s >= {}s), marking for removal",
+                          id, age.count(), FEELER_MAX_LIFETIME_SEC);
+            to_remove.push_back(id);
+          }
+        }
       }
     }
 
@@ -632,6 +670,9 @@ void PeerManager::IncrementUnconnectingHeaders(int peer_id) {
     }
 
     PeerMisbehaviorData &data = it->second;
+    if (data.unconnecting_penalized) {
+      return; // already penalized; do nothing further
+    }
     data.num_unconnecting_headers_msgs++;
 
     LOG_NET_TRACE("IncrementUnconnectingHeaders: peer {} now has {} unconnecting msgs (threshold={})",
@@ -641,6 +682,7 @@ void PeerManager::IncrementUnconnectingHeaders(int peer_id) {
       LOG_NET_TRACE("peer {} ({}) sent too many unconnecting headers ({} >= {})",
                    peer_id, data.address, data.num_unconnecting_headers_msgs,
                    MAX_UNCONNECTING_HEADERS);
+      data.unconnecting_penalized = true; // latch to avoid repeated penalties
       threshold_exceeded = true; // call Misbehaving() after releasing the lock
     }
   }

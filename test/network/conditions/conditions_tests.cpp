@@ -15,7 +15,7 @@ TEST_CASE("NetworkConditionsTest - HighLatency", "[networkconditionstest][networ
     SimulatedNetwork network(27001);
     SetZeroLatency(network);
     SimulatedNode node1(1,&network); SimulatedNode node2(2,&network);
-    node1.ConnectTo(2); uint64_t t=100; network.AdvanceTime(t);
+    node2.ConnectTo(1); uint64_t t=100; network.AdvanceTime(t);
     SimulatedNetwork::NetworkConditions cond; cond.latency_min=std::chrono::milliseconds(500); cond.latency_max=std::chrono::milliseconds(500); cond.jitter_max=std::chrono::milliseconds(0);
     network.SetNetworkConditions(cond);
     (void)node1.MineBlock();
@@ -27,7 +27,7 @@ TEST_CASE("NetworkConditionsTest - PacketLoss", "[networkconditionstest][network
     SimulatedNetwork network(27002);
     SetZeroLatency(network);
     SimulatedNode node1(1,&network); SimulatedNode node2(2,&network);
-    node1.ConnectTo(2); uint64_t t=100; network.AdvanceTime(t);
+    node2.ConnectTo(1); uint64_t t=100; network.AdvanceTime(t);
     SimulatedNetwork::NetworkConditions cond; cond.packet_loss_rate=0.5; cond.latency_min=std::chrono::milliseconds(1); cond.latency_max=std::chrono::milliseconds(10);
     network.SetNetworkConditions(cond);
     for(int i=0;i<100;i++){ (void)node1.MineBlock(); t+=1000; network.AdvanceTime(t);} 

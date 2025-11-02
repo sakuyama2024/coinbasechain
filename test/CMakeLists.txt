@@ -49,6 +49,8 @@ add_executable(coinbasechain_tests
     network/block_announcement/basic_tests.cpp
     network/block_announcement/edge_case_tests.cpp
     network/block_announcement/peer_states_tests.cpp
+    network/block_announcement/block_relay_comprehensive_tests.cpp
+    network/block_announcement/block_relay_policy_tests.cpp
     network/handshake/edge_case_tests.cpp
     network/limits/connection_limit_tests.cpp
     network/limits/slot_exhaustion_proof.cpp
@@ -56,6 +58,7 @@ add_executable(coinbasechain_tests
     network/peer/connection_tests.cpp
     network/peer/peer_unit_tests.cpp
     network/peer/adversarial_tests.cpp
+    network/peer/peer_regression_tests.cpp
     network/peer/duplicate_connection_tests.cpp
     network/edge/edge_case_tests.cpp
     network/reorg/reorg_partition_tests.cpp
@@ -78,6 +81,10 @@ add_executable(coinbasechain_tests
     security/security_attack_simulations.cpp
     network/addr_manager_tests2.cpp
     network/feeler_anchor_tests.cpp
+    network/anchors_integration_tests.cpp
+    network/addr/getaddr_router_tests.cpp
+    network/addr/getaddr_multi_node_tests.cpp
+    network/real_transport_tests.cpp
 )
 
 target_include_directories(coinbasechain_tests PRIVATE

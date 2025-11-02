@@ -98,14 +98,31 @@ void RealTransportConnection::do_connect(const std::string &address,
               }
 
               open_ = true;
+
+              // Set useful TCP options (best-effort)
+              boost::system::error_code opt_ec;
+              socket_.set_option(boost::asio::ip::tcp::no_delay(true), opt_ec);
+              socket_.set_option(boost::asio::socket_base::keep_alive(true), opt_ec);
+
+              // Canonicalize remote address/port from the actual socket endpoint
+              try {
+                auto ep = socket_.remote_endpoint();
+                remote_addr_ = ep.address().to_string();
+                remote_port_ = ep.port();
+              } catch (const std::exception &e) {
+                LOG_NET_TRACE("failed to get remote endpoint after connect: {}", e.what());
+              } catch (...) {
+                LOG_NET_TRACE("unknown exception getting remote endpoint after connect");
+              }
+
               LOG_NET_TRACE("connected to {}:{}", remote_addr_, remote_port_);
               if (callback) {
                 try {
                   callback(true);
                 } catch (const std::exception &e) {
-            LOG_NET_TRACE("exception in connect callback: {}", e.what());
+                  LOG_NET_TRACE("exception in connect callback: {}", e.what());
                 } catch (...) {
-            LOG_NET_TRACE("unknown exception in connect callback");
+                  LOG_NET_TRACE("unknown exception in connect callback");
                 }
               }
             });
@@ -240,6 +257,14 @@ void RealTransportConnection::close() {
   boost::system::error_code ec;
   socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
   socket_.close(ec);
+
+  // Clear pending sends
+  {
+    std::lock_guard<std::mutex> lock(send_mutex_);
+    writing_ = false;
+    std::queue<std::vector<uint8_t>> empty;
+    std::swap(send_queue_, empty);
+  }
 }
 
 bool RealTransportConnection::is_open() const { return open_; }
@@ -264,13 +289,7 @@ void RealTransportConnection::set_disconnect_callback(
 // ============================================================================
 
 RealTransport::RealTransport(size_t io_threads)
-    : work_guard_(std::make_unique<boost::asio::executor_work_guard<
-                      boost::asio::io_context::executor_type>>(
-          boost::asio::make_work_guard(io_context_))) {
-  // Start IO threads
-  for (size_t i = 0; i < io_threads; i++) {
-    io_threads_.emplace_back([this]() { io_context_.run(); });
-  }
+    : desired_io_threads_(io_threads) {
 }
 
 RealTransport::~RealTransport() { stop(); }
@@ -293,9 +312,24 @@ bool RealTransport::listen(
   accept_callback_ = accept_callback;
 
   try {
-    acceptor_ = std::make_unique<boost::asio::ip::tcp::acceptor>(
-        io_context_,
-        boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), port));
+    using tcp = boost::asio::ip::tcp;
+    acceptor_ = std::make_unique<tcp::acceptor>(io_context_);
+
+    // Try dual-stack (IPv6 with v6_only=false); fall back to IPv4-only on failure
+    try {
+      acceptor_->open(tcp::v6());
+      acceptor_->set_option(boost::asio::ip::v6_only(false));
+      acceptor_->set_option(tcp::acceptor::reuse_address(true));
+      acceptor_->bind(tcp::endpoint(tcp::v6(), port));
+      acceptor_->listen();
+    } catch (const std::exception &) {
+      boost::system::error_code ec;
+      acceptor_->close(ec);
+      acceptor_->open(tcp::v4());
+      acceptor_->set_option(tcp::acceptor::reuse_address(true));
+      acceptor_->bind(tcp::endpoint(tcp::v4(), port));
+      acceptor_->listen();
+    }
 
     LOG_NET_INFO("listening on port {}", port);
     start_accept();
@@ -328,9 +362,15 @@ void RealTransport::handle_accept(const boost::system::error_code &ec,
     return;
   }
 
+  // Set useful TCP options on the accepted socket (best-effort)
+  {
+    boost::system::error_code opt_ec;
+    socket.set_option(boost::asio::ip::tcp::no_delay(true), opt_ec);
+    socket.set_option(boost::asio::socket_base::keep_alive(true), opt_ec);
+  }
+
   // Create inbound connection
-  auto conn =
-      RealTransportConnection::create_inbound(io_context_, std::move(socket));
+  auto conn = RealTransportConnection::create_inbound(io_context_, std::move(socket));
 
   // Notify callback (wrap in try-catch to ensure accept loop continues)
   if (accept_callback_) {
@@ -356,14 +396,19 @@ void RealTransport::stop_listening() {
 }
 
 void RealTransport::run() {
-  running_ = true;
-  // IO threads are already running, just mark as running
+  if (running_.exchange(true)) {
+    return;
+  }
+  io_context_.restart();
+  work_guard_ = std::make_unique<boost::asio::executor_work_guard<
+      boost::asio::io_context::executor_type>>(boost::asio::make_work_guard(io_context_));
+  for (size_t i = 0; i < desired_io_threads_; i++) {
+    io_threads_.emplace_back([this]() { io_context_.run(); });
+  }
 }
 
 void RealTransport::stop() {
-  if (!running_.exchange(false)) {
-    return; // Already stopped
-  }
+  running_.store(false);
 
   LOG_NET_TRACE("stopping transport");
 

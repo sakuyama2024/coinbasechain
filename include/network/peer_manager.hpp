@@ -7,6 +7,8 @@
 #include <memory>
 #include <mutex>
 #include <unordered_set>
+#include <atomic>
+#include <chrono>
 
 namespace coinbasechain {
 namespace network {
@@ -52,6 +54,7 @@ struct PeerMisbehaviorData {
   int misbehavior_score{0};
   bool should_discourage{false};
   int num_unconnecting_headers_msgs{0};
+  bool unconnecting_penalized{false};
   NetPermissionFlags permissions{NetPermissionFlags::None};
   std::string address;
   // Track duplicates of invalid headers reported by this peer to avoid double-penalty
@@ -85,7 +88,13 @@ public:
                        AddressManager &addr_manager,
                        const Config &config = Config{});
 
+  // Max lifetime for a feeler connection before forced removal (defense-in-depth)
+  static constexpr int FEELER_MAX_LIFETIME_SEC = 120;
+
   ~PeerManager();
+
+  // Shutdown: disable callbacks and mark as shutting down to avoid UAF during destructor
+  void Shutdown();
 
   // Add a peer (with optional permissions)
   // Returns the assigned peer_id on success, -1 on failure
@@ -99,6 +108,7 @@ public:
   PeerPtr get_peer(int peer_id);
 
   // Find peer ID by address:port (thread-safe)
+  // Contract: if port != 0, requires exact address:port match; returns -1 if no exact match even if IP matches on a different port.
   // Returns -1 if not found
   int find_peer_by_address(const std::string &address, uint16_t port);
 
@@ -143,6 +153,9 @@ public:
     peer_disconnect_callback_ = std::move(callback);
   }
 
+  // Test-only: set a peer's creation time (used to simulate feeler aging)
+  void TestOnlySetPeerCreatedAt(int peer_id, std::chrono::steady_clock::time_point tp);
+
   // === Misbehavior Tracking (Public API) ===
   // These are the ONLY methods that external code (like HeaderSync) should call
   // All penalty application is handled internally
@@ -183,11 +196,19 @@ private:
   std::map<int, PeerMisbehaviorData> peer_misbehavior_;
 
   // Get next available peer ID
-  int next_peer_id_ = 0;
+  std::atomic<int> next_peer_id_{0};
   int allocate_peer_id();
   
   // Callback for peer disconnect events
   std::function<void(int)> peer_disconnect_callback_;
+
+  // Track peer creation times (for feeler lifetime enforcement)
+  std::map<int, std::chrono::steady_clock::time_point> peer_created_at_;
+
+  // Shutdown flag to guard callbacks during destruction
+  bool shutting_down_{false};
+  // In-progress bulk shutdown (disconnect_all); reject add_peer while true
+  bool stopping_all_{false};
 };
 
 } // namespace network

@@ -19,12 +19,13 @@ public:
     ~NATManager();
 
     // Start NAT traversal (discovery + port mapping)
+    // Returns true if a mapping was created, false otherwise
     bool Start(uint16_t internal_port);
 
     // Stop and cleanup port mappings
     void Stop();
 
-    // Get discovered external IP
+    // Get discovered external IP (may be updated during refresh)
     const std::string& GetExternalIP() const;
 
     // Get mapped external port
@@ -35,10 +36,16 @@ public:
 
 private:
     void DiscoverUPnPDevice();
-    bool MapPort(uint16_t internal_port);
-    void UnmapPort();
-    void RefreshMapping();  // Periodic refresh thread
+    bool MapPort(uint16_t internal_port); // Uses cached device info
+    void UnmapPort();                     // Uses cached device info
+    void RefreshMapping();                // Periodic refresh thread
 
+    // Cached gateway/device state
+    std::string control_url_;        // IGD control URL
+    std::string igd_service_type_;   // IGD service type
+    std::string lanaddr_;            // Local LAN address detected by UPnP
+
+    // Mapping state
     std::string external_ip_;
     uint16_t internal_port_{0};
     uint16_t external_port_{0};
@@ -50,9 +57,8 @@ private:
     std::condition_variable refresh_cv_;
     std::mutex refresh_mutex_;
 
-    // UPnP device info
-    std::string gateway_url_;
-    std::string control_url_;
+    // Serializes Map/Unmap/Refresh operations and protects mapping state
+    std::mutex mapping_mutex_;
 };
 
 } // namespace network

@@ -7,6 +7,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 
 namespace coinbasechain {
 namespace network {
@@ -51,6 +52,17 @@ public:
   void Discourage(const std::string &address);
   bool IsDiscouraged(const std::string &address) const;
   void ClearDiscouraged();
+  // Prune expired discouraged entries
+  void SweepDiscouraged();
+
+  // Public constants for policy/testing
+  static constexpr int64_t DISCOURAGEMENT_DURATION = 24 * 60 * 60; // 24h
+  static constexpr size_t MAX_DISCOURAGED = 10000;
+
+  // Whitelist (NoBan) support
+  void AddToWhitelist(const std::string& address);
+  void RemoveFromWhitelist(const std::string& address);
+  bool IsWhitelisted(const std::string& address) const;
 
   std::map<std::string, CBanEntry> GetBanned() const;
   void ClearBanned();
@@ -72,11 +84,12 @@ private:
   mutable std::mutex m_discouraged_mutex;
   std::map<std::string, int64_t> m_discouraged; // address -> expiry time
 
-  // Discouragement duration (24 hours)
-  static constexpr int64_t DISCOURAGEMENT_DURATION = 24 * 60 * 60;
-
   std::string GetBanlistPath() const;
   bool SaveInternal(); // Internal save without lock (lock must already be held)
+
+  // Whitelist (NoBan) state
+  mutable std::mutex m_whitelist_mutex;
+  std::unordered_set<std::string> m_whitelist;
 };
 
 } // namespace network

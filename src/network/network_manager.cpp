@@ -74,9 +74,13 @@ NetworkManager::NetworkManager(
       [this](const protocol::NetworkAddress& addr) -> std::optional<std::string> {
         return network_address_to_string(addr);
       },
-      // Callback to connect to an address
-      [this](const protocol::NetworkAddress& addr) {
-        connect_to(addr);
+      // Callback to connect to an address (mark anchors as NoBan and whitelist in BanMan)
+      [this](const protocol::NetworkAddress& addr, bool noban) {
+        auto ip_opt = network_address_to_string(addr);
+        if (ip_opt && ban_man_) {
+          ban_man_->AddToWhitelist(*ip_opt);
+        }
+        connect_to_with_permissions(addr, noban ? NetPermissionFlags::NoBan : NetPermissionFlags::None);
       }
   );
 
@@ -90,7 +94,7 @@ NetworkManager::NetworkManager(
 
   // Create MessageRouter
   message_router_ = std::make_unique<MessageRouter>(
-      addr_manager_.get(), header_sync_manager_.get(), block_relay_manager_.get());
+      addr_manager_.get(), header_sync_manager_.get(), block_relay_manager_.get(), peer_manager_.get());
   
   // Register callback for peer disconnects (Bitcoin Core FinalizeNode equivalent)
   // This allows HeaderSyncManager to clear sync state when sync peer disconnects
@@ -282,9 +286,12 @@ void NetworkManager::stop() {
   io_context_.restart();
 }
 
-bool NetworkManager::connect_to(const protocol::NetworkAddress &addr,
-                                 ConnectionType conn_type) {
-  LOG_NET_TRACE("connect_to() called with type={}", ConnectionTypeAsString(conn_type));
+bool NetworkManager::connect_to(const protocol::NetworkAddress &addr) {
+  return connect_to_with_permissions(addr, NetPermissionFlags::None);
+}
+
+bool NetworkManager::connect_to_with_permissions(const protocol::NetworkAddress &addr, NetPermissionFlags permissions) {
+  LOG_NET_TRACE("connect_to() called");
 
   if (!running_.load(std::memory_order_acquire)) {
     LOG_NET_TRACE("connect_to() failed: not running");
@@ -300,19 +307,16 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr,
   const std::string &address = *ip_opt;
   uint16_t port = addr.port;
 
-  // MANUAL connections bypass ban/discourage checks (user explicitly requested)
-  if (conn_type != ConnectionType::MANUAL) {
-    // Check if address is banned
-    if (ban_man_ && ban_man_->IsBanned(address)) {
-      LOG_NET_TRACE("refusing to connect to banned address: {}", address);
-      return false;
-    }
+  // Check if address is banned
+  if (ban_man_ && ban_man_->IsBanned(address)) {
+    LOG_NET_TRACE("refusing to connect to banned address: {}", address);
+    return false;
+  }
 
-    // Check if address is discouraged
-    if (ban_man_ && ban_man_->IsDiscouraged(address)) {
-      LOG_NET_TRACE("refusing to connect to discouraged address: {}", address);
-      return false;
-    }
+  // Check if address is discouraged
+  if (ban_man_ && ban_man_->IsDiscouraged(address)) {
+    LOG_NET_TRACE("refusing to connect to discouraged address: {}", address);
+    return false;
   }
 
   // SECURITY: Prevent duplicate outbound connections to same peer
@@ -324,15 +328,12 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr,
   }
 
   // Check if we can add more outbound connections
-  // MANUAL and FEELER connections don't count against the limit
-  if (conn_type != ConnectionType::MANUAL && conn_type != ConnectionType::FEELER) {
-    bool needs_more = peer_manager_->needs_more_outbound();
-    size_t outbound = peer_manager_->outbound_count();
-    LOG_NET_TRACE("connect_to(): needs_more_outbound={}, outbound_count={}", needs_more, outbound);
-    if (!needs_more) {
-      LOG_NET_TRACE("connect_to() failed: don't need more outbound connections");
-      return false;
-    }
+  bool needs_more = peer_manager_->needs_more_outbound();
+  size_t outbound = peer_manager_->outbound_count();
+  LOG_NET_TRACE("connect_to(): needs_more_outbound={}, outbound_count={}", needs_more, outbound);
+  if (!needs_more) {
+    LOG_NET_TRACE("connect_to() failed: don't need more outbound connections");
+    return false;
   }
 
   // We need to capture the peer_id in the connection callback, but we don't
@@ -392,17 +393,20 @@ bool NetworkManager::connect_to(const protocol::NetworkAddress &addr,
   // Create outbound peer with the connection (will be in CONNECTING state)
   // Store target address for duplicate connection prevention (Bitcoin Core pattern)
   auto peer = Peer::create_outbound(io_context_, connection, config_.network_magic,
-                                     current_height, address, port, conn_type);
+                                     current_height, address, port);
   if (!peer) {
     LOG_NET_ERROR("Failed to create peer for {}:{}", address, port);
     return false;
   }
 
+  // Use a node-wide nonce for self-connection detection and VERSION.nonce
+  peer->set_local_nonce(local_nonce_);
+
   // Setup message handler before adding to manager
   setup_peer_message_handler(peer.get());
 
   // Add to peer manager and get the assigned peer_id
-  int peer_id = peer_manager_->add_peer(std::move(peer));
+  int peer_id = peer_manager_->add_peer(std::move(peer), permissions);
   if (peer_id < 0) {
     LOG_NET_ERROR("Failed to add peer to peer manager");
     return false;
@@ -420,7 +424,7 @@ void NetworkManager::disconnect_from(int peer_id) {
 }
 
 bool NetworkManager::already_connected_to_address(const std::string& address, uint16_t port) {
-  // Check existing connections to prevent duplicates
+  // Bitcoin Core pattern: Check existing connections to prevent duplicates
   // Uses peer_manager's find_peer_by_address which iterates through all peers
   // Returns true if we already have a connection to this address:port
   return peer_manager_->find_peer_by_address(address, port) != -1;
@@ -440,6 +444,7 @@ size_t NetworkManager::inbound_peer_count() const {
 
 void NetworkManager::bootstrap_from_fixed_seeds(const chain::ChainParams &params) {
   // Bootstrap AddressManager from hardcoded seed nodes
+  // (follows Bitcoin's ThreadDNSAddressSeed logic when addrman is empty)
 
   const auto &fixed_seeds = params.FixedSeeds();
 
@@ -582,6 +587,8 @@ void NetworkManager::attempt_outbound_connections() {
     addr_manager_->attempt(addr);
 
     // Try to connect
+    // Bitcoin Core: Don't mark as failed here for other failure cases
+    // The connection callback will mark as failed for actual network errors
     if (!connect_to(addr)) {
       LOG_NET_TRACE("Failed to initiate connection to {}:{}", ip_str, addr.port);
       // Note: Don't call addr_manager_->failed() here
@@ -642,6 +649,9 @@ void NetworkManager::handle_inbound_connection(
   auto peer = Peer::create_inbound(io_context_, connection,
                                    config_.network_magic, current_height);
   if (peer) {
+    // Use a node-wide nonce for self-connection detection and VERSION.nonce
+    peer->set_local_nonce(local_nonce_);
+
     // Setup message handler
     setup_peer_message_handler(peer.get());
 
@@ -669,15 +679,19 @@ void NetworkManager::run_maintenance() {
     header_sync_manager_->ProcessTimers();
   }
 
-  // Sweep expired bans
+  // Sweep expired bans and discouraged entries
   if (ban_man_) {
     ban_man_->SweepBanned();
+    ban_man_->SweepDiscouraged();
   }
 
-  // Periodically announce our tip to peers
+  // Periodically announce our tip to peers (Bitcoin Core pattern: queue only, SendMessages loop flushes)
   if (block_relay_manager_) {
     block_relay_manager_->AnnounceTipToAllPeers();
   }
+
+  // TODO: Sync timeout logic should be moved to HeaderSyncManager
+  // For now, HeaderSyncManager handles its own timeout tracking internally
 
   // Check if we need to start initial sync
   check_initial_sync();
@@ -890,8 +904,12 @@ void NetworkManager::setup_peer_message_handler(Peer *peer) {
       [this](PeerPtr peer, std::unique_ptr<message::Message> msg) {
         return handle_message(peer, std::move(msg));
       });
+
+  // No need to register peer - network::PeerManager already tracks all peers
+  // Misbehavior tracking is now handled by the unified PeerManager
 }
 
+// Bitcoin Core CheckIncomingNonce pattern (net.cpp:370-378)
 // Check if incoming nonce matches any outbound peer's local nonce
 // Returns true if OK (not self-connection), false if self-connection detected
 bool NetworkManager::check_incoming_nonce(uint64_t nonce) {
@@ -914,11 +932,14 @@ bool NetworkManager::check_incoming_nonce(uint64_t nonce) {
 
 bool NetworkManager::handle_message(PeerPtr peer,
                                     std::unique_ptr<message::Message> msg) {
+  // SECURITY: Bitcoin Core pattern - detect SELF-connections in VERSION handler
+  // Reference: net_processing.cpp:3453-3459 ProcessMessage() for "version"
   // This ONLY detects when we connect to ourselves (e.g., 127.0.0.1)
   // It does NOT handle bidirectional connections between different nodes
   if (msg->command() == protocol::commands::VERSION) {
     auto* version_msg = static_cast<message::VersionMessage*>(msg.get());
 
+    // Bitcoin Core: Only check INBOUND connections for self-connection
     // If this is an inbound peer, check if their nonce matches any of our
     // outbound peers' nonces (which would mean we connected to ourselves)
     if (peer->is_inbound()) {

@@ -20,15 +20,14 @@
 #include <cstring>
 #include <iomanip>
 #include <nlohmann/json.hpp>
+#include <boost/asio/ip/address.hpp>
 #include "chain/chainparams.hpp"
 #include "chain/chainstate_manager.hpp"
 #include "util/logging.hpp"
 #include "chain/miner.hpp"
-#include "chain/pow.hpp"
 #include "util/time.hpp"
 #include "util/uint.hpp"
 #include "network/banman.hpp"
-#include "network/connection_types.hpp"
 #include "network/network_manager.hpp"
 #include "network/peer_manager.hpp"
 #include <sstream>
@@ -400,7 +399,20 @@ std::string RPCServer::HandleGetInfo(const std::vector<std::string> &params) {
   int height = tip ? tip->nHeight : -1;
 
   // Get difficulty
-  double difficulty = (tip && tip->nBits != 0) ? consensus::GetDifficulty(tip->nBits, params_) : 1.0;
+  double difficulty = 1.0;
+  if (tip && tip->nBits != 0) {
+    int nShift = (tip->nBits >> 24) & 0xff;
+    double dDiff = (double)0x000fffff / (double)(tip->nBits & 0x00ffffff);
+    while (nShift < 29) {
+      dDiff *= 256.0;
+      nShift++;
+    }
+    while (nShift > 29) {
+      dDiff /= 256.0;
+      nShift--;
+    }
+    difficulty = dDiff;
+  }
 
   std::ostringstream oss;
   oss << "{\n"
@@ -423,7 +435,20 @@ RPCServer::HandleGetBlockchainInfo(const std::vector<std::string> &params) {
   int height = tip ? tip->nHeight : -1;
 
   // Calculate difficulty
-  double difficulty = (tip && tip->nBits != 0) ? consensus::GetDifficulty(tip->nBits, params_) : 1.0;
+  double difficulty = 1.0;
+  if (tip && tip->nBits != 0) {
+    int nShift = (tip->nBits >> 24) & 0xff;
+    double dDiff = (double)0x000fffff / (double)(tip->nBits & 0x00ffffff);
+    while (nShift < 29) {
+      dDiff *= 256.0;
+      nShift++;
+    }
+    while (nShift > 29) {
+      dDiff /= 256.0;
+      nShift--;
+    }
+    difficulty = dDiff;
+  }
 
   // Compute average inter-block times over recent windows
   auto compute_avg = [](const chain::CBlockIndex *p, int window) -> double {
@@ -548,7 +573,20 @@ RPCServer::HandleGetBlockHeader(const std::vector<std::string> &params) {
   }
 
   // Calculate difficulty
-  double difficulty = (index->nBits != 0) ? consensus::GetDifficulty(index->nBits, params_) : 1.0;
+  double difficulty = 1.0;
+  if (index->nBits != 0) {
+    int nShift = (index->nBits >> 24) & 0xff;
+    double dDiff = (double)0x000fffff / (double)(index->nBits & 0x00ffffff);
+    while (nShift < 29) {
+      dDiff *= 256.0;
+      nShift++;
+    }
+    while (nShift > 29) {
+      dDiff /= 256.0;
+      nShift--;
+    }
+    difficulty = dDiff;
+  }
 
   // Calculate confirmations
   auto *tip = chainstate_manager_.GetTip();
@@ -648,6 +686,8 @@ RPCServer::HandleGetPeerInfo(const std::vector<std::string> &params) {
         << "    \"pingtime\": " << (stats.ping_time_ms / 1000.0) << ",\n"
         << "    \"bytessent\": " << stats.bytes_sent << ",\n"
         << "    \"bytesrecv\": " << stats.bytes_received << ",\n"
+        << "    \"messagessent\": " << stats.messages_sent << ",\n"
+        << "    \"messagesrecv\": " << stats.messages_received << ",\n"
         << "    \"conntime\": " << duration.count() << ",\n"
         << "    \"misbehavior_score\": " << misbehavior_score << ",\n"
         << "    \"should_disconnect\": "
@@ -726,9 +766,9 @@ std::string RPCServer::HandleAddNode(const std::vector<std::string> &params) {
       std::copy(bytes.begin(), bytes.end(), addr.ip.begin());
     }
 
-    // Connect to the node (use MANUAL type - bypasses ban checks and outbound limits)
-    LOG_INFO("RPC addnode: calling network_manager_.connect_to() with ConnectionType::MANUAL");
-    bool success = network_manager_.connect_to(addr, network::ConnectionType::MANUAL);
+    // Connect to the node
+    LOG_INFO("RPC addnode: calling network_manager_.connect_to()");
+    bool success = network_manager_.connect_to(addr);
     LOG_INFO("RPC addnode: connect_to() returned {}", success);
     if (!success) {
       LOG_INFO("RPC addnode: connect_to() failed");
@@ -782,36 +822,115 @@ std::string RPCServer::HandleSetBan(const std::vector<std::string> &params) {
   }
 
   if (command == "add") {
-    // Optional bantime parameter (in seconds, 0 = permanent)
-    int64_t bantime = 0; // 0 = permanent by default
+    // Default bantime: 24 hours (matches Core's spirit; permanent requires explicit mode)
+    static constexpr int64_t DEFAULT_BANTIME_SEC = 24 * 60 * 60;
+
+    // Validate and canonicalize IP address
+    boost::system::error_code ip_ec;
+    auto ip_addr = boost::asio::ip::make_address(address, ip_ec);
+    if (ip_ec) {
+      return "{\"error\":\"Invalid IP address\"}\n";
+    }
+    std::string canon_addr;
+    if (ip_addr.is_v4()) {
+      canon_addr = ip_addr.to_string();
+    } else {
+      auto v6 = ip_addr.to_v6();
+      if (v6.is_v4_mapped()) {
+        canon_addr = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, v6).to_string();
+      } else {
+        canon_addr = v6.to_string();
+      }
+    }
+
+    // Optional bantime parameter (seconds); if 0 or omitted => default
+    int64_t bantime = 0;
     if (params.size() > 2) {
       try {
         bantime = std::stoll(params[2]);
       } catch (...) {
         return "{\"error\":\"Invalid bantime parameter\"}\n";
       }
+      if (bantime < 0) {
+        return "{\"error\":\"Invalid bantime (must be >= 0)\"}\n";
+      }
     }
 
-    // Ban the address
-    network_manager_.ban_man().Ban(address, bantime);
+    // Optional mode parameter: "absolute" | "permanent" | "relative" (default)
+    std::string mode = "relative";
+    if (params.size() > 3) {
+      mode = params[3];
+      for (auto &c : mode) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+    }
+
+    int64_t now = util::GetTime();
+    int64_t offset = 0;
+
+    if (mode == "permanent") {
+      offset = 0; // BanMan treats 0 as permanent
+    } else if (mode == "absolute") {
+      if (bantime == 0) {
+        return "{\"error\":\"absolute mode requires a non-zero bantime (unix timestamp)\"}\n";
+      }
+      if (bantime <= now) {
+        return "{\"error\":\"absolute bantime must be in the future\"}\n";
+      }
+      offset = bantime - now;
+    } else { // relative (default)
+      if (bantime == 0) {
+        offset = DEFAULT_BANTIME_SEC;
+      } else {
+        offset = bantime;
+      }
+    }
+
+    // Ban the canonical address
+    network_manager_.ban_man().Ban(canon_addr, offset);
 
     std::ostringstream oss;
-    if (bantime > 0) {
+    if (mode == "permanent") {
       oss << "{\n"
           << "  \"success\": true,\n"
-          << "  \"message\": \"Banned " << address << " for " << bantime
-          << " seconds\"\n"
+          << "  \"message\": \"Permanently banned " << canon_addr << "\"\n"
+          << "}\n";
+    } else if (mode == "absolute") {
+      oss << "{\n"
+          << "  \"success\": true,\n"
+          << "  \"message\": \"Banned " << canon_addr << " until " << (now + offset)
+          << " (absolute)\"\n"
           << "}\n";
     } else {
       oss << "{\n"
           << "  \"success\": true,\n"
-          << "  \"message\": \"Permanently banned " << address << "\"\n"
+          << "  \"message\": \"Banned " << canon_addr << " for " << offset
+          << " seconds\"\n"
           << "}\n";
     }
     return oss.str();
 
   } else if (command == "remove") {
-    network_manager_.ban_man().Unban(address);
+    // Try to canonicalize; if invalid, fall back to raw address for legacy entries
+    boost::system::error_code ip_ec;
+    auto ip_addr = boost::asio::ip::make_address(address, ip_ec);
+    if (!ip_ec) {
+      std::string canon_addr;
+      if (ip_addr.is_v4()) {
+        canon_addr = ip_addr.to_string();
+      } else {
+        auto v6 = ip_addr.to_v6();
+        if (v6.is_v4_mapped()) {
+          canon_addr = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, v6).to_string();
+        } else {
+          canon_addr = v6.to_string();
+        }
+      }
+      network_manager_.ban_man().Unban(canon_addr);
+      if (canon_addr != address) {
+        network_manager_.ban_man().Unban(address); // legacy fallback
+      }
+    } else {
+      network_manager_.ban_man().Unban(address);
+    }
 
     std::ostringstream oss;
     oss << "{\n"
@@ -873,7 +992,20 @@ std::string
 RPCServer::HandleGetDifficulty(const std::vector<std::string> &params) {
   auto *tip = chainstate_manager_.GetTip();
 
-  double difficulty = (tip && tip->nBits != 0) ? consensus::GetDifficulty(tip->nBits, params_) : 1.0;
+  double difficulty = 1.0;
+  if (tip && tip->nBits != 0) {
+    int nShift = (tip->nBits >> 24) & 0xff;
+    double dDiff = (double)0x000fffff / (double)(tip->nBits & 0x00ffffff);
+    while (nShift < 29) {
+      dDiff *= 256.0;
+      nShift++;
+    }
+    while (nShift > 29) {
+      dDiff /= 256.0;
+      nShift--;
+    }
+    difficulty = dDiff;
+  }
 
   std::ostringstream oss;
   oss << difficulty << "\n";
@@ -886,7 +1018,20 @@ RPCServer::HandleGetMiningInfo(const std::vector<std::string> &params) {
   int height = tip ? tip->nHeight : -1;
 
   // Calculate difficulty
-  double difficulty = (tip && tip->nBits != 0) ? consensus::GetDifficulty(tip->nBits, params_) : 1.0;
+  double difficulty = 1.0;
+  if (tip && tip->nBits != 0) {
+    int nShift = (tip->nBits >> 24) & 0xff;
+    double dDiff = (double)0x000fffff / (double)(tip->nBits & 0x00ffffff);
+    while (nShift < 29) {
+      dDiff *= 256.0;
+      nShift++;
+    }
+    while (nShift > 29) {
+      dDiff /= 256.0;
+      nShift--;
+    }
+    difficulty = dDiff;
+  }
 
   // Calculate network hashrate (simplified - based on last DEFAULT_HASHRATE_CALCULATION_BLOCKS)
   double networkhashps = 0.0;

@@ -1537,6 +1537,12 @@ void on_receive(const boost::system::error_code& ec, size_t bytes_transferred) {
 
 ## 9. Concurrency Model
 
+NOTE: The networking reactor (boost::asio::io_context) runs single-threaded.
+Handlers and timers are assumed serialized; other components (validation,
+mining, RPC) may use multiple threads. If multi-threaded networking is needed
+in the future, introduce explicit serialization (strand or coarse locks)
+across NetworkManager/Peer and update tests accordingly.
+
 ### 9.1 Threading Architecture
 
 ```

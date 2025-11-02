@@ -12,7 +12,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include "network/connection_types.hpp"
 #include "network/peer.hpp"
 #include "network/peer_manager.hpp"
 #include "network/protocol.hpp"
@@ -59,6 +58,12 @@ class NATManager;
 // NetworkManager - Top-level coordinator for all networking (inspired by
 // Bitcoin's CConnman) Manages io_context, coordinates
 // PeerManager/AddressManager, handles connections, routes messages
+//
+// IMPORTANT: networking runs on a single reactor thread
+// - Application components (validation, mining, RPC) may be multi-threaded
+// - The networking reactor (io_context used here) must use a single thread
+//   (Config::io_threads = 1) so handlers/timers are serialized without strands.
+// - Running with >1 network I/O thread requires adding explicit serialization.
 class NetworkManager {
 public:
   struct Config {
@@ -66,7 +71,7 @@ public:
     uint16_t listen_port;   // Port to listen on (REQUIRED - must be set based on chain type, 0 = don't listen)
     bool listen_enabled;    // Enable inbound connections
     bool enable_nat;        // Enable UPnP NAT traversal
-    size_t io_threads;      // Number of IO threads
+    size_t io_threads;      // Number of IO threads (networking reactor only) — keep at 1
     std::string datadir;    // Data directory
 
     std::chrono::seconds connect_interval; // Time between connection attempts
@@ -79,7 +84,7 @@ public:
         : network_magic(0),
           listen_port(0),
           listen_enabled(true), 
-          enable_nat(true), io_threads(4), datadir(""),
+          enable_nat(true), io_threads(1), datadir(""),
           connect_interval(std::chrono::seconds(5)),
           maintenance_interval(std::chrono::seconds(30)) {}
   };
@@ -101,8 +106,7 @@ public:
   BanMan &ban_man() { return *ban_man_; }
 
   // Manual connection management
-  bool connect_to(const protocol::NetworkAddress &addr,
-                  ConnectionType conn_type = ConnectionType::OUTBOUND);
+  bool connect_to(const protocol::NetworkAddress &addr);
   void disconnect_from(int peer_id);
 
   // Block relay
@@ -139,6 +143,9 @@ public:
   // Test-only: Manually trigger a feeler connection attempt
   void attempt_feeler_connection();
 
+  // Test-only: Access router for diagnostics
+  MessageRouter& router_for_test() { return *message_router_; }
+
   // Stats (used primarily in tests, but useful for monitoring/debugging)
   size_t active_peer_count() const;
   size_t outbound_peer_count() const;
@@ -174,7 +181,8 @@ private:
   // Components
   std::unique_ptr<AddressManager> addr_manager_;
   std::unique_ptr<PeerManager> peer_manager_;
-  validation::ChainstateManager &chainstate_manager_; 
+  validation::ChainstateManager
+      &chainstate_manager_; // Reference to Application's ChainstateManager
   std::unique_ptr<BanMan> ban_man_;
   std::unique_ptr<NATManager> nat_manager_;
   std::unique_ptr<AnchorManager> anchor_manager_;
@@ -202,6 +210,7 @@ private:
 
   std::optional<std::string> network_address_to_string(const protocol::NetworkAddress& addr);
   bool already_connected_to_address(const std::string& address, uint16_t port);
+  bool connect_to_with_permissions(const protocol::NetworkAddress &addr, NetPermissionFlags permissions);
 
   // Inbound connections (handled via transport callback)
   void handle_inbound_connection(TransportConnectionPtr connection);

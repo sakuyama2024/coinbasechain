@@ -82,52 +82,51 @@ TEST_CASE("TimeData - Mixed positive and negative", "[timedata]") {
     REQUIRE(GetTimeOffset() == 0);
 }
 
-TEST_CASE("TimeData - Adjustment cap at +70 minutes", "[timedata]") {
+TEST_CASE("TimeData - Small offsets well within cap are applied", "[timedata]") {
     TestOnlyResetTimeData();
 
-    // All peers report we're 75 minutes behind (4500 seconds)
-    // Median would be 4500, but cap is ±70 minutes (4200 seconds)
-    AddPeers({4500, 4500, 4500, 4500});
+    // All peers report we're 65 seconds behind; with ±70 minutes cap this is within limit
+    AddPeers({65, 65, 65, 65});
 
-    // Offset should be clamped to 0 (exceeds max adjustment)
-    REQUIRE(GetTimeOffset() == 0);
+    // Offset should reflect the median (65)
+    REQUIRE(GetTimeOffset() == 65);
 }
 
-TEST_CASE("TimeData - Adjustment cap at -70 minutes", "[timedata]") {
+TEST_CASE("TimeData - Small negative offsets well within cap are applied", "[timedata]") {
     TestOnlyResetTimeData();
 
-    // All peers report we're 75 minutes ahead (-4500 seconds)
-    AddPeers({-4500, -4500, -4500, -4500});
+    // All peers report we're 65 seconds ahead (-65 seconds); within ±70 minutes cap
+    AddPeers({-65, -65, -65, -65});
 
-    // Offset should be clamped to 0 (exceeds max adjustment)
-    REQUIRE(GetTimeOffset() == 0);
+    // Offset should reflect the median (-65)
+    REQUIRE(GetTimeOffset() == -65);
 }
 
-TEST_CASE("TimeData - Exactly at +70 minute boundary", "[timedata]") {
+TEST_CASE("TimeData - Exactly at +1 minute boundary", "[timedata]") {
     TestOnlyResetTimeData();
 
-    // Exactly at the limit (70 * 60 = 4200 seconds)
+// Exactly at the limit (60 seconds)
     int64_t max_adj = DEFAULT_MAX_TIME_ADJUSTMENT;
     AddPeers({max_adj, max_adj, max_adj, max_adj});
 
-    // Filter: [0, 4200, 4200, 4200, 4200] = 5 elements
+// Filter: [0, 60, 60, 60, 60] = 5 elements
     // Sorted: [0, 4200, 4200, 4200, 4200], median = 4200
     // Should be accepted (within limit)
     REQUIRE(GetTimeOffset() == max_adj);
 }
 
-TEST_CASE("TimeData - Exactly at -70 minute boundary", "[timedata]") {
+TEST_CASE("TimeData - Exactly at -1 minute boundary", "[timedata]") {
     TestOnlyResetTimeData();
 
     int64_t max_adj = DEFAULT_MAX_TIME_ADJUSTMENT;
     AddPeers({-max_adj, -max_adj, -max_adj, -max_adj});
 
-    // Filter: [0, -4200, -4200, -4200, -4200] = 5 elements
+// Filter: [0, -60, -60, -60, -60] = 5 elements
     // Sorted: [-4200, -4200, -4200, -4200, 0], median = -4200
     REQUIRE(GetTimeOffset() == -max_adj);
 }
 
-TEST_CASE("TimeData - One second over +70 minute limit", "[timedata]") {
+TEST_CASE("TimeData - One second over +1 minute limit", "[timedata]") {
     TestOnlyResetTimeData();
 
     int64_t over_limit = DEFAULT_MAX_TIME_ADJUSTMENT + 1;
