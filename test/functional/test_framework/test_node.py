@@ -48,12 +48,30 @@ class TestNode:
         if extra_args:
             args.extend(extra_args)
 
+        # Ensure verbose logging for functional tests unless explicitly overridden
+        has_loglevel = any(a.startswith("--loglevel=") for a in args)
+        has_debug = any(a.startswith("--debug=") for a in args)
+
+        # Default to TRACE for better diagnostics
+        if not has_loglevel:
+            # Allow override via env var COINBASE_TEST_LOG_LEVEL
+            loglevel = os.environ.get("COINBASE_TEST_LOG_LEVEL", "trace")
+            args.append(f"--loglevel={loglevel}")
+
+        if not has_debug:
+            # Allow override via env var COINBASE_TEST_DEBUG (comma-separated)
+            debug_components = os.environ.get("COINBASE_TEST_DEBUG", "network,chain")
+            args.append(f"--debug={debug_components}")
+
         # Start process
-        # Use DEVNULL to avoid blocking on stdout/stderr buffers
+        # Allow inheriting stdio for debugging (ASan, stack traces): set CBC_TEST_INHERIT_STDIO=1
+        inherit_stdio = os.environ.get('CBC_TEST_INHERIT_STDIO', '0') == '1'
+        stdout_target = None if inherit_stdio else subprocess.DEVNULL
+        stderr_target = None if inherit_stdio else subprocess.DEVNULL
         self.process = subprocess.Popen(
             args,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=stdout_target,
+            stderr=stderr_target,
             text=True
         )
 

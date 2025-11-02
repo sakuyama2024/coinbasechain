@@ -240,12 +240,23 @@ def main():
 
     except Exception as e:
         log(f"\n✗ Test FAILED: {e}", RED)
+        # Attempt to dump logs of any crashed nodes before raising
+        crashed_nodes = []
+        for node in nodes:
+            if not node.is_running():
+                crashed_nodes.append(node.index)
+                try:
+                    log(f"\nNode{node.index} debug.log (last 80 lines):", YELLOW)
+                    log(node.read_log(80))
+                except Exception as le:
+                    log(f"Failed to read Node{node.index} log: {le}", YELLOW)
         import traceback
         traceback.print_exc()
+        # Re-raise to set non-zero exit for test runner
         return 1
 
     finally:
-        # Cleanup
+        # Cleanup (preserve on demand)
         log("\nCleaning up...", YELLOW)
         for node in nodes:
             if node.is_running():
@@ -253,11 +264,16 @@ def main():
 
         time.sleep(1)
 
-        try:
-            shutil.rmtree(test_dir)
-            log(f"Cleaned up test directory: {test_dir}\n")
-        except Exception as e:
-            log(f"Warning: Could not clean up {test_dir}: {e}", YELLOW)
+        import os
+        keep = os.environ.get('CBC_KEEP_TEST_DIR', '0') == '1'
+        if keep:
+            log(f"Preserving test directory for inspection: {test_dir}", YELLOW)
+        else:
+            try:
+                shutil.rmtree(test_dir)
+                log(f"Cleaned up test directory: {test_dir}\n")
+            except Exception as e:
+                log(f"Warning: Could not clean up {test_dir}: {e}", YELLOW)
 
 if __name__ == '__main__':
     sys.exit(main())
