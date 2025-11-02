@@ -132,7 +132,9 @@ public:
     void ForEach(Func&& callback) const {
         std::lock_guard<std::mutex> lock(mutex_);
         for (const auto& [key, value] : map_) {
-            callback(key, value);
+            // IMPORTANT: Pass by const reference to avoid copying Value objects
+            // This ensures shared_ptr members point to the same underlying object
+            callback(key, value);  // structured binding already gives us const references
         }
     }
 
@@ -179,6 +181,22 @@ public:
         auto it = map_.find(key);
         if (it != map_.end() && predicate(it->second)) {
             it->second = new_value;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * In-place modification
+     * Calls modifier(value) under lock to modify value in-place
+     * Returns true if key exists and was modified, false otherwise
+     */
+    template <typename Func>
+    bool Modify(const Key& key, Func&& modifier) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = map_.find(key);
+        if (it != map_.end()) {
+            modifier(it->second);
             return true;
         }
         return false;
