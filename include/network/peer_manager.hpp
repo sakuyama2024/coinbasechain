@@ -211,6 +211,55 @@ public:
   int GetMisbehaviorScore(int peer_id) const;
   bool ShouldDisconnect(int peer_id) const;
 
+  // === Ban Management (migrated from BanMan) ===
+  // Two-tier system:
+  // 1. Manual bans: Persistent, stored on disk, permanent or timed
+  // 2. Discouragement: Temporary, in-memory, for misbehavior
+
+  // Ban entry structure (persistent bans)
+  struct CBanEntry {
+    static constexpr int CURRENT_VERSION = 1;
+    int nVersion{CURRENT_VERSION};
+    int64_t nCreateTime{0}; // Unix timestamp when ban was created
+    int64_t nBanUntil{0};   // Unix timestamp when ban expires (0 = permanent)
+
+    CBanEntry() = default;
+    CBanEntry(int64_t create_time, int64_t ban_until)
+        : nCreateTime(create_time), nBanUntil(ban_until) {}
+
+    bool IsExpired(int64_t now) const {
+      // nBanUntil == 0 means permanent ban
+      return nBanUntil > 0 && now >= nBanUntil;
+    }
+  };
+
+  // Policy constants
+  static constexpr int64_t DISCOURAGEMENT_DURATION = 24 * 60 * 60; // 24h
+  static constexpr size_t MAX_DISCOURAGED = 10000;
+
+  // Persistent ban management
+  void Ban(const std::string &address, int64_t ban_time_offset = 0);
+  void Unban(const std::string &address);
+  bool IsBanned(const std::string &address) const;
+  std::map<std::string, CBanEntry> GetBanned() const;
+  void ClearBanned();
+  void SweepBanned();
+
+  // Temporary discouragement (misbehavior)
+  void Discourage(const std::string &address);
+  bool IsDiscouraged(const std::string &address) const;
+  void ClearDiscouraged();
+  void SweepDiscouraged();
+
+  // Whitelist (NoBan) support
+  void AddToWhitelist(const std::string& address);
+  void RemoveFromWhitelist(const std::string& address);
+  bool IsWhitelisted(const std::string& address) const;
+
+  // Persistence
+  bool LoadBans(const std::string& datadir);
+  bool SaveBans();
+
   // === PerPeerState Accessors (for BlockRelayManager, MessageRouter) ===
   // Thread-safe accessors for consolidated per-peer state
 
@@ -261,6 +310,27 @@ private:
   std::atomic<bool> shutting_down_{false};
   // In-progress bulk shutdown (disconnect_all); reject add_peer while true (atomic for thread-safety)
   std::atomic<bool> stopping_all_{false};
+
+  // === Ban Management State (migrated from BanMan) ===
+  // Ban persistence configuration
+  std::string ban_file_path_;
+  bool ban_auto_save_{true};
+
+  // Banned addresses (persistent, stored on disk)
+  mutable std::mutex banned_mutex_;
+  std::map<std::string, CBanEntry> banned_;
+
+  // Discouraged addresses (temporary, in-memory with expiry times)
+  mutable std::mutex discouraged_mutex_;
+  std::map<std::string, int64_t> discouraged_; // address -> expiry time
+
+  // Whitelist (NoBan) state
+  mutable std::mutex whitelist_mutex_;
+  std::unordered_set<std::string> whitelist_;
+
+  // Internal helper methods for ban management
+  std::string GetBanlistPath() const;
+  bool SaveBansInternal(); // Must be called with banned_mutex_ held
 };
 
 } // namespace network
