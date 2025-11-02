@@ -504,6 +504,41 @@ TEST_CASE("PeerManager - Misbehavior Constants", "[network][peer_manager][unit]"
     }
 }
 
+TEST_CASE("PeerManager - Feeler connections do not consume outbound slots", "[network][peer_manager][unit][feeler]") {
+    TestPeerFixture fixture;
+
+    PeerManager::Config config;
+    config.max_outbound_peers = 2;
+    config.max_inbound_peers = 125;
+    config.target_outbound_peers = 2;
+
+    PeerManager pm(fixture.io_context, fixture.addr_manager, config);
+
+    // Fill outbound full-relay slots
+    auto p1 = Peer::create_outbound(fixture.io_context, nullptr, 0x12345678, 0, "10.0.0.1", 8333, ConnectionType::OUTBOUND);
+    auto p2 = Peer::create_outbound(fixture.io_context, nullptr, 0x12345678, 0, "10.0.0.2", 8333, ConnectionType::OUTBOUND);
+    int id1 = pm.add_peer(p1);
+    int id2 = pm.add_peer(p2);
+    REQUIRE(id1 >= 0);
+    REQUIRE(id2 >= 0);
+    REQUIRE(pm.outbound_count() == 2);
+
+    // Attempt to add another full-relay outbound: should fail
+    auto p3 = Peer::create_outbound(fixture.io_context, nullptr, 0x12345678, 0, "10.0.0.3", 8333, ConnectionType::OUTBOUND);
+    int id3 = pm.add_peer(p3);
+    REQUIRE(id3 == -1);
+    REQUIRE(pm.outbound_count() == 2);
+
+    // Now add a feeler: should be accepted and not consume outbound_count
+    auto pf = Peer::create_outbound(fixture.io_context, nullptr, 0x12345678, 0, "10.0.0.4", 8333, ConnectionType::FEELER);
+    int idf = pm.add_peer(pf);
+    REQUIRE(idf >= 0);
+
+    // Outbound count remains at full-relay capacity, but total peer count increased
+    REQUIRE(pm.outbound_count() == 2);
+    REQUIRE(pm.peer_count() == 3);
+}
+
 TEST_CASE("PeerManager - Config Defaults", "[network][peer_manager][unit]") {
     PeerManager::Config config;
 
