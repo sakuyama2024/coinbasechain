@@ -102,6 +102,8 @@ int PeerManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
   int peer_id = allocate_peer_id();
   peer->set_id(peer_id);  // Set the ID on the peer object
   peers_[peer_id] = std::move(peer);
+  // Record creation time (for feeler lifetime enforcement)
+  peer_created_at_[peer_id] = std::chrono::steady_clock::now();
 
   LOG_NET_DEBUG("Added connection peer={}", peer_id);
 
@@ -157,6 +159,8 @@ void PeerManager::remove_peer(int peer_id) {
 
     // Also remove misbehavior tracking data
     peer_misbehavior_.erase(peer_id);
+    // Remove creation time record
+    peer_created_at_.erase(peer_id);
 
     // Snapshot callback state
     cb = peer_disconnect_callback_;
@@ -429,19 +433,23 @@ void PeerManager::disconnect_all() {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     peers_to_disconnect = peers_;
-    peers_.clear();
-    peer_misbehavior_.clear();
     cb = peer_disconnect_callback_;
     skip_callbacks = shutting_down_;
   }
 
-  // Notify callback for each peer (matches remove_peer/evict_inbound_peer pattern)
-  // Even during shutdown when io_context is stopped, invoking callbacks ensures
-  // consistency and defensive programming (e.g., clearing stale sync peer state)
+  // Notify callbacks before erasing maps so callbacks can still query peers_
   if (cb && !skip_callbacks) {
     for (const auto &[id, peer] : peers_to_disconnect) {
       cb(id);
     }
+  }
+
+  // Now clear internal maps
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    peers_.clear();
+    peer_misbehavior_.clear();
+    peer_created_at_.clear();
   }
 
   // Disconnect all peers outside the lock
@@ -467,6 +475,20 @@ void PeerManager::process_periodic() {
       if (!peer->is_connected()) {
         LOG_NET_TRACE("process_periodic: peer={} not connected, marking for removal", id);
         to_remove.push_back(id);
+        continue;
+      }
+      // Enforce feeler max lifetime
+      if (peer->is_feeler()) {
+        auto it_ct = peer_created_at_.find(id);
+        if (it_ct != peer_created_at_.end()) {
+          auto age = std::chrono::duration_cast<std::chrono::seconds>(
+              std::chrono::steady_clock::now() - it_ct->second);
+          if (age.count() >= FEELER_MAX_LIFETIME_SEC) {
+            LOG_NET_TRACE("process_periodic: feeler peer={} exceeded lifetime ({}s >= {}s), marking for removal",
+                          id, age.count(), FEELER_MAX_LIFETIME_SEC);
+            to_remove.push_back(id);
+          }
+        }
       }
     }
 

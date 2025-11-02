@@ -8,6 +8,7 @@
 #include <mutex>
 #include <unordered_set>
 #include <atomic>
+#include <chrono>
 
 namespace coinbasechain {
 namespace network {
@@ -86,6 +87,9 @@ public:
   explicit PeerManager(boost::asio::io_context &io_context,
                        AddressManager &addr_manager,
                        const Config &config = Config{});
+
+  // Max lifetime for a feeler connection before forced removal (defense-in-depth)
+  static constexpr int FEELER_MAX_LIFETIME_SEC = 120;
 
   ~PeerManager();
 
@@ -194,6 +198,9 @@ private:
   
   // Callback for peer disconnect events
   std::function<void(int)> peer_disconnect_callback_;
+
+  // Track peer creation times (for feeler lifetime enforcement)
+  std::map<int, std::chrono::steady_clock::time_point> peer_created_at_;
 
   // Shutdown flag to guard callbacks during destruction
   bool shutting_down_{false};
