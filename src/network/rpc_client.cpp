@@ -3,10 +3,12 @@
 
 #include "network/rpc_client.hpp"
 #include <cstring>
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <stdexcept>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 namespace coinbasechain {
@@ -41,6 +43,13 @@ bool RPCClient::Connect() {
     return false;
   }
 
+  // Optionally set generous timeouts to avoid indefinite hangs
+  struct timeval tv;
+  tv.tv_sec = 600; // 10 minutes to accommodate long ops like generate
+  tv.tv_usec = 0;
+  setsockopt(socket_fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  setsockopt(socket_fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
   return true;
 }
 
@@ -50,39 +59,40 @@ std::string RPCClient::ExecuteCommand(const std::string &method,
     throw std::runtime_error("Not connected to node");
   }
 
-  // Build simple JSON-RPC request
-  std::ostringstream request;
-  request << "{\"method\":\"" << method << "\"";
-
+  // Build JSON request safely
+  nlohmann::json j;
+  j["method"] = method;
   if (!params.empty()) {
-    request << ",\"params\":[";
-    for (size_t i = 0; i < params.size(); ++i) {
-      if (i > 0)
-        request << ",";
-      request << "\"" << params[i] << "\"";
+    j["params"] = nlohmann::json::array();
+    for (const auto& p : params) j["params"].push_back(p);
+  }
+
+  std::string request_str = j.dump();
+  request_str.push_back('\n');
+
+  // Robust send loop
+  size_t total_sent = 0;
+  while (total_sent < request_str.size()) {
+    ssize_t s = send(socket_fd_, request_str.c_str() + total_sent, request_str.size() - total_sent, 0);
+    if (s < 0) {
+      throw std::runtime_error("Failed to send request");
     }
-    request << "]";
+    if (s == 0) break;
+    total_sent += static_cast<size_t>(s);
   }
 
-  request << "}\n";
-
-  std::string request_str = request.str();
-
-  // Send request
-  ssize_t sent = send(socket_fd_, request_str.c_str(), request_str.size(), 0);
-  if (sent < 0) {
-    throw std::runtime_error("Failed to send request");
-  }
-
-  // Receive response
+  // Receive response fully until EOF
+  std::string response;
   char buffer[4096];
-  ssize_t received = recv(socket_fd_, buffer, sizeof(buffer) - 1, 0);
-  if (received < 0) {
-    throw std::runtime_error("Failed to receive response");
+  while (true) {
+    ssize_t n = recv(socket_fd_, buffer, sizeof(buffer), 0);
+    if (n < 0) {
+      throw std::runtime_error("Failed to receive response");
+    }
+    if (n == 0) break; // EOF
+    response.append(buffer, buffer + n);
   }
-
-  buffer[received] = '\0';
-  return std::string(buffer, received);
+  return response;
 }
 
 void RPCClient::Disconnect() {

@@ -11,6 +11,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <cstdint>
 
 namespace coinbasechain {
 
@@ -75,9 +76,13 @@ public:
 private:
   // Security: Input validation helpers
   static std::optional<int> SafeParseInt(const std::string& str, int min, int max);
+  static std::optional<int64_t> SafeParseInt64(const std::string& str, int64_t min, int64_t max);
   static std::optional<uint256> SafeParseHash(const std::string& str);
   static std::optional<uint16_t> SafeParsePort(const std::string& str);
   static std::string EscapeJSONString(const std::string& str);
+
+  // Robust send helper
+  static bool SendAll(int fd, const char* data, size_t len);
 
   void ServerThread();
   void HandleClient(int client_fd);
@@ -117,7 +122,9 @@ private:
   std::string HandleInvalidateBlock(const std::vector<std::string> &params);
 
 private:
-  std::string socket_path_;
+  std::string socket_path_;            // Intended (link) path: datadir/node.sock
+  std::string actual_socket_path_;     // Actual bound path (may differ if fallback used)
+  bool symlink_created_ = false;       // Whether a symlink was created at socket_path_
   validation::ChainstateManager &chainstate_manager_;
   network::NetworkManager &network_manager_;
   mining::CPUMiner *miner_; // Optional, can be nullptr
@@ -134,5 +141,4 @@ private:
 
 } // namespace rpc
 } // namespace coinbasechain
-
 

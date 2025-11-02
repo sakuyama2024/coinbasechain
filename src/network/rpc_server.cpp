@@ -21,6 +21,7 @@
 #include <iomanip>
 #include <nlohmann/json.hpp>
 #include <boost/asio/ip/address.hpp>
+#include <cmath>
 #include "chain/chainparams.hpp"
 #include "chain/chainstate_manager.hpp"
 #include "util/logging.hpp"
@@ -34,6 +35,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <sys/time.h>
 #include <thread>
 #include <unistd.h>
 
@@ -63,17 +65,29 @@ std::optional<int> RPCServer::SafeParseInt(const std::string& str, int min, int 
     size_t pos = 0;
     long value = std::stol(str, &pos);
 
-    // Check entire string was consumed
     if (pos != str.size()) {
       return std::nullopt;
     }
-
-    // Check bounds
     if (value < min || value > max) {
       return std::nullopt;
     }
-
     return static_cast<int>(value);
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
+std::optional<int64_t> RPCServer::SafeParseInt64(const std::string& str, int64_t min, int64_t max) {
+  try {
+    size_t pos = 0;
+    long long value = std::stoll(str, &pos);
+    if (pos != str.size()) {
+      return std::nullopt;
+    }
+    if (value < min || value > max) {
+      return std::nullopt;
+    }
+    return static_cast<int64_t>(value);
   } catch (...) {
     return std::nullopt;
   }
@@ -139,6 +153,22 @@ std::string RPCServer::EscapeJSONString(const std::string& str) {
     }
   }
   return oss.str();
+}
+
+// Robust send helper
+bool RPCServer::SendAll(int fd, const char* data, size_t len) {
+  size_t sent_total = 0;
+  while (sent_total < len) {
+    ssize_t n = send(fd, data + sent_total, len - sent_total, 0);
+    if (n < 0) {
+      return false;
+    }
+    if (n == 0) {
+      break;
+    }
+    sent_total += static_cast<size_t>(n);
+  }
+  return sent_total == len;
 }
 
 void RPCServer::RegisterHandlers() {
@@ -211,8 +241,23 @@ bool RPCServer::Start() {
     return true;
   }
 
-  // Remove old socket file if it exists
+  // Remove old file/link at requested path if it exists
   unlink(socket_path_.c_str());
+
+  // Determine actual bind path (fall back to /tmp if too long)
+  actual_socket_path_ = socket_path_;
+  symlink_created_ = false;
+
+  struct sockaddr_un tmp_addr_check;
+  if (actual_socket_path_.size() >= sizeof(tmp_addr_check.sun_path)) {
+    // Build fallback path under /tmp (short)
+    char fallback[128];
+    pid_t pid = getpid();
+    unsigned rnd = static_cast<unsigned>(reinterpret_cast<uintptr_t>(this)) & 0xFFFF;
+    snprintf(fallback, sizeof(fallback), "/tmp/cbc_rpc_%d_%04x.sock", pid, rnd);
+    actual_socket_path_ = fallback;
+    symlink_created_ = true;
+  }
 
   // SECURITY FIX: Set restrictive umask before creating socket
   mode_t old_umask = umask(0077);  // rw------- for socket file
@@ -225,14 +270,17 @@ bool RPCServer::Start() {
     return false;
   }
 
+  // Remove any stale actual socket file
+  unlink(actual_socket_path_.c_str());
+
   // Bind to socket
   struct sockaddr_un addr;
   std::memset(&addr, 0, sizeof(addr));
   addr.sun_family = AF_UNIX;
-  std::strncpy(addr.sun_path, socket_path_.c_str(), sizeof(addr.sun_path) - 1);
+  std::strncpy(addr.sun_path, actual_socket_path_.c_str(), sizeof(addr.sun_path) - 1);
 
   if (bind(server_fd_, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-    LOG_ERROR("Failed to bind RPC socket to {}", socket_path_);
+    LOG_ERROR("Failed to bind RPC socket to {}", actual_socket_path_);
     close(server_fd_);
     server_fd_ = -1;
     umask(old_umask);  // Restore umask
@@ -243,10 +291,20 @@ bool RPCServer::Start() {
   umask(old_umask);
 
   // SECURITY FIX: Explicitly set permissions (double-check)
-  chmod(socket_path_.c_str(), 0600);  // Only owner can access
+  chmod(actual_socket_path_.c_str(), 0600);  // Only owner can access
 
-  // Listen for connections
-  if (listen(server_fd_, 5) < 0) {
+  // If we used a fallback path, create a symlink at the requested location
+  if (symlink_created_) {
+    // Remove any old link, then create new symlink
+    unlink(socket_path_.c_str());
+    if (symlink(actual_socket_path_.c_str(), socket_path_.c_str()) != 0) {
+      LOG_NET_WARN("Failed to create RPC socket symlink {} -> {}", socket_path_, actual_socket_path_);
+      // Not fatal; CLI can still be pointed at the actual path if needed
+    }
+  }
+
+  // Listen for connections (larger backlog)
+  if (listen(server_fd_, 64) < 0) {
     LOG_ERROR("Failed to listen on RPC socket");
     close(server_fd_);
     server_fd_ = -1;
@@ -256,7 +314,7 @@ bool RPCServer::Start() {
   running_ = true;
   server_thread_ = std::thread(&RPCServer::ServerThread, this);
 
-  LOG_NET_INFO("RPC server started on {}", socket_path_);
+  LOG_NET_INFO("RPC server started on {} (actual: {})", socket_path_, actual_socket_path_);
   return true;
 }
 
@@ -278,7 +336,9 @@ void RPCServer::Stop() {
     server_thread_.join();
   }
 
-  unlink(socket_path_.c_str());
+  // Remove symlink and actual socket file
+  if (!socket_path_.empty()) unlink(socket_path_.c_str());
+  if (!actual_socket_path_.empty() && actual_socket_path_ != socket_path_) unlink(actual_socket_path_.c_str());
 
   LOG_NET_INFO("RPC server stopped");
 }
@@ -297,73 +357,103 @@ void RPCServer::ServerThread() {
       continue;
     }
 
-    HandleClient(client_fd);
-    close(client_fd);
+    // Per-connection worker thread to avoid blocking accept loop
+    std::thread([this, client_fd]() {
+      // Apply per-connection I/O timeouts to mitigate stalling clients
+      struct timeval tv;
+      tv.tv_sec = 10; // 10s recv/send timeout
+      tv.tv_usec = 0;
+      setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+      setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+      HandleClient(client_fd);
+      close(client_fd);
+    }).detach();
   }
 }
 
 void RPCServer::HandleClient(int client_fd) {
   // Check shutdown flag
   if (shutting_down_.load(std::memory_order_acquire)) {
-    std::string error = "{\"error\":\"Server shutting down\"}\n";
-    send(client_fd, error.c_str(), error.size(), 0);
+    nlohmann::json err = { {"error", "Server shutting down"} };
+    std::string payload = err.dump();
+    payload.push_back('\n');
+    SendAll(client_fd, payload.c_str(), payload.size());
     return;
   }
 
-  // SECURITY FIX: Use vector to avoid buffer overflow
-  std::vector<char> buffer(4096);
-  ssize_t received = recv(client_fd, buffer.data(), buffer.size(), 0);
+  // Read request fully (until newline or EOF) with size cap
+  std::string request;
+  request.reserve(1024);
+  constexpr size_t kMaxRequestSize = 64 * 1024; // 64KB cap
+  char buf[4096];
+  bool newline_seen = false;
+  while (true) {
+    ssize_t n = recv(client_fd, buf, sizeof(buf), 0);
+    if (n < 0) {
+      // Timed out or error
+      return;
+    }
+    if (n == 0) break; // EOF
+    request.append(buf, buf + n);
+    if (request.size() > kMaxRequestSize) {
+      nlohmann::json err = { {"error", "Request too large"} };
+      std::string payload = err.dump();
+      payload.push_back('\n');
+      SendAll(client_fd, payload.c_str(), payload.size());
+      return;
+    }
+    if (request.find('\n') != std::string::npos) {
+      newline_seen = true;
+      break;
+    }
+  }
 
-  if (received <= 0) {
+  if (request.empty()) {
     return;
   }
 
-  // SECURITY FIX: Bounds check before creating string
-  if (received >= static_cast<ssize_t>(buffer.size())) {
-    LOG_NET_ERROR("RPC request too large: {} bytes", received);
-    std::string error = "{\"error\":\"Request too large\"}\n";
-    send(client_fd, error.c_str(), error.size(), 0);
-    return;
+  // Trim trailing newline(s)
+  if (newline_seen) {
+    while (!request.empty() && (request.back() == '\n' || request.back() == '\r')) request.pop_back();
   }
 
-  std::string request(buffer.data(), received);
-
-  // SECURITY FIX: Use proper JSON parsing instead of hand-rolled parser
+  // Parse JSON
   std::string method;
   std::vector<std::string> params;
 
   try {
     nlohmann::json j = nlohmann::json::parse(request);
 
-    // Extract method
     if (!j.contains("method") || !j["method"].is_string()) {
-      std::string error = "{\"error\":\"Missing or invalid method field\"}\n";
-      send(client_fd, error.c_str(), error.size(), 0);
+      nlohmann::json err = { {"error", "Missing or invalid method field"} };
+      std::string payload = err.dump();
+      payload.push_back('\n');
+      SendAll(client_fd, payload.c_str(), payload.size());
       return;
     }
 
     method = j["method"].get<std::string>();
 
-    // Extract params (optional)
     if (j.contains("params")) {
       if (j["params"].is_array()) {
         for (const auto& param : j["params"]) {
           if (param.is_string()) {
             params.push_back(param.get<std::string>());
           } else {
-            // Convert non-string params to string
             params.push_back(param.dump());
           }
         }
       } else if (j["params"].is_string()) {
-        // Single string param
         params.push_back(j["params"].get<std::string>());
       }
     }
   } catch (const nlohmann::json::exception& e) {
     LOG_NET_WARN("RPC JSON parse error: {}", e.what());
-    std::string error = "{\"error\":\"Invalid JSON\"}\n";
-    send(client_fd, error.c_str(), error.size(), 0);
+    nlohmann::json err = { {"error", "Invalid JSON"} };
+    std::string payload = err.dump();
+    payload.push_back('\n');
+    SendAll(client_fd, payload.c_str(), payload.size());
     return;
   }
 
@@ -371,14 +461,17 @@ void RPCServer::HandleClient(int client_fd) {
   std::string response = ExecuteCommand(method, params);
 
   // Send response
-  send(client_fd, response.c_str(), response.size(), 0);
+  SendAll(client_fd, response.c_str(), response.size());
 }
 
 std::string RPCServer::ExecuteCommand(const std::string &method,
                                       const std::vector<std::string> &params) {
   auto it = handlers_.find(method);
   if (it == handlers_.end()) {
-    return "{\"error\":\"Unknown command\"}\n";
+    nlohmann::json err = { {"error", "Unknown command"} };
+    std::string payload = err.dump();
+    payload.push_back('\n');
+    return payload;
   }
 
   try {
@@ -386,11 +479,10 @@ std::string RPCServer::ExecuteCommand(const std::string &method,
   } catch (const std::exception &e) {
     // SECURITY FIX: Log full error internally but return sanitized error to client
     LOG_NET_ERROR("RPC command '{}' failed: {}", method, e.what());
-
-    // Return sanitized error message (escape special characters)
-    std::ostringstream oss;
-    oss << "{\"error\":\"" << EscapeJSONString(e.what()) << "\"}\n";
-    return oss.str();
+    nlohmann::json err = { {"error", std::string(e.what())} };
+    std::string payload = err.dump();
+    payload.push_back('\n');
+    return payload;
   }
 }
 
@@ -414,19 +506,19 @@ std::string RPCServer::HandleGetInfo(const std::vector<std::string> &params) {
     difficulty = dDiff;
   }
 
-  std::ostringstream oss;
-  oss << "{\n"
-      << "  \"version\": \"0.1.0\",\n"
-      << "  \"chain\": \"" << params_.GetChainTypeString() << "\",\n"
-      << "  \"blocks\": " << height << ",\n"
-      << "  \"headers\": " << height << ",\n"
-      << "  \"bestblockhash\": \""
-      << (tip ? tip->GetBlockHash().GetHex() : "null") << "\",\n"
-      << "  \"difficulty\": " << difficulty << ",\n"
-      << "  \"mediantime\": " << (tip ? tip->GetMedianTimePast() : 0) << ",\n"
-      << "  \"connections\": " << network_manager_.active_peer_count() << "\n"
-      << "}\n";
-  return oss.str();
+  nlohmann::json j;
+  j["version"] = "0.1.0";
+  j["chain"] = params_.GetChainTypeString();
+  j["blocks"] = height;
+  j["headers"] = height;
+  j["bestblockhash"] = tip ? tip->GetBlockHash().GetHex() : "null";
+  j["difficulty"] = difficulty;
+  j["mediantime"] = tip ? tip->GetMedianTimePast() : 0;
+  j["connections"] = static_cast<int>(network_manager_.active_peer_count());
+
+  std::string out = j.dump();
+  out.push_back('\n');
+  return out;
 }
 
 std::string
@@ -492,33 +584,33 @@ RPCServer::HandleGetBlockchainInfo(const std::vector<std::string> &params) {
   double target_spacing_min = static_cast<double>(consensus.nPowTargetSpacing) / 60.0; // minutes
   double half_life_hours = static_cast<double>(consensus.nASERTHalfLife) / 3600.0;     // hours
 
-  std::ostringstream oss;
-  oss << "{\n"
-      << "  \"chain\": \"" << params_.GetChainTypeString() << "\",\n"
-      << "  \"blocks\": " << height << ",\n"
-      << "  \"headers\": " << height << ",\n"
-      << "  \"bestblockhash\": \""
-      << (tip ? tip->GetBlockHash().GetHex() : "null") << "\",\n"
-      << "  \"difficulty\": " << difficulty << ",\n"
-      << "  \"time\": " << (tip ? tip->nTime : 0) << ",\n"
-      << "  \"time_str\": \"" << (tip ? util::FormatTime(tip->nTime) : "null") << "\",\n"
-      << "  \"mediantime\": " << (tip ? tip->GetMedianTimePast() : 0) << ",\n"
-      << "  \"mediantime_str\": \"" << (tip ? util::FormatTime(tip->GetMedianTimePast()) : "null") << "\",\n"
-      << "  \"chainwork\": \"" << (tip ? tip->nChainWork.GetHex() : "0") << "\",\n"
-      << "  \"log2_chainwork\": " << std::fixed << std::setprecision(1) << log2_chainwork << ",\n"
-      << "  \"avg_block_time_10\": \"" << std::fixed << std::setprecision(1) << avg10_min << " mins\",\n"
-      << "  \"avg_block_time_20\": \"" << std::fixed << std::setprecision(1) << avg20_min << " mins\",\n"
-      << "  \"avg_block_time_40\": \"" << std::fixed << std::setprecision(1) << avg40_min << " mins\",\n"
-      << "  \"avg_block_time_100\": \"" << std::fixed << std::setprecision(1) << avg100_min << " mins\",\n"
-      << "  \"avg_block_time_500\": \"" << std::fixed << std::setprecision(1) << avg500_min << " mins\",\n"
-      << "  \"asert\": {\n"
-      << "    \"target_spacing\": \"" << std::fixed << std::setprecision(1) << target_spacing_min << " mins\",\n"
-      << "    \"half_life\": \"" << std::fixed << std::setprecision(1) << half_life_hours << " hours\",\n"
-      << "    \"anchor_height\": " << consensus.nASERTAnchorHeight << "\n"
-      << "  },\n"
-      << "  \"initialblockdownload\": " << (chainstate_manager_.IsInitialBlockDownload() ? "true" : "false") << "\n"
-      << "}\n";
-  return oss.str();
+  nlohmann::json j;
+  j["chain"] = params_.GetChainTypeString();
+  j["blocks"] = height;
+  j["headers"] = height;
+  j["bestblockhash"] = tip ? tip->GetBlockHash().GetHex() : "null";
+  j["difficulty"] = difficulty;
+  j["time"] = tip ? tip->nTime : 0;
+  j["time_str"] = tip ? util::FormatTime(tip->nTime) : "null";
+  j["mediantime"] = tip ? tip->GetMedianTimePast() : 0;
+  j["mediantime_str"] = tip ? util::FormatTime(tip->GetMedianTimePast()) : "null";
+  j["chainwork"] = tip ? tip->nChainWork.GetHex() : "0";
+  j["log2_chainwork"] = std::round(log2_chainwork * 10.0) / 10.0;
+  // Present averages as human strings as before
+  j["avg_block_time_10"] = (std::ostringstream() << std::fixed << std::setprecision(1) << avg10_min << " mins").str();
+  j["avg_block_time_20"] = (std::ostringstream() << std::fixed << std::setprecision(1) << avg20_min << " mins").str();
+  j["avg_block_time_40"] = (std::ostringstream() << std::fixed << std::setprecision(1) << avg40_min << " mins").str();
+  j["avg_block_time_100"] = (std::ostringstream() << std::fixed << std::setprecision(1) << avg100_min << " mins").str();
+  j["avg_block_time_500"] = (std::ostringstream() << std::fixed << std::setprecision(1) << avg500_min << " mins").str();
+  j["asert"] = {
+      {"target_spacing", (std::ostringstream() << std::fixed << std::setprecision(1) << target_spacing_min << " mins").str()},
+      {"half_life", (std::ostringstream() << std::fixed << std::setprecision(1) << half_life_hours << " hours").str()},
+      {"anchor_height", consensus.nASERTAnchorHeight}
+  };
+  j["initialblockdownload"] = chainstate_manager_.IsInitialBlockDownload();
+  std::string out = j.dump();
+  out.push_back('\n');
+  return out;
 }
 
 std::string
@@ -595,27 +687,31 @@ RPCServer::HandleGetBlockHeader(const std::vector<std::string> &params) {
     confirmations = tip->nHeight - index->nHeight + 1;
   }
 
-  std::ostringstream oss;
-  oss << "{\n"
-      << "  \"hash\": \"" << index->GetBlockHash().GetHex() << "\",\n"
-      << "  \"confirmations\": " << confirmations << ",\n"
-      << "  \"height\": " << index->nHeight << ",\n"
-      << "  \"version\": " << index->nVersion << ",\n"
-      << "  \"versionHex\": \"" << std::hex << std::setw(8) << std::setfill('0')
-      << index->nVersion << std::dec << "\",\n"
-      << "  \"time\": " << index->nTime << ",\n"
-      << "  \"mediantime\": " << index->GetMedianTimePast() << ",\n"
-      << "  \"nonce\": " << index->nNonce << ",\n"
-      << "  \"bits\": \"" << std::hex << std::setw(8) << std::setfill('0')
-      << index->nBits << std::dec << "\",\n"
-      << "  \"difficulty\": " << difficulty << ",\n"
-      << "  \"chainwork\": \"" << index->nChainWork.GetHex() << "\",\n"
-      << "  \"previousblockhash\": \""
-      << (index->pprev ? index->pprev->GetBlockHash().GetHex() : "null")
-      << "\",\n"
-      << "  \"rx_hash\": \"" << index->hashRandomX.GetHex() << "\"\n"
-      << "}\n";
-  return oss.str();
+  nlohmann::json j;
+  j["hash"] = index->GetBlockHash().GetHex();
+  j["confirmations"] = confirmations;
+  j["height"] = index->nHeight;
+  j["version"] = index->nVersion;
+  {
+    std::ostringstream vh;
+    vh << std::hex << std::setw(8) << std::setfill('0') << index->nVersion << std::dec;
+    j["versionHex"] = vh.str();
+  }
+  j["time"] = index->nTime;
+  j["mediantime"] = index->GetMedianTimePast();
+  j["nonce"] = index->nNonce;
+  {
+    std::ostringstream bb;
+    bb << std::hex << std::setw(8) << std::setfill('0') << index->nBits << std::dec;
+    j["bits"] = bb.str();
+  }
+  j["difficulty"] = difficulty;
+  j["chainwork"] = index->nChainWork.GetHex();
+  j["previousblockhash"] = index->pprev ? index->pprev->GetBlockHash().GetHex() : "null";
+  j["rx_hash"] = index->hashRandomX.GetHex();
+  std::string out = j.dump();
+  out.push_back('\n');
+  return out;
 }
 
 std::string
@@ -642,22 +738,15 @@ RPCServer::HandleGetPeerInfo(const std::vector<std::string> &params) {
   // Get all peers from NetworkManager
   auto all_peers = network_manager_.peer_manager().get_all_peers();
 
-  std::ostringstream oss;
-  oss << "[\n";
+  nlohmann::json arr = nlohmann::json::array();
 
-  for (size_t i = 0; i < all_peers.size(); i++) {
-    const auto &peer = all_peers[i];
-    if (!peer)
-      continue;
+  for (const auto &peer : all_peers) {
+    if (!peer) continue;
 
     const auto &stats = peer->stats();
-
-    // Calculate connection duration in seconds
     auto now = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::seconds>(
-        now - stats.connected_time);
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - stats.connected_time);
 
-    // Get misbehavior score from PeerManager
     int misbehavior_score = 0;
     bool should_disconnect = false;
     try {
@@ -665,43 +754,37 @@ RPCServer::HandleGetPeerInfo(const std::vector<std::string> &params) {
       misbehavior_score = peer_mgr.GetMisbehaviorScore(peer->id());
       should_disconnect = peer_mgr.ShouldDisconnect(peer->id());
     } catch (...) {
-      // Peer might not be in sync manager yet (handshake incomplete)
+      // Peer might not be available yet
     }
 
-    oss << "  {\n"
-        << "    \"id\": " << peer->id() << ",\n"
-        << "    \"addr\": \"" << peer->address() << ":" << peer->port()
-        << "\",\n"
-        << "    \"inbound\": " << (peer->is_inbound() ? "true" : "false")
-        << ",\n"
-        << "    \"connected\": " << (peer->is_connected() ? "true" : "false")
-        << ",\n"
-        << "    \"successfully_connected\": "
-        << (peer->successfully_connected() ? "true" : "false") << ",\n"
-        << "    \"version\": " << peer->version() << ",\n"
-        << "    \"subver\": \"" << peer->user_agent() << "\",\n"
-        << "    \"services\": \"" << std::hex << std::setfill('0')
-        << std::setw(16) << peer->services() << std::dec << "\",\n"
-        << "    \"startingheight\": " << peer->start_height() << ",\n"
-        << "    \"pingtime\": " << (stats.ping_time_ms / 1000.0) << ",\n"
-        << "    \"bytessent\": " << stats.bytes_sent << ",\n"
-        << "    \"bytesrecv\": " << stats.bytes_received << ",\n"
-        << "    \"messagessent\": " << stats.messages_sent << ",\n"
-        << "    \"messagesrecv\": " << stats.messages_received << ",\n"
-        << "    \"conntime\": " << duration.count() << ",\n"
-        << "    \"misbehavior_score\": " << misbehavior_score << ",\n"
-        << "    \"should_disconnect\": "
-        << (should_disconnect ? "true" : "false") << "\n";
+    std::ostringstream services_hex;
+    services_hex << std::hex << std::setfill('0') << std::setw(16) << peer->services() << std::dec;
 
-    if (i < all_peers.size() - 1) {
-      oss << "  },\n";
-    } else {
-      oss << "  }\n";
-    }
+    nlohmann::json jpeer = {
+      {"id", peer->id()},
+      {"addr", peer->address() + ":" + std::to_string(peer->port())},
+      {"inbound", peer->is_inbound()},
+      {"connected", peer->is_connected()},
+      {"successfully_connected", peer->successfully_connected()},
+      {"version", peer->version()},
+      {"subver", peer->user_agent()},
+      {"services", services_hex.str()},
+      {"startingheight", peer->start_height()},
+      {"pingtime", stats.ping_time_ms / 1000.0},
+      {"bytessent", stats.bytes_sent},
+      {"bytesrecv", stats.bytes_received},
+      {"messagessent", stats.messages_sent},
+      {"messagesrecv", stats.messages_received},
+      {"conntime", duration.count()},
+      {"misbehavior_score", misbehavior_score},
+      {"should_disconnect", should_disconnect}
+    };
+    arr.push_back(std::move(jpeer));
   }
 
-  oss << "]\n";
-  return oss.str();
+  std::string out = arr.dump();
+  out.push_back('\n');
+  return out;
 }
 
 std::string RPCServer::HandleAddNode(const std::vector<std::string> &params) {
@@ -720,15 +803,26 @@ std::string RPCServer::HandleAddNode(const std::vector<std::string> &params) {
 
   LOG_INFO("RPC addnode: address={}, command={}", node_addr, command);
 
-  // Parse address:port
-  size_t colon_pos = node_addr.find_last_of(':');
-  if (colon_pos == std::string::npos) {
-    LOG_INFO("RPC addnode: invalid address format");
-    return "{\"error\":\"Invalid address format (use host:port)\"}\n";
+  // Parse address:port (support [IPv6]:port and IPv4:port)
+  std::string host;
+  std::string port_str;
+  if (!node_addr.empty() && node_addr.front() == '[') {
+    auto rb = node_addr.find(']');
+    if (rb == std::string::npos || rb + 2 > node_addr.size() || node_addr[rb+1] != ':') {
+      LOG_INFO("RPC addnode: invalid IPv6 address format");
+      return "{\"error\":\"Invalid IPv6 address format (use [addr]:port)\"}\n";
+    }
+    host = node_addr.substr(1, rb - 1);
+    port_str = node_addr.substr(rb + 2);
+  } else {
+    size_t colon_pos = node_addr.find_last_of(':');
+    if (colon_pos == std::string::npos) {
+      LOG_INFO("RPC addnode: invalid address format");
+      return "{\"error\":\"Invalid address format (use host:port or [v6]:port)\"}\n";
+    }
+    host = node_addr.substr(0, colon_pos);
+    port_str = node_addr.substr(colon_pos + 1);
   }
-
-  std::string host = node_addr.substr(0, colon_pos);
-  std::string port_str = node_addr.substr(colon_pos + 1);
 
   // SECURITY FIX: Safe port parsing with validation
   auto port_opt = SafeParsePort(port_str);
@@ -772,15 +866,19 @@ std::string RPCServer::HandleAddNode(const std::vector<std::string> &params) {
     LOG_INFO("RPC addnode: connect_to() returned result");
     if (result != network::ConnectionResult::Success) {
       LOG_INFO("RPC addnode: connect_to() failed");
-      return "{\"error\":\"Failed to connect to node\"}\n";
+      nlohmann::json j = { {"error", "Failed to connect to node"} };
+      std::string out = j.dump();
+      out.push_back('\n');
+      return out;
     }
 
-    std::ostringstream oss;
-    oss << "{\n"
-        << "  \"success\": true,\n"
-        << "  \"message\": \"Connection initiated to " << node_addr << "\"\n"
-        << "}\n";
-    return oss.str();
+    nlohmann::json j = {
+      {"success", true},
+      {"message", std::string("Connection initiated to ") + node_addr}
+    };
+    std::string out = j.dump();
+    out.push_back('\n');
+    return out;
   } else if (command == "remove") {
     // Find peer by address:port and disconnect (thread-safe)
     int peer_id =
@@ -788,23 +886,23 @@ std::string RPCServer::HandleAddNode(const std::vector<std::string> &params) {
 
     if (peer_id < 0) {
       LOG_WARN("addnode remove: Peer not found: {}", node_addr);
-      std::ostringstream oss;
-      oss << "{\n"
-          << "  \"error\": \"Peer not found: " << node_addr << "\"\n"
-          << "}\n";
-      return oss.str();
+      nlohmann::json j = { {"error", std::string("Peer not found: ") + node_addr} };
+      std::string out = j.dump();
+      out.push_back('\n');
+      return out;
     }
 
     LOG_INFO("addnode remove: Found peer {} at {}, disconnecting", peer_id,
              node_addr);
     network_manager_.disconnect_from(peer_id);
 
-    std::ostringstream oss;
-    oss << "{\n"
-        << "  \"success\": true,\n"
-        << "  \"message\": \"Disconnected from " << node_addr << "\"\n"
-        << "}\n";
-    return oss.str();
+    nlohmann::json j = {
+      {"success", true},
+      {"message", std::string("Disconnected from ") + node_addr}
+    };
+    std::string out = j.dump();
+    out.push_back('\n');
+    return out;
   } else {
     return "{\"error\":\"Unknown command (use 'add' or 'remove')\"}\n";
   }
@@ -846,14 +944,11 @@ std::string RPCServer::HandleSetBan(const std::vector<std::string> &params) {
     // Optional bantime parameter (seconds); if 0 or omitted => default
     int64_t bantime = 0;
     if (params.size() > 2) {
-      try {
-        bantime = std::stoll(params[2]);
-      } catch (...) {
+      auto bt = SafeParseInt64(params[2], 0, 10LL * 365 * 24 * 60 * 60); // up to ~10 years
+      if (!bt) {
         return "{\"error\":\"Invalid bantime parameter\"}\n";
       }
-      if (bantime < 0) {
-        return "{\"error\":\"Invalid bantime (must be >= 0)\"}\n";
-      }
+      bantime = *bt;
     }
 
     // Optional mode parameter: "absolute" | "permanent" | "relative" (default)
@@ -887,26 +982,20 @@ std::string RPCServer::HandleSetBan(const std::vector<std::string> &params) {
     // Ban the canonical address
     network_manager_.ban_man().Ban(canon_addr, offset);
 
-    std::ostringstream oss;
+    nlohmann::json j;
+    j["success"] = true;
     if (mode == "permanent") {
-      oss << "{\n"
-          << "  \"success\": true,\n"
-          << "  \"message\": \"Permanently banned " << canon_addr << "\"\n"
-          << "}\n";
+      j["message"] = std::string("Permanently banned ") + canon_addr;
     } else if (mode == "absolute") {
-      oss << "{\n"
-          << "  \"success\": true,\n"
-          << "  \"message\": \"Banned " << canon_addr << " until " << (now + offset)
-          << " (absolute)\"\n"
-          << "}\n";
+      std::ostringstream m; m << "Banned " << canon_addr << " until " << (now + offset) << " (absolute)";
+      j["message"] = m.str();
     } else {
-      oss << "{\n"
-          << "  \"success\": true,\n"
-          << "  \"message\": \"Banned " << canon_addr << " for " << offset
-          << " seconds\"\n"
-          << "}\n";
+      std::ostringstream m; m << "Banned " << canon_addr << " for " << offset << " seconds";
+      j["message"] = m.str();
     }
-    return oss.str();
+    std::string out = j.dump();
+    out.push_back('\n');
+    return out;
 
   } else if (command == "remove") {
     // Try to canonicalize; if invalid, fall back to raw address for legacy entries
@@ -932,12 +1021,10 @@ std::string RPCServer::HandleSetBan(const std::vector<std::string> &params) {
       network_manager_.ban_man().Unban(address);
     }
 
-    std::ostringstream oss;
-    oss << "{\n"
-        << "  \"success\": true,\n"
-        << "  \"message\": \"Unbanned " << address << "\"\n"
-        << "}\n";
-    return oss.str();
+    nlohmann::json j = { {"success", true}, {"message", std::string("Unbanned ") + address} };
+    std::string out = j.dump();
+    out.push_back('\n');
+    return out;
 
   } else {
     return "{\"error\":\"Unknown command (use 'add' or 'remove')\"}\n";
@@ -948,27 +1035,20 @@ std::string
 RPCServer::HandleListBanned(const std::vector<std::string> &params) {
   auto banned = network_manager_.ban_man().GetBanned();
 
-  std::ostringstream oss;
-  oss << "[\n";
-
-  size_t i = 0;
+  nlohmann::json arr = nlohmann::json::array();
   for (const auto &[address, entry] : banned) {
-    oss << "  {\n"
-        << "    \"address\": \"" << address << "\",\n"
-        << "    \"banned_until\": " << entry.nBanUntil << ",\n"
-        << "    \"ban_created\": " << entry.nCreateTime << ",\n"
-        << "    \"ban_reason\": \"manually added\"\n"
-        << "  }";
-
-    if (i < banned.size() - 1) {
-      oss << ",";
-    }
-    oss << "\n";
-    i++;
+    nlohmann::json j = {
+      {"address", address},
+      {"banned_until", entry.nBanUntil},
+      {"ban_created", entry.nCreateTime},
+      {"ban_reason", "manually added"}
+    };
+    arr.push_back(std::move(j));
   }
 
-  oss << "]\n";
-  return oss.str();
+  std::string out = arr.dump();
+  out.push_back('\n');
+  return out;
 }
 
 std::string
@@ -979,13 +1059,14 @@ RPCServer::HandleGetAddrManInfo(const std::vector<std::string> &params) {
   size_t tried = addr_man.tried_count();
   size_t new_addrs = addr_man.new_count();
 
-  std::ostringstream oss;
-  oss << "{\n"
-      << "  \"total\": " << total << ",\n"
-      << "  \"tried\": " << tried << ",\n"
-      << "  \"new\": " << new_addrs << "\n"
-      << "}\n";
-  return oss.str();
+  nlohmann::json j = {
+    {"total", total},
+    {"tried", tried},
+    {"new", new_addrs}
+  };
+  std::string out = j.dump();
+  out.push_back('\n');
+  return out;
 }
 
 std::string
@@ -1052,14 +1133,15 @@ RPCServer::HandleGetMiningInfo(const std::vector<std::string> &params) {
     }
   }
 
-  std::ostringstream oss;
-  oss << "{\n"
-      << "  \"blocks\": " << height << ",\n"
-      << "  \"difficulty\": " << difficulty << ",\n"
-      << "  \"networkhashps\": " << networkhashps << ",\n"
-      << "  \"chain\": \"" << params_.GetChainTypeString() << "\"\n"
-      << "}\n";
-  return oss.str();
+  nlohmann::json j = {
+    {"blocks", height},
+    {"difficulty", difficulty},
+    {"networkhashps", networkhashps},
+    {"chain", params_.GetChainTypeString()}
+  };
+  std::string out = j.dump();
+  out.push_back('\n');
+  return out;
 }
 
 std::string
@@ -1069,9 +1151,14 @@ RPCServer::HandleGetNetworkHashPS(const std::vector<std::string> &params) {
   // Default to DEFAULT_HASHRATE_CALCULATION_BLOCKS
   int nblocks = protocol::DEFAULT_HASHRATE_CALCULATION_BLOCKS;
   if (!params.empty()) {
-    nblocks = std::stoi(params[0]);
-    if (nblocks == -1 || nblocks == 0) {
+    if (params[0] == "-1" || params[0] == "0") {
       nblocks = protocol::DEFAULT_HASHRATE_CALCULATION_BLOCKS;
+    } else {
+      auto parsed = SafeParseInt(params[0], 1, 10000000);
+      if (!parsed) {
+        return "{\"error\":\"Invalid nblocks (must be -1, 0, or 1-10000000)\"}\n";
+      }
+      nblocks = *parsed;
     }
   }
 
@@ -1136,13 +1223,14 @@ RPCServer::HandleStartMining(const std::vector<std::string> &params) {
     return "{\"error\":\"Failed to start mining\"}\n";
   }
 
-  std::ostringstream oss;
-  oss << "{\n"
-      << "  \"mining\": true,\n"
-      << "  \"message\": \"Mining started\",\n"
-      << "  \"address\": \"" << miner_->GetMiningAddress().GetHex() << "\"\n"
-      << "}\n";
-  return oss.str();
+  nlohmann::json j = {
+    {"mining", true},
+    {"message", "Mining started"},
+    {"address", miner_->GetMiningAddress().GetHex()}
+  };
+  std::string out = j.dump();
+  out.push_back('\n');
+  return out;
 }
 
 std::string
@@ -1157,12 +1245,13 @@ RPCServer::HandleStopMining(const std::vector<std::string> &params) {
 
   miner_->Stop();
 
-  std::ostringstream oss;
-  oss << "{\n"
-      << "  \"mining\": false,\n"
-      << "  \"message\": \"Mining stopped\"\n"
-      << "}\n";
-  return oss.str();
+  nlohmann::json j = {
+    {"mining", false},
+    {"message", "Mining stopped"}
+  };
+  std::string out = j.dump();
+  out.push_back('\n');
+  return out;
 }
 
 std::string RPCServer::HandleGenerate(const std::vector<std::string> &params) {
@@ -1241,14 +1330,13 @@ std::string RPCServer::HandleGenerate(const std::vector<std::string> &params) {
   int blocks_mined = actual_height - start_height;
 
   // Return simple success message with count
-  // NOTE: We don't return block hashes to avoid RPC buffer overflow
-  // (returning 100+ hashes can exceed the 4KB buffer and crash the node)
-  std::ostringstream oss;
-  oss << "{\n"
-      << "  \"blocks\": " << blocks_mined << ",\n"
-      << "  \"height\": " << actual_height << "\n"
-      << "}\n";
-  return oss.str();
+  nlohmann::json j = {
+    {"blocks", blocks_mined},
+    {"height", actual_height}
+  };
+  std::string out = j.dump();
+  out.push_back('\n');
+  return out;
 }
 
 std::string RPCServer::HandleStop(const std::vector<std::string> &params) {
@@ -1262,7 +1350,10 @@ std::string RPCServer::HandleStop(const std::vector<std::string> &params) {
     shutdown_callback_();
   }
 
-  return "\"CoinbaseChain stopping\"\n";
+  nlohmann::json j = { {"message", "CoinbaseChain stopping"} };
+  std::string out = j.dump();
+  out.push_back('\n');
+  return out;
 }
 
 std::string
@@ -1292,21 +1383,17 @@ RPCServer::HandleSetMockTime(const std::vector<std::string> &params) {
   // Set mock time (0 to disable)
   util::SetMockTime(mock_time);
 
-  std::ostringstream oss;
+  nlohmann::json j;
+  j["success"] = true;
   if (mock_time == 0) {
-    oss << "{\n"
-        << "  \"success\": true,\n"
-        << "  \"message\": \"Mock time disabled\"\n"
-        << "}\n";
+    j["message"] = "Mock time disabled";
   } else {
-    oss << "{\n"
-        << "  \"success\": true,\n"
-        << "  \"mocktime\": " << mock_time << ",\n"
-        << "  \"message\": \"Mock time set to " << mock_time << "\"\n"
-        << "}\n";
+    j["mocktime"] = mock_time;
+    j["message"] = std::string("Mock time set to ") + std::to_string(mock_time);
   }
-
-  return oss.str();
+  std::string out = j.dump();
+  out.push_back('\n');
+  return out;
 }
 
 std::string
@@ -1336,14 +1423,14 @@ RPCServer::HandleInvalidateBlock(const std::vector<std::string> &params) {
     return "{\"error\":\"Failed to invalidate block\"}\n";
   }
 
-  std::ostringstream oss;
-  oss << "{\n"
-      << "  \"success\": true,\n"
-      << "  \"hash\": \"" << hash.GetHex() << "\",\n"
-      << "  \"message\": \"Block and all descendants invalidated\"\n"
-      << "}\n";
-
-  return oss.str();
+  nlohmann::json j = {
+    {"success", true},
+    {"hash", hash.GetHex()},
+    {"message", "Block and all descendants invalidated"}
+  };
+  std::string out = j.dump();
+  out.push_back('\n');
+  return out;
 }
 
 } // namespace rpc
