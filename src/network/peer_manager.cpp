@@ -1060,13 +1060,8 @@ bool PeerManager::SaveBans() {
 }
 
 void PeerManager::Ban(const std::string &address, int64_t ban_time_offset) {
-  {
-    std::lock_guard<std::mutex> wlock(whitelist_mutex_);
-    if (whitelist_.find(address) != whitelist_.end()) {
-      LOG_NET_INFO("PeerManager: refusing to ban whitelisted address {}", address);
-      return;
-    }
-  }
+  // Note: Like Bitcoin Core, we allow banning whitelisted addresses.
+  // The whitelist is only checked at connection time, not ban time.
   std::lock_guard<std::mutex> lock(banned_mutex_);
 
   int64_t now = util::GetTime();
@@ -1106,12 +1101,8 @@ void PeerManager::Unban(const std::string &address) {
 }
 
 bool PeerManager::IsBanned(const std::string &address) const {
-  {
-    std::lock_guard<std::mutex> wlock(whitelist_mutex_);
-    if (whitelist_.find(address) != whitelist_.end()) {
-      return false;
-    }
-  }
+  // Note: Like Bitcoin Core, we return the actual ban status regardless of whitelist.
+  // The whitelist is checked separately at connection time, not when querying ban status.
   std::lock_guard<std::mutex> lock(banned_mutex_);
 
   auto it = banned_.find(address);
@@ -1125,13 +1116,8 @@ bool PeerManager::IsBanned(const std::string &address) const {
 }
 
 void PeerManager::Discourage(const std::string &address) {
-  {
-    std::lock_guard<std::mutex> wlock(whitelist_mutex_);
-    if (whitelist_.find(address) != whitelist_.end()) {
-      LOG_NET_TRACE("PeerManager: skip discouraging whitelisted {}", address);
-      return;
-    }
-  }
+  // Note: Like Bitcoin Core, we allow discouraging whitelisted addresses.
+  // The whitelist is only checked at connection time, not at discourage time.
   std::lock_guard<std::mutex> lock(discouraged_mutex_);
 
   int64_t now = util::GetTime();
@@ -1170,12 +1156,8 @@ void PeerManager::Discourage(const std::string &address) {
 }
 
 bool PeerManager::IsDiscouraged(const std::string &address) const {
-  {
-    std::lock_guard<std::mutex> wlock(whitelist_mutex_);
-    if (whitelist_.find(address) != whitelist_.end()) {
-      return false;
-    }
-  }
+  // Note: Like Bitcoin Core, we return the actual discouragement status regardless of whitelist.
+  // The whitelist is checked separately at connection time, not when querying discouragement status.
   std::lock_guard<std::mutex> lock(discouraged_mutex_);
 
   auto it = discouraged_.find(address);
@@ -1258,24 +1240,12 @@ void PeerManager::SweepBanned() {
 }
 
 void PeerManager::AddToWhitelist(const std::string& address) {
-  // Lock all related structures in a strict global order to avoid deadlocks:
-  // whitelist_mutex_ -> banned_mutex_ -> discouraged_mutex_
-  std::scoped_lock guard(whitelist_mutex_, banned_mutex_, discouraged_mutex_);
+  // Note: Like Bitcoin Core, whitelist and ban/discourage are independent.
+  // We allow whitelisted addresses to also be banned/discouraged.
+  // The whitelist overrides the ban only at connection acceptance time.
+  std::lock_guard<std::mutex> guard(whitelist_mutex_);
   whitelist_.insert(address);
-  // Remove any existing ban or discouragement for this address
-  auto itb = banned_.find(address);
-  if (itb != banned_.end()) {
-    banned_.erase(itb);
-  }
-  auto itd = discouraged_.find(address);
-  if (itd != discouraged_.end()) {
-    discouraged_.erase(itd);
-  }
-  // Persist ban removal if needed
-  if (ban_auto_save_ && !ban_file_path_.empty()) {
-    SaveBansInternal();
-  }
-  LOG_NET_INFO("PeerManager: whitelisted {} (removed any bans/discouragement)", address);
+  LOG_NET_INFO("PeerManager: whitelisted {}", address);
 }
 
 void PeerManager::RemoveFromWhitelist(const std::string& address) {

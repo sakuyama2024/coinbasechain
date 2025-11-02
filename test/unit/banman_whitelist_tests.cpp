@@ -1,70 +1,159 @@
-// BanMan whitelist (NoBan) tests
+// Copyright (c) 2024 Coinbase Chain
+// Unit tests for PeerManager whitelist (NoBan) functionality
+
 #include "catch_amalgamated.hpp"
+#include "network/peer_manager.hpp"
+#include "network/addr_manager.hpp"
+#include <boost/asio.hpp>
 #include <filesystem>
 #include <thread>
 
 using namespace coinbasechain::network;
 
-TEST_CASE("BanMan - Localhost not whitelisted by default", "[banman][whitelist][unit]") {
-    BanMan bm("");
+// Test fixture
+class WhitelistTestFixture {
+public:
+    boost::asio::io_context io_context;
+    AddressManager addr_manager;
+    std::string test_dir;
+
+    WhitelistTestFixture() {
+        auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+        test_dir = "/tmp/peermgr_whitelist_test_" + std::to_string(now);
+        std::filesystem::create_directory(test_dir);
+    }
+
+    ~WhitelistTestFixture() {
+        std::filesystem::remove_all(test_dir);
+    }
+
+    std::unique_ptr<PeerManager> CreatePeerManager(const std::string& datadir = "") {
+        auto pm = std::make_unique<PeerManager>(io_context, addr_manager);
+        if (!datadir.empty()) {
+            pm->LoadBans(datadir);
+        }
+        return pm;
+    }
+};
+
+TEST_CASE("PeerManager - Localhost not whitelisted by default", "[network][peermgr][whitelist][unit]") {
+    WhitelistTestFixture fixture;
+    auto pm = fixture.CreatePeerManager();
 
     // By default, localhost is NOT whitelisted; banning should work
-    bm.Ban("127.0.0.1", 3600);
-    CHECK(bm.IsBanned("127.0.0.1"));
+    pm->Ban("127.0.0.1", 3600);
+    CHECK(pm->IsBanned("127.0.0.1"));
 
     // ::1 behaves the same
-    bm.Ban("::1", 3600);
-    CHECK(bm.IsBanned("::1"));
+    pm->Ban("::1", 3600);
+    CHECK(pm->IsBanned("::1"));
 }
 
-TEST_CASE("BanMan - AddToWhitelist removes existing ban and discouragement", "[banman][whitelist][unit]") {
-    BanMan bm("");
+TEST_CASE("PeerManager - Whitelist operations", "[network][peermgr][whitelist][unit]") {
+    WhitelistTestFixture fixture;
+    auto pm = fixture.CreatePeerManager();
 
-    // Create ban and discouragement
-    bm.Ban("10.0.0.1", 3600);
-    bm.Discourage("10.0.0.1");
+    SECTION("Add to whitelist") {
+        REQUIRE_FALSE(pm->IsWhitelisted("10.0.0.1"));
 
-    REQUIRE(bm.IsBanned("10.0.0.1"));
-    REQUIRE(bm.IsDiscouraged("10.0.0.1"));
+        pm->AddToWhitelist("10.0.0.1");
+        REQUIRE(pm->IsWhitelisted("10.0.0.1"));
 
-    // Whitelist the address; should clear both
-    bm.AddToWhitelist("10.0.0.1");
-    CHECK_FALSE(bm.IsBanned("10.0.0.1"));
-    CHECK_FALSE(bm.IsDiscouraged("10.0.0.1"));
+        // Different address not whitelisted
+        REQUIRE_FALSE(pm->IsWhitelisted("10.0.0.2"));
+    }
 
-    // Further attempts to ban/discourage should be ignored
-    bm.Ban("10.0.0.1", 3600);
-    bm.Discourage("10.0.0.1");
-    CHECK_FALSE(bm.IsBanned("10.0.0.1"));
-    CHECK_FALSE(bm.IsDiscouraged("10.0.0.1"));
+    SECTION("Remove from whitelist") {
+        pm->AddToWhitelist("10.0.0.1");
+        REQUIRE(pm->IsWhitelisted("10.0.0.1"));
 
-    // Remove from whitelist; banning should work again
-    bm.RemoveFromWhitelist("10.0.0.1");
-    bm.Ban("10.0.0.1", 1);
-    CHECK(bm.IsBanned("10.0.0.1"));
+        pm->RemoveFromWhitelist("10.0.0.1");
+        REQUIRE_FALSE(pm->IsWhitelisted("10.0.0.1"));
+    }
 }
 
-TEST_CASE("BanMan - Whitelist ban removal persists when autosave enabled", "[banman][whitelist][persistence][unit]") {
-    // Use temp dir
-    const std::string dir = "/tmp/banman_whitelist_test";
-    std::filesystem::remove_all(dir);
-    std::filesystem::create_directories(dir);
+TEST_CASE("PeerManager - Whitelist interaction with bans", "[network][peermgr][whitelist][unit]") {
+    WhitelistTestFixture fixture;
+    auto pm = fixture.CreatePeerManager();
 
-    {
-        BanMan bm(dir, true); // auto-save on
-        bm.Ban("10.0.0.2", 3600);
-        REQUIRE(bm.IsBanned("10.0.0.2"));
-        bm.AddToWhitelist("10.0.0.2");
-        CHECK_FALSE(bm.IsBanned("10.0.0.2"));
-        // Destructor will Save()
+    SECTION("Ban and whitelist are independent (can coexist)") {
+        // Add to whitelist first
+        pm->AddToWhitelist("10.0.0.1");
+        REQUIRE(pm->IsWhitelisted("10.0.0.1"));
+
+        // Can still ban (like Bitcoin Core)
+        pm->Ban("10.0.0.1", 3600);
+        REQUIRE(pm->IsBanned("10.0.0.1"));
+
+        // Both states coexist
+        REQUIRE(pm->IsWhitelisted("10.0.0.1"));
+        REQUIRE(pm->IsBanned("10.0.0.1"));
+
+        // Note: Whitelist is checked at connection time, not at ban time
+        // This allows banning whitelisted addresses if needed
     }
 
-    // New instance should not see the ban
-    {
-        BanMan bm2(dir, false);
-        REQUIRE(bm2.Load());
-        CHECK_FALSE(bm2.IsBanned("10.0.0.2"));
+    SECTION("Discourage and whitelist are independent") {
+        pm->AddToWhitelist("10.0.0.1");
+        REQUIRE(pm->IsWhitelisted("10.0.0.1"));
+
+        pm->Discourage("10.0.0.1");
+        REQUIRE(pm->IsDiscouraged("10.0.0.1"));
+
+        // Both states coexist
+        REQUIRE(pm->IsWhitelisted("10.0.0.1"));
+        REQUIRE(pm->IsDiscouraged("10.0.0.1"));
     }
 
-    std::filesystem::remove_all(dir);
+    SECTION("Whitelisting after ban preserves ban") {
+        // Ban first
+        pm->Ban("10.0.0.1", 3600);
+        REQUIRE(pm->IsBanned("10.0.0.1"));
+
+        // Whitelist doesn't remove the ban
+        pm->AddToWhitelist("10.0.0.1");
+        REQUIRE(pm->IsWhitelisted("10.0.0.1"));
+        REQUIRE(pm->IsBanned("10.0.0.1"));
+    }
+
+    SECTION("Unbanning doesn't affect whitelist") {
+        pm->AddToWhitelist("10.0.0.1");
+        pm->Ban("10.0.0.1", 3600);
+
+        REQUIRE(pm->IsWhitelisted("10.0.0.1"));
+        REQUIRE(pm->IsBanned("10.0.0.1"));
+
+        pm->Unban("10.0.0.1");
+
+        REQUIRE(pm->IsWhitelisted("10.0.0.1"));
+        REQUIRE_FALSE(pm->IsBanned("10.0.0.1"));
+    }
+}
+
+TEST_CASE("PeerManager - Whitelist persistence", "[network][peermgr][whitelist][persistence]") {
+    WhitelistTestFixture fixture;
+
+    SECTION("Whitelist doesn't persist (in-memory only)") {
+        {
+            auto pm = fixture.CreatePeerManager(fixture.test_dir);
+            pm->AddToWhitelist("10.0.0.1");
+            pm->Ban("10.0.0.2", 0);
+
+            REQUIRE(pm->IsWhitelisted("10.0.0.1"));
+            REQUIRE(pm->IsBanned("10.0.0.2"));
+
+            pm->SaveBans();
+        }
+
+        // Create new PeerManager - whitelist should not persist
+        {
+            auto pm = fixture.CreatePeerManager(fixture.test_dir);
+
+            // Whitelist is not persisted (in-memory only)
+            REQUIRE_FALSE(pm->IsWhitelisted("10.0.0.1"));
+
+            // But bans are persisted
+            REQUIRE(pm->IsBanned("10.0.0.2"));
+        }
+    }
 }
