@@ -105,6 +105,69 @@ NetworkManager::NetworkManager(
   // Note: All peer lifecycle callbacks now use NetworkNotifications
   message_router_ = std::make_unique<MessageRouter>(
       addr_manager_.get(), header_sync_manager_.get(), block_relay_manager_.get(), peer_manager_.get());
+
+  // === Register Message Handlers with MessageDispatcher ===
+  // These handlers delegate to MessageRouter for now, maintaining parallel operation.
+  // This allows us to verify the dispatcher infrastructure works before switching.
+
+  // VERACK - Connection lifecycle (no message payload)
+  message_dispatcher_->RegisterHandler(protocol::commands::VERACK,
+    [this](PeerPtr peer, ::coinbasechain::message::Message*) {
+      return message_router_->handle_verack(peer);
+    });
+
+  // ADDR - Address discovery
+  message_dispatcher_->RegisterHandler(protocol::commands::ADDR,
+    [this](PeerPtr peer, ::coinbasechain::message::Message* msg) {
+      auto* addr_msg = dynamic_cast<message::AddrMessage*>(msg);
+      if (!addr_msg) {
+        LOG_NET_ERROR("MessageDispatcher: bad payload type for ADDR from peer {}", peer ? peer->id() : -1);
+        return false;
+      }
+      return message_router_->handle_addr(peer, addr_msg);
+    });
+
+  // GETADDR - Address discovery (no message payload)
+  message_dispatcher_->RegisterHandler(protocol::commands::GETADDR,
+    [this](PeerPtr peer, ::coinbasechain::message::Message*) {
+      return message_router_->handle_getaddr(peer);
+    });
+
+  // INV - Block relay
+  message_dispatcher_->RegisterHandler(protocol::commands::INV,
+    [this](PeerPtr peer, ::coinbasechain::message::Message* msg) {
+      auto* inv_msg = dynamic_cast<message::InvMessage*>(msg);
+      if (!inv_msg) {
+        LOG_NET_ERROR("MessageDispatcher: bad payload type for INV from peer {}", peer ? peer->id() : -1);
+        return false;
+      }
+      return message_router_->handle_inv(peer, inv_msg);
+    });
+
+  // HEADERS - Header sync
+  message_dispatcher_->RegisterHandler(protocol::commands::HEADERS,
+    [this](PeerPtr peer, ::coinbasechain::message::Message* msg) {
+      auto* headers_msg = dynamic_cast<message::HeadersMessage*>(msg);
+      if (!headers_msg) {
+        LOG_NET_ERROR("MessageDispatcher: bad payload type for HEADERS from peer {}", peer ? peer->id() : -1);
+        return false;
+      }
+      return message_router_->handle_headers(peer, headers_msg);
+    });
+
+  // GETHEADERS - Header sync
+  message_dispatcher_->RegisterHandler(protocol::commands::GETHEADERS,
+    [this](PeerPtr peer, ::coinbasechain::message::Message* msg) {
+      auto* getheaders_msg = dynamic_cast<message::GetHeadersMessage*>(msg);
+      if (!getheaders_msg) {
+        LOG_NET_ERROR("MessageDispatcher: bad payload type for GETHEADERS from peer {}", peer ? peer->id() : -1);
+        return false;
+      }
+      return message_router_->handle_getheaders(peer, getheaders_msg);
+    });
+
+  LOG_NET_INFO("Registered {} message handlers with MessageDispatcher",
+               message_dispatcher_->GetRegisteredCommands().size());
 }
 
 NetworkManager::~NetworkManager() {

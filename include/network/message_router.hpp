@@ -54,6 +54,14 @@ public:
   // Test-only: seed RNG for deterministic shuffles
   void TestSeedRng(uint64_t seed);
 
+  // Message-specific handlers (public for MessageDispatcher integration)
+  bool handle_verack(PeerPtr peer);
+  bool handle_addr(PeerPtr peer, message::AddrMessage* msg);
+  bool handle_getaddr(PeerPtr peer);
+  bool handle_inv(PeerPtr peer, message::InvMessage* msg);
+  bool handle_headers(PeerPtr peer, message::HeadersMessage* msg);
+  bool handle_getheaders(PeerPtr peer, message::GetHeadersMessage* msg);
+
 private:
   // Peer lifecycle - cleanup per-peer state on disconnect (via NetworkNotifications)
   void OnPeerDisconnected(int peer_id);
@@ -102,14 +110,6 @@ private:
 
   // Helper to build binary key (uses shared AddressKey from peer_state.hpp)
   static network::AddressKey MakeKey(const protocol::NetworkAddress& a);
-
-  // Message-specific handlers
-  bool handle_verack(PeerPtr peer);
-  bool handle_addr(PeerPtr peer, message::AddrMessage* msg);
-  bool handle_getaddr(PeerPtr peer);
-  bool handle_inv(PeerPtr peer, message::InvMessage* msg);
-  bool handle_headers(PeerPtr peer, message::HeadersMessage* msg);
-  bool handle_getheaders(PeerPtr peer, message::GetHeadersMessage* msg);
 };
 
 } // namespace network
