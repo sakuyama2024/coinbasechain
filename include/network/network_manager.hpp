@@ -65,6 +65,7 @@ class AnchorManager;
 class BanMan;
 class BlockRelayManager;
 class HeaderSyncManager;
+class MessageDispatcher;
 class MessageRouter;
 class NATManager;
 
@@ -159,6 +160,9 @@ public:
   // Test-only: Access router for diagnostics
   MessageRouter& router_for_test() { return *message_router_; }
 
+  // Test-only: Access dispatcher for diagnostics
+  MessageDispatcher& dispatcher_for_test() { return *message_dispatcher_; }
+
   // Stats (used primarily in tests, but useful for monitoring/debugging)
   size_t active_peer_count() const;
   size_t outbound_peer_count() const;
@@ -201,6 +205,7 @@ private:
   std::unique_ptr<AnchorManager> anchor_manager_;
   std::unique_ptr<HeaderSyncManager> header_sync_manager_;
   std::unique_ptr<BlockRelayManager> block_relay_manager_;
+  std::unique_ptr<MessageDispatcher> message_dispatcher_;
   std::unique_ptr<MessageRouter> message_router_;
 
   // Periodic tasks

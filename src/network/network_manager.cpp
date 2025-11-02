@@ -20,6 +20,7 @@
 #include "network/connection_types.hpp"
 #include "network/header_sync_manager.hpp"
 #include "network/message.hpp"
+#include "network/message_dispatcher.hpp"
 #include "network/message_router.hpp"
 #include "network/nat_manager.hpp"
 #include "network/real_transport.hpp"
@@ -97,7 +98,10 @@ NetworkManager::NetworkManager(
   block_relay_manager_ = std::make_unique<BlockRelayManager>(
       chainstate_manager, *peer_manager_, header_sync_manager_.get());
 
-  // Create MessageRouter
+  // Create MessageDispatcher (handler registry pattern)
+  message_dispatcher_ = std::make_unique<MessageDispatcher>();
+
+  // Create MessageRouter (legacy - will be phased out)
   // Note: All peer lifecycle callbacks now use NetworkNotifications
   message_router_ = std::make_unique<MessageRouter>(
       addr_manager_.get(), header_sync_manager_.get(), block_relay_manager_.get(), peer_manager_.get());
