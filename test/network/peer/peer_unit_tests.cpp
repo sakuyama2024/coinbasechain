@@ -19,69 +19,7 @@ using namespace coinbasechain::network;
 // MOCK TRANSPORT
 // =============================================================================
 
-class MockTransportConnection : public TransportConnection,
-                                public std::enable_shared_from_this<MockTransportConnection> {
-public:
-    MockTransportConnection() : open_(true) {}
-
-    void start() override {}
-
-    bool send(const std::vector<uint8_t>& data) override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (!open_) return false;
-        sent_messages_.push_back(data);
-        return true;
-    }
-
-    void close() override {
-        open_ = false;
-        if (disconnect_callback_) {
-            disconnect_callback_();
-        }
-    }
-
-    bool is_open() const override { return open_; }
-    std::string remote_address() const override { return "127.0.0.1"; }
-    uint16_t remote_port() const override { return 9590; }
-    bool is_inbound() const override { return is_inbound_; }
-    uint64_t connection_id() const override { return id_; }
-
-    void set_receive_callback(ReceiveCallback callback) override { receive_callback_ = callback; }
-    void set_disconnect_callback(DisconnectCallback callback) override { disconnect_callback_ = callback; }
-
-    void set_inbound(bool inbound) { is_inbound_ = inbound; }
-    void set_id(uint64_t id) { id_ = id; }
-
-    void simulate_receive(const std::vector<uint8_t>& data) {
-        if (receive_callback_) {
-            receive_callback_(data);
-        }
-    }
-
-    std::vector<std::vector<uint8_t>> get_sent_messages() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return sent_messages_;
-    }
-
-    void clear_sent_messages() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        sent_messages_.clear();
-    }
-
-    size_t sent_message_count() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return sent_messages_.size();
-    }
-
-private:
-    bool open_;
-    bool is_inbound_ = false;
-    uint64_t id_ = 1;
-    ReceiveCallback receive_callback_;
-    DisconnectCallback disconnect_callback_;
-    std::mutex mutex_;
-    std::vector<std::vector<uint8_t>> sent_messages_;
-};
+#include "infra/mock_transport.hpp"
 
 // =============================================================================
 // HELPERS
@@ -241,6 +179,7 @@ TEST_CASE("Peer - SendMessage", "[peer][messages]") {
     SECTION("Send PING message") {
         auto ping = std::make_unique<message::PingMessage>(99999);
         peer->send_message(std::move(ping));
+        io_context.poll();
         CHECK(mock_conn->sent_message_count() == 1);
         auto sent = mock_conn->get_sent_messages()[0];
         CHECK(sent.size() >= protocol::MESSAGE_HEADER_SIZE);
@@ -425,6 +364,7 @@ TEST_CASE("Peer - Statistics", "[peer][stats]") {
         size_t initial = peer->stats().messages_sent;
         auto ping = std::make_unique<message::PingMessage>(12345);
         peer->send_message(std::move(ping));
+        io_context.poll();
         CHECK(peer->stats().messages_sent == initial + 1);
         CHECK(peer->stats().bytes_sent > 0);
     }

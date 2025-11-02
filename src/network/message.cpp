@@ -357,6 +357,31 @@ bool deserialize_header(const uint8_t *data, size_t size,
   std::memcpy(header.command.data(), data + pos, protocol::COMMAND_SIZE);
   pos += protocol::COMMAND_SIZE;
 
+  // SECURITY: Validate command field
+  // - ASCII printable characters before first NUL (0x20..0x7E)
+  // - Must contain a NUL terminator within 12 bytes
+  // - All bytes after first NUL must be NUL (zero-padded)
+  bool found_nul = false;
+  for (size_t i = 0; i < protocol::COMMAND_SIZE; ++i) {
+    unsigned char c = static_cast<unsigned char>(header.command[i]);
+    if (!found_nul) {
+      if (c == '\0') {
+        found_nul = true;
+      } else {
+        if (c < 0x20 || c > 0x7e) {
+          return false; // Non-printable before terminator
+        }
+      }
+    } else {
+      if (c != '\0') {
+        return false; // Non-zero after terminator
+      }
+    }
+  }
+  if (!found_nul) {
+    return false; // Missing terminator
+  }
+
   header.length = endian::ReadLE32(data + pos);
   pos += 4;
 

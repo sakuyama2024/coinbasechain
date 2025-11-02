@@ -128,14 +128,18 @@ bool MessageRouter::handle_verack(PeerPtr peer) {
 }
 
 bool MessageRouter::handle_addr(PeerPtr peer, message::AddrMessage* msg) {
-  if (!msg || !addr_manager_) {
+  if (!msg) {
     return false;
   }
 
-  // Validate peer handshake status BEFORE processing 
+  // Gate ADDR on post-VERACK (Bitcoin Core parity) - check before null manager
   if (!peer || !peer->successfully_connected()) {
     LOG_NET_TRACE("Ignoring ADDR from non-connected peer");
     return true; // Not an error, just gated
+  }
+
+  if (!addr_manager_) {
+    return false;
   }
 
   // Validate size and apply misbehavior if available
@@ -202,6 +206,12 @@ bool MessageRouter::handle_addr(PeerPtr peer, message::AddrMessage* msg) {
 }
 
 bool MessageRouter::handle_getaddr(PeerPtr peer) {
+  // Gate GETADDR on post-VERACK (Bitcoin Core parity) - check before other logic
+  if (!peer || !peer->successfully_connected()) {
+    LOG_NET_TRACE("Ignoring GETADDR from pre-VERACK peer");
+    return true;
+  }
+
   if (!addr_manager_) {
     return false;
   }
@@ -223,14 +233,6 @@ bool MessageRouter::handle_getaddr(PeerPtr peer) {
     }
     LOG_NET_DEBUG("GETADDR ignored: outbound peer={} (inbound-only policy)", peer->id());
     return true; // Not an error; just ignore
-  }
-  if (!peer->successfully_connected()) {
-    {
-      std::lock_guard<std::mutex> sg(stats_mutex_);
-      stats_getaddr_ignored_prehandshake_++;
-    }
-    LOG_NET_DEBUG("GETADDR ignored: pre-VERACK peer={}", peer->id());
-    return true;
   }
 
   const int peer_id = peer->id();
@@ -374,7 +376,17 @@ bool MessageRouter::handle_getaddr(PeerPtr peer) {
 }
 
 bool MessageRouter::handle_inv(PeerPtr peer, message::InvMessage* msg) {
-  if (!msg || !block_relay_manager_) {
+  if (!msg) {
+    return false;
+  }
+
+  // Gate INV on post-VERACK (Bitcoin Core parity) - check before null manager
+  if (!peer || !peer->successfully_connected()) {
+    LOG_NET_TRACE("Ignoring INV from pre-VERACK peer");
+    return true;
+  }
+
+  if (!block_relay_manager_) {
     return false;
   }
 
@@ -382,7 +394,17 @@ bool MessageRouter::handle_inv(PeerPtr peer, message::InvMessage* msg) {
 }
 
 bool MessageRouter::handle_headers(PeerPtr peer, message::HeadersMessage* msg) {
-  if (!msg || !header_sync_manager_) {
+  if (!msg) {
+    return false;
+  }
+
+  // Gate HEADERS on post-VERACK (Bitcoin Core parity) - check before null manager
+  if (!peer || !peer->successfully_connected()) {
+    LOG_NET_TRACE("Ignoring HEADERS from pre-VERACK peer");
+    return true;
+  }
+
+  if (!header_sync_manager_) {
     return false;
   }
 
@@ -390,7 +412,17 @@ bool MessageRouter::handle_headers(PeerPtr peer, message::HeadersMessage* msg) {
 }
 
 bool MessageRouter::handle_getheaders(PeerPtr peer, message::GetHeadersMessage* msg) {
-  if (!msg || !header_sync_manager_) {
+  if (!msg) {
+    return false;
+  }
+
+  // Gate GETHEADERS on post-VERACK (Bitcoin Core parity) - check before null manager
+  if (!peer || !peer->successfully_connected()) {
+    LOG_NET_TRACE("Ignoring GETHEADERS from pre-VERACK peer");
+    return true;
+  }
+
+  if (!header_sync_manager_) {
     return false;
   }
 

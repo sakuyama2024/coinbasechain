@@ -49,6 +49,9 @@ using MessageHandler =
 // Handles async TCP connection, protocol handshake (VERSION/VERACK),
 // message framing/parsing, send/receive queuing, ping/pong keepalive, lifecycle
 // management
+//
+// NOTE: assumes networking reactor is single-threaded (no strand/locks inside Peer)
+//       NetworkManager must run with Config::io_threads = 1.
 class Peer : public std::enable_shared_from_this<Peer> {
 public:
   // Create outbound peer (we initiate connection)
@@ -82,6 +85,8 @@ public:
 
   // Setters (called by PeerManager)
   void set_id(int id) { id_ = id; }
+  // Override the node-local handshake nonce (used for self-connection detection)
+  void set_local_nonce(uint64_t nonce) { local_nonce_ = nonce; }
 
   // Getters
   PeerState state() const { return state_; }
@@ -133,6 +138,7 @@ private:
   void on_disconnect();
   void on_transport_receive(const std::vector<uint8_t> &data);
   void on_transport_disconnect();
+
 
   // Handshake
   void send_version();
@@ -215,5 +221,4 @@ public:
 
 } // namespace network
 } // namespace coinbasechain
-
 

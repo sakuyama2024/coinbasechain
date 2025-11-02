@@ -58,6 +58,7 @@ add_executable(coinbasechain_tests
     network/peer/connection_tests.cpp
     network/peer/peer_unit_tests.cpp
     network/peer/adversarial_tests.cpp
+    network/peer/peer_regression_tests.cpp
     network/peer/duplicate_connection_tests.cpp
     network/edge/edge_case_tests.cpp
     network/reorg/reorg_partition_tests.cpp

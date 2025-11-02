@@ -686,6 +686,8 @@ RPCServer::HandleGetPeerInfo(const std::vector<std::string> &params) {
         << "    \"pingtime\": " << (stats.ping_time_ms / 1000.0) << ",\n"
         << "    \"bytessent\": " << stats.bytes_sent << ",\n"
         << "    \"bytesrecv\": " << stats.bytes_received << ",\n"
+        << "    \"messagessent\": " << stats.messages_sent << ",\n"
+        << "    \"messagesrecv\": " << stats.messages_received << ",\n"
         << "    \"conntime\": " << duration.count() << ",\n"
         << "    \"misbehavior_score\": " << misbehavior_score << ",\n"
         << "    \"should_disconnect\": "

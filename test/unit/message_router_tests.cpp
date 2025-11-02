@@ -181,8 +181,6 @@ TEST_CASE("MessageRouter - GETADDR Message", "[network][message_router][unit]") 
 TEST_CASE("MessageRouter - INV Message", "[network][message_router][unit]") {
     MessageRouterTestFixture fixture;
     AddressManager addr_mgr;
-    
-    
 
     MessageRouter router(&addr_mgr, nullptr, nullptr);
 
@@ -196,18 +194,15 @@ TEST_CASE("MessageRouter - INV Message", "[network][message_router][unit]") {
         inv.hash.fill(0xaa);
         msg->inventory.push_back(inv);
 
-        // With null BlockRelayManager, should return false
+        // Pre-VERACK peer: INV is gated (silently ignored, returns true)
         bool result = router.RouteMessage(peer, std::move(msg));
-
-        REQUIRE_FALSE(result);
+        REQUIRE(result);  // Gated, not an error
     }
 }
 
 TEST_CASE("MessageRouter - HEADERS Message", "[network][message_router][unit]") {
     MessageRouterTestFixture fixture;
     AddressManager addr_mgr;
-    
-    
 
     MessageRouter router(&addr_mgr, nullptr, nullptr);
 
@@ -216,18 +211,15 @@ TEST_CASE("MessageRouter - HEADERS Message", "[network][message_router][unit]") 
     SECTION("Route HEADERS message") {
         auto msg = std::make_unique<HeadersMessage>();
 
-        // With null HeaderSyncManager, should return false
+        // Pre-VERACK peer: HEADERS is gated (silently ignored, returns true)
         bool result = router.RouteMessage(peer, std::move(msg));
-
-        REQUIRE_FALSE(result);
+        REQUIRE(result);  // Gated, not an error
     }
 }
 
 TEST_CASE("MessageRouter - GETHEADERS Message", "[network][message_router][unit]") {
     MessageRouterTestFixture fixture;
     AddressManager addr_mgr;
-    
-    
 
     MessageRouter router(&addr_mgr, nullptr, nullptr);
 
@@ -236,59 +228,63 @@ TEST_CASE("MessageRouter - GETHEADERS Message", "[network][message_router][unit]
     SECTION("Route GETHEADERS message") {
         auto msg = std::make_unique<GetHeadersMessage>();
 
-        // With null HeaderSyncManager, should return false
+        // Pre-VERACK peer: GETHEADERS is gated (silently ignored, returns true)
         bool result = router.RouteMessage(peer, std::move(msg));
-
-        REQUIRE_FALSE(result);
+        REQUIRE(result);  // Gated, not an error
     }
 }
 
 TEST_CASE("MessageRouter - Null Manager Handling", "[network][message_router][unit]") {
     MessageRouterTestFixture fixture;
 
-    SECTION("Null AddressManager for ADDR") {
+    SECTION("Null AddressManager for ADDR (pre-VERACK gating)") {
+        // Pre-VERACK peers are gated, so gating takes precedence over null manager
         MessageRouter router(nullptr, nullptr, nullptr);
         auto peer = fixture.create_test_peer();
         auto msg = std::make_unique<AddrMessage>();
 
         bool result = router.RouteMessage(peer, std::move(msg));
-        REQUIRE_FALSE(result);
+        REQUIRE(result);  // Gated before null check
     }
 
-    SECTION("Null AddressManager for GETADDR") {
+    SECTION("Null AddressManager for GETADDR (pre-VERACK gating)") {
+        // Pre-VERACK peers are gated, so gating takes precedence over null manager
         MessageRouter router(nullptr, nullptr, nullptr);
         auto peer = fixture.create_test_peer();
         auto msg = std::make_unique<GetAddrMessage>();
 
         bool result = router.RouteMessage(peer, std::move(msg));
-        REQUIRE_FALSE(result);
+        REQUIRE(result);  // Gated before null check
     }
 
-    SECTION("Null BlockRelayManager for INV") {
+    SECTION("Null BlockRelayManager for INV (pre-VERACK gating)") {
+        // Pre-VERACK peers are gated, so gating takes precedence over null manager
         MessageRouter router(nullptr, nullptr, nullptr);
         auto peer = fixture.create_test_peer();
         auto msg = std::make_unique<InvMessage>();
 
         bool result = router.RouteMessage(peer, std::move(msg));
-        REQUIRE_FALSE(result);
+        REQUIRE(result);  // Gated before null check
     }
 
-    SECTION("Null HeaderSyncManager for HEADERS") {
+    SECTION("Null HeaderSyncManager for HEADERS (pre-VERACK gating)") {
+        // Pre-VERACK peers are gated, so gating takes precedence over null manager
         MessageRouter router(nullptr, nullptr, nullptr);
         auto peer = fixture.create_test_peer();
         auto msg = std::make_unique<HeadersMessage>();
 
         bool result = router.RouteMessage(peer, std::move(msg));
-        REQUIRE_FALSE(result);
+        REQUIRE(result);  // Gated before null check
     }
 
-    SECTION("Null HeaderSyncManager for GETHEADERS") {
+    SECTION("Null HeaderSyncManager for GETHEADERS (pre-VERACK gating)") {
+        // Pre-VERACK peers are gated, so gating takes precedence over null manager
         MessageRouter router(nullptr, nullptr, nullptr);
         auto peer = fixture.create_test_peer();
         auto msg = std::make_unique<GetHeadersMessage>();
 
         bool result = router.RouteMessage(peer, std::move(msg));
-        REQUIRE_FALSE(result);
+        REQUIRE(result);  // Gated before null check
     }
 
     SECTION("Null managers for VERACK (should still succeed)") {
@@ -312,25 +308,25 @@ TEST_CASE("MessageRouter - Multiple Messages", "[network][message_router][unit]"
     auto peer = fixture.create_test_peer();
 
     SECTION("Route multiple different message types") {
-        // ADDR
+        // ADDR (pre-VERACK, gated)
         auto msg1 = std::make_unique<AddrMessage>();
-        REQUIRE(router.RouteMessage(peer, std::move(msg1)));
+        REQUIRE(router.RouteMessage(peer, std::move(msg1)));  // Gated, returns true
 
-        // GETADDR
+        // GETADDR (pre-VERACK, gated)
         auto msg2 = std::make_unique<GetAddrMessage>();
-        REQUIRE(router.RouteMessage(peer, std::move(msg2)));
+        REQUIRE(router.RouteMessage(peer, std::move(msg2)));  // Gated, returns true
 
-        // INV (with null manager, should fail)
+        // INV (pre-VERACK, gated before null manager check)
         auto msg3 = std::make_unique<InvMessage>();
-        REQUIRE_FALSE(router.RouteMessage(peer, std::move(msg3)));
+        REQUIRE(router.RouteMessage(peer, std::move(msg3)));  // Gated, returns true
 
-        // HEADERS (with null manager, should fail)
+        // HEADERS (pre-VERACK, gated before null manager check)
         auto msg4 = std::make_unique<HeadersMessage>();
-        REQUIRE_FALSE(router.RouteMessage(peer, std::move(msg4)));
+        REQUIRE(router.RouteMessage(peer, std::move(msg4)));  // Gated, returns true
 
-        // GETHEADERS (with null manager, should fail)
+        // GETHEADERS (pre-VERACK, gated before null manager check)
         auto msg5 = std::make_unique<GetHeadersMessage>();
-        REQUIRE_FALSE(router.RouteMessage(peer, std::move(msg5)));
+        REQUIRE(router.RouteMessage(peer, std::move(msg5)));  // Gated, returns true
 
         // VERACK
         auto msg6 = std::make_unique<VerackMessage>();

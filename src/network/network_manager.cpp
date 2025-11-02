@@ -399,6 +399,9 @@ bool NetworkManager::connect_to_with_permissions(const protocol::NetworkAddress 
     return false;
   }
 
+  // Use a node-wide nonce for self-connection detection and VERSION.nonce
+  peer->set_local_nonce(local_nonce_);
+
   // Setup message handler before adding to manager
   setup_peer_message_handler(peer.get());
 
@@ -646,6 +649,9 @@ void NetworkManager::handle_inbound_connection(
   auto peer = Peer::create_inbound(io_context_, connection,
                                    config_.network_magic, current_height);
   if (peer) {
+    // Use a node-wide nonce for self-connection detection and VERSION.nonce
+    peer->set_local_nonce(local_nonce_);
+
     // Setup message handler
     setup_peer_message_handler(peer.get());
 

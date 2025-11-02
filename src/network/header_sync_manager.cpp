@@ -135,6 +135,8 @@ void HeaderSyncManager::CheckInitialSync() {
     if (!peer) continue;
     if (peer->sync_started()) continue; // Already started with this peer
     if (peer->is_feeler()) continue;    // Skip feelers - they auto-disconnect on VERACK
+    // Gate initial sync on completed handshake to avoid protocol violations
+    if (!peer->successfully_connected()) continue; // Wait until VERACK
 
     int current_height = chainstate_manager_.GetChainHeight();
     LOG_NET_DEBUG("initial getheaders ({}) peer={}", current_height, peer->id());

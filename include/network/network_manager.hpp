@@ -58,6 +58,12 @@ class NATManager;
 // NetworkManager - Top-level coordinator for all networking (inspired by
 // Bitcoin's CConnman) Manages io_context, coordinates
 // PeerManager/AddressManager, handles connections, routes messages
+//
+// IMPORTANT: networking runs on a single reactor thread
+// - Application components (validation, mining, RPC) may be multi-threaded
+// - The networking reactor (io_context used here) must use a single thread
+//   (Config::io_threads = 1) so handlers/timers are serialized without strands.
+// - Running with >1 network I/O thread requires adding explicit serialization.
 class NetworkManager {
 public:
   struct Config {
@@ -65,7 +71,7 @@ public:
     uint16_t listen_port;   // Port to listen on (REQUIRED - must be set based on chain type, 0 = don't listen)
     bool listen_enabled;    // Enable inbound connections
     bool enable_nat;        // Enable UPnP NAT traversal
-    size_t io_threads;      // Number of IO threads
+    size_t io_threads;      // Number of IO threads (networking reactor only) — keep at 1
     std::string datadir;    // Data directory
 
     std::chrono::seconds connect_interval; // Time between connection attempts
@@ -78,7 +84,7 @@ public:
         : network_magic(0),
           listen_port(0),
           listen_enabled(true), 
-          enable_nat(true), io_threads(4), datadir(""),
+          enable_nat(true), io_threads(1), datadir(""),
           connect_interval(std::chrono::seconds(5)),
           maintenance_interval(std::chrono::seconds(30)) {}
   };

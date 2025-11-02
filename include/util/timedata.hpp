@@ -14,8 +14,7 @@ namespace coinbasechain {
 namespace util {
 
 // Maximum time adjustment from network peers (±70 minutes)
-// TODO - should be much lower in practice (e.g., ±5 minutes)
-static constexpr int64_t DEFAULT_MAX_TIME_ADJUSTMENT = 70 * 60;
+static constexpr int64_t DEFAULT_MAX_TIME_ADJUSTMENT = 70 * 60; // seconds
 
 /**
  * Median filter over a stream of values.
