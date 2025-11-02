@@ -143,7 +143,7 @@ private:
 
   // Handshake
   void send_version();
-  void handle_version(const message::VersionMessage &msg);
+  void handle_version(const ::coinbasechain::message::VersionMessage &msg);
   void handle_verack();
 
   // Message I/O
@@ -154,7 +154,7 @@ private:
   // Ping/Pong
   void schedule_ping();
   void send_ping();
-  void handle_pong(const message::PongMessage &msg);
+  void handle_pong(const ::coinbasechain::message::PongMessage &msg);
 
   // Timeouts
   void start_handshake_timeout();

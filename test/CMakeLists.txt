@@ -86,6 +86,7 @@ add_executable(coinbasechain_tests
     network/addr/getaddr_multi_node_tests.cpp
     network/real_transport_tests.cpp
     network/notifications_tests.cpp
+    network/message_dispatcher_tests.cpp
     util/threadsafe_containers_tests.cpp
 )
 

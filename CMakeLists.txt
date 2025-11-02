@@ -227,6 +227,7 @@ add_library(network STATIC
     src/network/header_sync_manager.cpp
     src/network/block_relay_manager.cpp
     src/network/message_router.cpp
+    src/network/message_dispatcher.cpp
     src/network/network_manager.cpp
     src/network/real_transport.cpp
     # src/network/simulated_transport.cpp  # Not implemented yet
