@@ -178,10 +178,14 @@ TEST_CASE("Anchors - Loaded anchors are whitelisted (NoBan)", "[network][anchor]
     // Give the system a moment to process callbacks
     orch.AdvanceTime(std::chrono::milliseconds(100));
 
-    // Check that anchor address is whitelisted (cannot be banned)
+    // Check that anchor address is whitelisted
     auto& bm = n1.GetNetworkManager().peer_manager();
     // 127.0.0.2 should be normal dotted-quad
     CHECK(bm.IsWhitelisted("127.0.0.2"));
+
+    // Note: Like Bitcoin Core, whitelist and ban are independent states
+    // Whitelisted addresses CAN be banned; whitelist only affects connection acceptance
     bm.Ban("127.0.0.2", 3600);
-    CHECK_FALSE(bm.IsBanned("127.0.0.2"));
+    CHECK(bm.IsBanned("127.0.0.2"));  // Ban succeeds
+    CHECK(bm.IsWhitelisted("127.0.0.2"));  // Still whitelisted
 }
