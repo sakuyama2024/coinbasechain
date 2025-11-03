@@ -10,7 +10,7 @@
 // - Peer lifecycle (add/remove)
 
 #include "catch_amalgamated.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 #include "network/peer.hpp"
 #include "network/addr_manager.hpp"
 #include "network/notifications.hpp"
@@ -24,7 +24,6 @@ using namespace coinbasechain::network;
 class TestPeerFixture {
 public:
     boost::asio::io_context io_context;
-    AddressManager addr_manager;
 
     TestPeerFixture() {
     }
@@ -46,29 +45,29 @@ public:
     }
 };
 
-TEST_CASE("PeerManager - Construction", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - Construction", "[network][peer_manager][unit]") {
     TestPeerFixture fixture;
 
-    PeerManager::Config config;
+    PeerLifecycleManager::Config config;
     config.max_outbound_peers = 8;
     config.max_inbound_peers = 125;
 
-    PeerManager pm(fixture.io_context, fixture.addr_manager, config);
+    PeerLifecycleManager pm(fixture.io_context, config);
 
     REQUIRE(pm.peer_count() == 0);
     REQUIRE(pm.outbound_count() == 0);
     REQUIRE(pm.inbound_count() == 0);
 }
 
-TEST_CASE("PeerManager - Connection Limits", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - Connection Limits", "[network][peer_manager][unit]") {
     TestPeerFixture fixture;
 
-    PeerManager::Config config;
+    PeerLifecycleManager::Config config;
     config.max_outbound_peers = 2;
     config.max_inbound_peers = 3;
     config.target_outbound_peers = 2;
 
-    PeerManager pm(fixture.io_context, fixture.addr_manager, config);
+    PeerLifecycleManager pm(fixture.io_context, config);
 
     SECTION("Needs more outbound when empty") {
         REQUIRE(pm.needs_more_outbound());
@@ -85,9 +84,9 @@ TEST_CASE("PeerManager - Connection Limits", "[network][peer_manager][unit]") {
     }
 }
 
-TEST_CASE("PeerManager - Misbehavior Scoring", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - Misbehavior Scoring", "[network][peer_manager][unit]") {
     TestPeerFixture fixture;
-    PeerManager pm(fixture.io_context, fixture.addr_manager);
+    PeerLifecycleManager pm(fixture.io_context);
 
     auto peer = fixture.create_test_peer();
     int peer_id = pm.add_peer(peer);
@@ -152,9 +151,9 @@ TEST_CASE("PeerManager - Misbehavior Scoring", "[network][peer_manager][unit]") 
     }
 }
 
-TEST_CASE("PeerManager - Misbehavior Score Accumulation", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - Misbehavior Score Accumulation", "[network][peer_manager][unit]") {
     TestPeerFixture fixture;
-    PeerManager pm(fixture.io_context, fixture.addr_manager);
+    PeerLifecycleManager pm(fixture.io_context);
 
     auto peer = fixture.create_test_peer();
     int peer_id = pm.add_peer(peer);
@@ -199,9 +198,9 @@ TEST_CASE("PeerManager - Misbehavior Score Accumulation", "[network][peer_manage
     }
 }
 
-TEST_CASE("PeerManager - Permission Flags", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - Permission Flags", "[network][peer_manager][unit]") {
     TestPeerFixture fixture;
-    PeerManager pm(fixture.io_context, fixture.addr_manager);
+    PeerLifecycleManager pm(fixture.io_context);
 
     SECTION("NoBan permission prevents disconnection") {
         auto peer = fixture.create_test_peer();
@@ -240,9 +239,9 @@ TEST_CASE("PeerManager - Permission Flags", "[network][peer_manager][unit]") {
     }
 }
 
-TEST_CASE("PeerManager - Unconnecting Headers Tracking", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - Unconnecting Headers Tracking", "[network][peer_manager][unit]") {
     TestPeerFixture fixture;
-    PeerManager pm(fixture.io_context, fixture.addr_manager);
+    PeerLifecycleManager pm(fixture.io_context);
 
     auto peer = fixture.create_test_peer();
     int peer_id = pm.add_peer(peer);
@@ -282,9 +281,9 @@ TEST_CASE("PeerManager - Unconnecting Headers Tracking", "[network][peer_manager
     }
 }
 
-TEST_CASE("PeerManager - Peer Lifecycle", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - Peer Lifecycle", "[network][peer_manager][unit]") {
     TestPeerFixture fixture;
-    PeerManager pm(fixture.io_context, fixture.addr_manager);
+    PeerLifecycleManager pm(fixture.io_context);
 
     SECTION("Add and retrieve peer") {
         auto peer = fixture.create_test_peer();
@@ -333,9 +332,9 @@ TEST_CASE("PeerManager - Peer Lifecycle", "[network][peer_manager][unit]") {
     }
 }
 
-TEST_CASE("PeerManager - Get Peer by ID", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - Get Peer by ID", "[network][peer_manager][unit]") {
     TestPeerFixture fixture;
-    PeerManager pm(fixture.io_context, fixture.addr_manager);
+    PeerLifecycleManager pm(fixture.io_context);
 
     SECTION("Get existing peer") {
         auto peer = fixture.create_test_peer();
@@ -362,9 +361,9 @@ TEST_CASE("PeerManager - Get Peer by ID", "[network][peer_manager][unit]") {
     }
 }
 
-TEST_CASE("PeerManager - Peer Count Tracking", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - Peer Count Tracking", "[network][peer_manager][unit]") {
     TestPeerFixture fixture;
-    PeerManager pm(fixture.io_context, fixture.addr_manager);
+    PeerLifecycleManager pm(fixture.io_context);
 
     SECTION("Empty manager") {
         REQUIRE(pm.peer_count() == 0);
@@ -397,9 +396,9 @@ TEST_CASE("PeerManager - Peer Count Tracking", "[network][peer_manager][unit]") 
     }
 }
 
-TEST_CASE("PeerManager - Disconnect All", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - Disconnect All", "[network][peer_manager][unit]") {
     TestPeerFixture fixture;
-    PeerManager pm(fixture.io_context, fixture.addr_manager);
+    PeerLifecycleManager pm(fixture.io_context);
 
     // Add several peers
     auto peer1 = fixture.create_test_peer();
@@ -420,9 +419,9 @@ TEST_CASE("PeerManager - Disconnect All", "[network][peer_manager][unit]") {
     REQUIRE(pm.peer_count() == 0);
 }
 
-TEST_CASE("PeerManager - Misbehavior for Invalid Peer ID", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - Misbehavior for Invalid Peer ID", "[network][peer_manager][unit]") {
     TestPeerFixture fixture;
-    PeerManager pm(fixture.io_context, fixture.addr_manager);
+    PeerLifecycleManager pm(fixture.io_context);
 
     SECTION("Report misbehavior for non-existent peer") {
         // Should not crash
@@ -438,7 +437,7 @@ TEST_CASE("PeerManager - Misbehavior for Invalid Peer ID", "[network][peer_manag
     }
 }
 
-TEST_CASE("PeerManager - HasPermission Utility", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - HasPermission Utility", "[network][peer_manager][unit]") {
     SECTION("None has no permissions") {
         REQUIRE_FALSE(HasPermission(NetPermissionFlags::None, NetPermissionFlags::NoBan));
         REQUIRE_FALSE(HasPermission(NetPermissionFlags::None, NetPermissionFlags::Manual));
@@ -463,7 +462,7 @@ TEST_CASE("PeerManager - HasPermission Utility", "[network][peer_manager][unit]"
     }
 }
 
-TEST_CASE("PeerManager - Permission Flag Operations", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - Permission Flag Operations", "[network][peer_manager][unit]") {
     SECTION("OR operation") {
         auto combined = NetPermissionFlags::NoBan | NetPermissionFlags::Manual;
         REQUIRE(HasPermission(combined, NetPermissionFlags::NoBan));
@@ -477,7 +476,7 @@ TEST_CASE("PeerManager - Permission Flag Operations", "[network][peer_manager][u
     }
 }
 
-TEST_CASE("PeerManager - Misbehavior Constants", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - Misbehavior Constants", "[network][peer_manager][unit]") {
     SECTION("Penalty values are defined") {
         REQUIRE(MisbehaviorPenalty::INVALID_POW == 100);
         REQUIRE(MisbehaviorPenalty::OVERSIZED_MESSAGE == 20);
@@ -505,15 +504,15 @@ TEST_CASE("PeerManager - Misbehavior Constants", "[network][peer_manager][unit]"
     }
 }
 
-TEST_CASE("PeerManager - Feeler connections do not consume outbound slots", "[network][peer_manager][unit][feeler]") {
+TEST_CASE("ConnectionManager - Feeler connections do not consume outbound slots", "[network][peer_manager][unit][feeler]") {
     TestPeerFixture fixture;
 
-    PeerManager::Config config;
+    PeerLifecycleManager::Config config;
     config.max_outbound_peers = 2;
     config.max_inbound_peers = 125;
     config.target_outbound_peers = 2;
 
-    PeerManager pm(fixture.io_context, fixture.addr_manager, config);
+    PeerLifecycleManager pm(fixture.io_context, config);
 
     // Fill outbound full-relay slots
     auto p1 = Peer::create_outbound(fixture.io_context, nullptr, 0x12345678, 0, "10.0.0.1", 8333, ConnectionType::OUTBOUND);
@@ -540,9 +539,9 @@ TEST_CASE("PeerManager - Feeler connections do not consume outbound slots", "[ne
     REQUIRE(pm.peer_count() == 3);
 }
 
-TEST_CASE("PeerManager - Feeler lifetime is enforced", "[network][peer_manager][unit][feeler]") {
+TEST_CASE("ConnectionManager - Feeler lifetime is enforced", "[network][peer_manager][unit][feeler]") {
     TestPeerFixture fixture;
-    PeerManager pm(fixture.io_context, fixture.addr_manager);
+    PeerLifecycleManager pm(fixture.io_context);
 
     // Add a feeler and artificially age it beyond lifetime
     auto feeler = Peer::create_outbound(fixture.io_context, nullptr, 0x12345678, 0, "10.0.0.11", 8333, ConnectionType::FEELER);
@@ -559,9 +558,9 @@ TEST_CASE("PeerManager - Feeler lifetime is enforced", "[network][peer_manager][
     REQUIRE(pm.get_peer(fid) == nullptr);
 }
 
-TEST_CASE("PeerManager - disconnect_all publishes notifications before erasing peers", "[network][peer_manager][unit][notifications]") {
+TEST_CASE("ConnectionManager - disconnect_all publishes notifications before erasing peers", "[network][peer_manager][unit][notifications]") {
     TestPeerFixture fixture;
-    PeerManager pm(fixture.io_context, fixture.addr_manager);
+    PeerLifecycleManager pm(fixture.io_context);
 
     auto p = fixture.create_test_peer("127.0.0.5", 8333);
     int id = pm.add_peer(p);
@@ -569,7 +568,7 @@ TEST_CASE("PeerManager - disconnect_all publishes notifications before erasing p
 
     bool saw_peer_in_notification = false;
     auto sub = coinbasechain::NetworkEvents().SubscribePeerDisconnected(
-        [&](int peer_id, const std::string&, const std::string&){
+        [&](int peer_id, const std::string&, uint16_t, const std::string&, bool){
             // Peer should still be retrievable during notification
             auto found = pm.get_peer(peer_id);
             saw_peer_in_notification = (found != nullptr);
@@ -580,12 +579,12 @@ TEST_CASE("PeerManager - disconnect_all publishes notifications before erasing p
     REQUIRE(pm.peer_count() == 0);
 }
 
-TEST_CASE("PeerManager - Concurrent add_peer yields unique IDs", "[network][peer_manager][unit][concurrency]") {
+TEST_CASE("ConnectionManager - Concurrent add_peer yields unique IDs", "[network][peer_manager][unit][concurrency]") {
     TestPeerFixture fixture;
-    PeerManager::Config cfg;
+    PeerLifecycleManager::Config cfg;
     cfg.max_outbound_peers = 10000;
     cfg.target_outbound_peers = 10000;
-    PeerManager pm(fixture.io_context, fixture.addr_manager, cfg);
+    PeerLifecycleManager pm(fixture.io_context, cfg);
 
     const int threads = 8;
     const int per_thread = 50;
@@ -613,17 +612,17 @@ TEST_CASE("PeerManager - Concurrent add_peer yields unique IDs", "[network][peer
     REQUIRE(pm.peer_count() == ids.size());
 }
 
-TEST_CASE("PeerManager - Config Defaults", "[network][peer_manager][unit]") {
-    PeerManager::Config config;
+TEST_CASE("ConnectionManager - Config Defaults", "[network][peer_manager][unit]") {
+    PeerLifecycleManager::Config config;
 
     REQUIRE(config.max_outbound_peers == 8);
     REQUIRE(config.max_inbound_peers == 125);
     REQUIRE(config.target_outbound_peers == 8);
 }
 
-TEST_CASE("PeerManager - Multiple Misbehavior Reports", "[network][peer_manager][unit]") {
+TEST_CASE("ConnectionManager - Multiple Misbehavior Reports", "[network][peer_manager][unit]") {
     TestPeerFixture fixture;
-    PeerManager pm(fixture.io_context, fixture.addr_manager);
+    PeerLifecycleManager pm(fixture.io_context);
 
     auto peer1 = fixture.create_test_peer("192.168.1.1", 8333);
     auto peer2 = fixture.create_test_peer("192.168.1.2", 8333);
@@ -648,9 +647,9 @@ TEST_CASE("PeerManager - Multiple Misbehavior Reports", "[network][peer_manager]
     }
 }
 
-TEST_CASE("PeerManager - Duplicate invalid header tracking is per-peer (no double-penalty when guarded)", "[network][peer_manager][unit][duplicates]") {
+TEST_CASE("ConnectionManager - Duplicate invalid header tracking is per-peer (no double-penalty when guarded)", "[network][peer_manager][unit][duplicates]") {
     TestPeerFixture fixture;
-    PeerManager pm(fixture.io_context, fixture.addr_manager);
+    PeerLifecycleManager pm(fixture.io_context);
 
     auto peerA = fixture.create_test_peer("10.0.0.1", 8333);
     auto peerB = fixture.create_test_peer("10.0.0.2", 8333);

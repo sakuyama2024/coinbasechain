@@ -41,7 +41,7 @@ class ChainstateManager;
 namespace network {
 
 // Forward declarations
-class PeerManager;
+class PeerLifecycleManager;
 
 /**
  * HeaderSyncManager - Manages blockchain header synchronization
@@ -57,7 +57,7 @@ class HeaderSyncManager {
 public:
   static constexpr uint64_t NO_SYNC_PEER = std::numeric_limits<uint64_t>::max();
   HeaderSyncManager(validation::ChainstateManager& chainstate,
-                    PeerManager& peer_mgr);
+                    PeerLifecycleManager& peer_mgr);
 
   // Message handlers
   bool HandleHeadersMessage(PeerPtr peer, message::HeadersMessage* msg);
@@ -93,7 +93,7 @@ private:
 
   // Component references
   validation::ChainstateManager& chainstate_manager_;
-  PeerManager& peer_manager_;
+  PeerLifecycleManager& peer_manager_;
 
   // Serialized sync state (single domain under sync_mutex_)
   struct SyncState {

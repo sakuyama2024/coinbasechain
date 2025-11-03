@@ -3,6 +3,7 @@
 #include "version.hpp"
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace coinbasechain {
@@ -167,6 +168,10 @@ struct NetworkAddress {
   bool operator<(const NetworkAddress& other) const;
   bool operator==(const NetworkAddress& other) const;
 };
+
+// Convert NetworkAddress to IP string (IPv4 or IPv6)
+// Returns std::nullopt if conversion fails
+std::optional<std::string> NetworkAddressToString(const NetworkAddress& addr);
 
 // Timestamped network address (34 bytes)
 struct TimestampedAddress {

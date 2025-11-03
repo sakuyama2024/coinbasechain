@@ -28,7 +28,8 @@
 #include "util/time.hpp"
 #include "util/uint.hpp"
 #include "network/network_manager.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
+#include "network/peer_discovery_manager.hpp"
 #include <sstream>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -656,7 +657,7 @@ RPCServer::HandleGetPeerInfo(const std::vector<std::string> &params) {
     auto duration = std::chrono::duration_cast<std::chrono::seconds>(
         now - stats.connected_time);
 
-    // Get misbehavior score from PeerManager
+    // Get misbehavior score from ConnectionManager
     int misbehavior_score = 0;
     bool should_disconnect = false;
     try {
@@ -972,11 +973,11 @@ RPCServer::HandleListBanned(const std::vector<std::string> &params) {
 
 std::string
 RPCServer::HandleGetAddrManInfo(const std::vector<std::string> &params) {
-  auto &addr_man = network_manager_.address_manager();
+  auto &discovery_man = network_manager_.discovery_manager();
 
-  size_t total = addr_man.size();
-  size_t tried = addr_man.tried_count();
-  size_t new_addrs = addr_man.new_count();
+  size_t total = discovery_man.Size();
+  size_t tried = discovery_man.TriedCount();
+  size_t new_addrs = discovery_man.NewCount();
 
   std::ostringstream oss;
   oss << "{\n"

@@ -5,6 +5,7 @@
 #include "network/protocol.hpp"
 #include "network/message.hpp"
 #include "network/addr_manager.hpp"
+#include "network/peer_discovery_manager.hpp"
 
 using namespace coinbasechain;
 using namespace coinbasechain::test;
@@ -65,7 +66,7 @@ TEST_CASE("ADDR response is capped at MAX_ADDR_SIZE", "[network][addr]") {
     SimulatedNode requester(2, &net);
 
     // Pre-fill victim's AddressManager with many addresses
-    auto& am = victim.GetNetworkManager().address_manager();
+    auto& discovery = victim.GetNetworkManager().discovery_manager();
     for (int i = 0; i < 5000; ++i) {
         protocol::NetworkAddress addr;
         addr.services = NODE_NETWORK;
@@ -73,7 +74,7 @@ TEST_CASE("ADDR response is capped at MAX_ADDR_SIZE", "[network][addr]") {
         // 127.0.1.x IPv4-mapped
         for (int j = 0; j < 10; ++j) addr.ip[j] = 0; addr.ip[10] = 0xFF; addr.ip[11] = 0xFF;
         addr.ip[12] = 127; addr.ip[13] = 0; addr.ip[14] = 1; addr.ip[15] = static_cast<uint8_t>(i % 255);
-        am.add(addr);
+        discovery.Add(addr);
     }
 
     net.EnableCommandTracking(true);
@@ -101,12 +102,12 @@ TEST_CASE("good() is called on outbound after VERACK (moves to tried)", "[networ
     SimulatedNode victim(1, &net);
     SimulatedNode peer(2, &net);
 
-    auto& am = victim.GetNetworkManager().address_manager();
-    size_t tried_before = am.tried_count();
+    auto& discovery = victim.GetNetworkManager().discovery_manager();
+    size_t tried_before = discovery.TriedCount();
 
     // Pre-seed address so good() can move it from new->tried deterministically
     auto addr_peer = protocol::NetworkAddress::from_string(peer.GetAddress(), peer.GetPort(), NODE_NETWORK);
-    am.add(addr_peer);
+    discovery.Add(addr_peer);
 
     // Outbound from victim to peer
     REQUIRE(victim.ConnectTo(2));
@@ -115,7 +116,7 @@ TEST_CASE("good() is called on outbound after VERACK (moves to tried)", "[networ
     // Allow handshake to complete
     for (int i = 0; i < 30; ++i) orch.AdvanceTime(std::chrono::milliseconds(100));
 
-    size_t tried_after = am.tried_count();
+    size_t tried_after = discovery.TriedCount();
     REQUIRE(tried_after >= tried_before + 1);
 }
 

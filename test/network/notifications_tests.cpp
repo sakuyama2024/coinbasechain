@@ -14,14 +14,14 @@ TEST_CASE("NetworkNotifications: RAII subscription cleanup",
 
   {
     auto sub = notifications.SubscribePeerDisconnected(
-        [&](int, const std::string &, const std::string &) { called = true; });
+        [&](int, const std::string &, uint16_t, const std::string &, bool) { called = true; });
 
-    notifications.NotifyPeerDisconnected(1, "127.0.0.1", "test");
+    notifications.NotifyPeerDisconnected(1, "127.0.0.1", 8333, "test", false);
     REQUIRE(called);
   } // subscription goes out of scope
 
   called = false;
-  notifications.NotifyPeerDisconnected(2, "127.0.0.1", "test");
+  notifications.NotifyPeerDisconnected(2, "127.0.0.1", 8333, "test", false);
   REQUIRE(!called); // Callback no longer registered
 }
 
@@ -31,11 +31,11 @@ TEST_CASE("NetworkNotifications: Multiple subscribers",
   int count = 0;
 
   auto sub1 = notifications.SubscribePeerDisconnected(
-      [&](int, const std::string &, const std::string &) { count++; });
+      [&](int, const std::string &, uint16_t, const std::string &, bool) { count++; });
   auto sub2 = notifications.SubscribePeerDisconnected(
-      [&](int, const std::string &, const std::string &) { count++; });
+      [&](int, const std::string &, uint16_t, const std::string &, bool) { count++; });
 
-  notifications.NotifyPeerDisconnected(1, "127.0.0.1", "test");
+  notifications.NotifyPeerDisconnected(1, "127.0.0.1", 8333, "test", false);
   REQUIRE(count == 2); // Both callbacks invoked
 }
 
@@ -45,15 +45,15 @@ TEST_CASE("NetworkNotifications: Manual unsubscribe",
   bool called = false;
 
   auto sub = notifications.SubscribePeerDisconnected(
-      [&](int, const std::string &, const std::string &) { called = true; });
+      [&](int, const std::string &, uint16_t, const std::string &, bool) { called = true; });
 
-  notifications.NotifyPeerDisconnected(1, "127.0.0.1", "test");
+  notifications.NotifyPeerDisconnected(1, "127.0.0.1", 8333, "test", false);
   REQUIRE(called);
 
   called = false;
   sub.Unsubscribe();
 
-  notifications.NotifyPeerDisconnected(2, "127.0.0.1", "test");
+  notifications.NotifyPeerDisconnected(2, "127.0.0.1", 8333, "test", false);
   REQUIRE(!called); // Callback unsubscribed
 }
 
@@ -62,12 +62,12 @@ TEST_CASE("NetworkNotifications: Move semantics", "[network][notifications]") {
   bool called = false;
 
   auto sub1 = notifications.SubscribePeerDisconnected(
-      [&](int, const std::string &, const std::string &) { called = true; });
+      [&](int, const std::string &, uint16_t, const std::string &, bool) { called = true; });
 
   // Move constructor
   auto sub2 = std::move(sub1);
 
-  notifications.NotifyPeerDisconnected(1, "127.0.0.1", "test");
+  notifications.NotifyPeerDisconnected(1, "127.0.0.1", 8333, "test", false);
   REQUIRE(called); // sub2 still active
 
   called = false;
@@ -76,7 +76,7 @@ TEST_CASE("NetworkNotifications: Move semantics", "[network][notifications]") {
   NetworkNotifications::Subscription sub3;
   sub3 = std::move(sub2);
 
-  notifications.NotifyPeerDisconnected(2, "127.0.0.1", "test");
+  notifications.NotifyPeerDisconnected(2, "127.0.0.1", 8333, "test", false);
   REQUIRE(called); // sub3 still active
 }
 
@@ -88,14 +88,14 @@ TEST_CASE("NetworkNotifications: PeerConnected event",
   std::string received_type;
 
   auto sub = notifications.SubscribePeerConnected(
-      [&](int peer_id, const std::string &address,
+      [&](int peer_id, const std::string &address, uint16_t,
           const std::string &connection_type) {
         received_peer_id = peer_id;
         received_address = address;
         received_type = connection_type;
       });
 
-  notifications.NotifyPeerConnected(42, "192.168.1.1:8333", "outbound");
+  notifications.NotifyPeerConnected(42, "192.168.1.1:8333", 8333, "outbound");
 
   REQUIRE(received_peer_id == 42);
   REQUIRE(received_address == "192.168.1.1:8333");
@@ -200,7 +200,7 @@ TEST_CASE("NetworkNotifications: Multiple event types",
   int misbehavior_count = 0;
 
   auto sub1 = notifications.SubscribePeerDisconnected(
-      [&](int, const std::string &, const std::string &) {
+      [&](int, const std::string &, uint16_t, const std::string &, bool) {
         disconnect_count++;
       });
 
@@ -212,7 +212,7 @@ TEST_CASE("NetworkNotifications: Multiple event types",
   auto sub3 = notifications.SubscribeMisbehavior(
       [&](int, int, const std::string &) { misbehavior_count++; });
 
-  notifications.NotifyPeerDisconnected(1, "127.0.0.1", "timeout");
+  notifications.NotifyPeerDisconnected(1, "127.0.0.1", 8333, "timeout", false);
   REQUIRE(disconnect_count == 1);
   REQUIRE(invalid_header_count == 0);
   REQUIRE(misbehavior_count == 0);
@@ -239,13 +239,13 @@ TEST_CASE("NetworkNotifications: Singleton pattern",
 
   int count = 0;
   auto sub1 =
-      notifications1.SubscribePeerDisconnected([&](int, const std::string &,
-                                                    const std::string &) {
+      notifications1.SubscribePeerDisconnected([&](int, const std::string &, uint16_t,
+                                                    const std::string &, bool) {
         count++;
       });
 
   // Notify through different reference
-  notifications2.NotifyPeerDisconnected(1, "127.0.0.1", "test");
+  notifications2.NotifyPeerDisconnected(1, "127.0.0.1", 8333, "test", false);
 
   REQUIRE(count == 1);
 }
@@ -257,11 +257,11 @@ TEST_CASE("NetworkNotifications: Thread safety", "[network][notifications]") {
   std::atomic<int> count{0};
 
   auto sub = notifications.SubscribePeerDisconnected(
-      [&](int, const std::string &, const std::string &) { count++; });
+      [&](int, const std::string &, uint16_t, const std::string &, bool) { count++; });
 
   // Single-threaded test - just verify it works
   for (int i = 0; i < 100; ++i) {
-    notifications.NotifyPeerDisconnected(i, "127.0.0.1", "test");
+    notifications.NotifyPeerDisconnected(i, "127.0.0.1", 8333, "test", false);
   }
 
   REQUIRE(count == 100);

@@ -83,7 +83,7 @@ public:
   void send_message(std::unique_ptr<message::Message> msg);
   void set_message_handler(MessageHandler handler);
 
-  // Setters (called by PeerManager)
+  // Setters (called by ConnectionManager)
   void set_id(int id) { id_ = id; }
   // Override the node-local handshake nonce (used for self-connection detection)
   void set_local_nonce(uint64_t nonce) { local_nonce_ = nonce; }
@@ -171,7 +171,7 @@ private:
   uint32_t network_magic_;
   bool is_inbound_;
   ConnectionType connection_type_;  // Connection type (INBOUND, OUTBOUND_FULL_RELAY, FEELER, etc.)
-  int id_;  // Set by PeerManager when peer is added
+  int id_;  // Set by ConnectionManager when peer is added
 
   // Self-connection prevention
   uint64_t local_nonce_; // Our node's nonce
@@ -180,7 +180,7 @@ private:
   // Stored peer address (Bitcoin Core pattern: CNode::addr)
   // For outbound: target address we're connecting to (passed to create_outbound)
   // For inbound: runtime address from accepted socket (set in create_inbound)
-  // Used for duplicate prevention and peer lookup (see PeerManager::find_peer_by_address)
+  // Used for duplicate prevention and peer lookup (see ConnectionManager::find_peer_by_address)
   std::string target_address_;
   uint16_t target_port_{0};
 

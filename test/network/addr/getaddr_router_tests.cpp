@@ -3,7 +3,7 @@
 #include "infra/simulated_node.hpp"
 #include "network/network_manager.hpp"
 #include "network/message.hpp"
-#include "network/message_router.hpp"
+#include "network/peer_discovery_manager.hpp"
 #include "test_orchestrator.hpp"
 #include <set>
 
@@ -47,7 +47,7 @@ TEST_CASE("GETADDR ignored pre-VERACK (parity)", "[network][addr][parity][prever
     // so they never reach the handler stats. The test verifies the behavior (no response)
     // which is what matters from a protocol perspective.
     auto& nm = server.GetNetworkManager();
-    auto stats = nm.router_for_test().GetGetAddrDebugStats();
+    auto stats = nm.discovery_manager_for_test().GetGetAddrDebugStats();
     // Note: ignored_prehandshake counter is no longer incremented since gating happens at router
     // The important check is that no ADDR response was sent (verified above)
     REQUIRE(payloads.empty());  // Verify pre-VERACK gating works
@@ -62,27 +62,27 @@ TEST_CASE("GETADDR router counters: served, repeat, outbound ignored", "[network
     SimulatedNode client(2, &net);
 
     auto& srv_nm = server.GetNetworkManager();
-    auto base0 = srv_nm.router_for_test().GetGetAddrDebugStats();
+    auto base0 = srv_nm.discovery_manager_for_test().GetGetAddrDebugStats();
 
     REQUIRE(client.ConnectTo(server.GetId()));
     REQUIRE(orch.WaitForConnection(server, client));
     for (int i = 0; i < 12; ++i) orch.AdvanceTime(std::chrono::milliseconds(100));
 
     // Served once due to client's auto GETADDR after handshake
-    auto after_conn = srv_nm.router_for_test().GetGetAddrDebugStats();
+    auto after_conn = srv_nm.discovery_manager_for_test().GetGetAddrDebugStats();
     REQUIRE(after_conn.served == base0.served + 1);
 
     // Repeat ignored (explicit GETADDR on same connection)
     net.SendMessage(client.GetId(), server.GetId(), MakeWire(commands::GETADDR, {}));
     orch.AdvanceTime(std::chrono::milliseconds(200));
-    auto s2 = srv_nm.router_for_test().GetGetAddrDebugStats();
+    auto s2 = srv_nm.discovery_manager_for_test().GetGetAddrDebugStats();
     REQUIRE(s2.ignored_repeat >= 1);
 
     // Outbound ignored (server sends to client)
     net.SendMessage(server.GetId(), client.GetId(), MakeWire(commands::GETADDR, {}));
     orch.AdvanceTime(std::chrono::milliseconds(200));
     auto& cli_nm = client.GetNetworkManager();
-    auto cstats = cli_nm.router_for_test().GetGetAddrDebugStats();
+    auto cstats = cli_nm.discovery_manager_for_test().GetGetAddrDebugStats();
     REQUIRE(cstats.ignored_outbound >= 1);
 }
 
@@ -95,12 +95,12 @@ TEST_CASE("GETADDR reply shuffles order across seeds", "[network][addr][privacy]
     SimulatedNode client(2, &net);
 
     // Prefill server's AddrMan with multiple addresses
-    auto& am = server.GetNetworkManager().address_manager();
+    auto& am = server.GetNetworkManager().discovery_manager();
     for (int i = 0; i < 10; ++i) {
         NetworkAddress a; a.services = NODE_NETWORK; a.port = 9590;
         for (int j=0;j<10;++j) a.ip[j]=0; a.ip[10]=0xFF; a.ip[11]=0xFF;
         a.ip[12] = 127; a.ip[13] = 0; a.ip[14] = 2; a.ip[15] = static_cast<uint8_t>(i+1);
-        am.add(a);
+        am.Add(a);
     }
 
     // Connect and settle
@@ -109,7 +109,7 @@ TEST_CASE("GETADDR reply shuffles order across seeds", "[network][addr][privacy]
     for (int i = 0; i < 12; ++i) orch.AdvanceTime(std::chrono::milliseconds(100));
 
     // Seed 1
-    server.GetNetworkManager().router_for_test().TestSeedRng(42);
+    server.GetNetworkManager().discovery_manager_for_test().TestSeedRng(42);
     net.SendMessage(client.GetId(), server.GetId(), MakeWire(commands::GETADDR, {}));
     orch.AdvanceTime(std::chrono::milliseconds(300));
     auto p1 = net.GetCommandPayloads(server.GetId(), client.GetId(), commands::ADDR);
@@ -124,7 +124,7 @@ TEST_CASE("GETADDR reply shuffles order across seeds", "[network][addr][privacy]
     for (int i = 0; i < 12; ++i) orch.AdvanceTime(std::chrono::milliseconds(100));
 
     // Seed 2
-    server.GetNetworkManager().router_for_test().TestSeedRng(99);
+    server.GetNetworkManager().discovery_manager_for_test().TestSeedRng(99);
     net.SendMessage(client.GetId(), server.GetId(), MakeWire(commands::GETADDR, {}));
     orch.AdvanceTime(std::chrono::milliseconds(300));
     auto p2 = net.GetCommandPayloads(server.GetId(), client.GetId(), commands::ADDR);
@@ -204,9 +204,9 @@ TEST_CASE("GETADDR must not include requester's own address", "[network][addr][p
     SimulatedNode client(2, &net);
 
     // Preload server AddrMan with client's address
-    auto& am = server.GetNetworkManager().address_manager();
+    auto& am = server.GetNetworkManager().discovery_manager();
     auto client_addr = protocol::NetworkAddress::from_string(client.GetAddress(), client.GetPort());
-    am.add(client_addr);
+    am.Add(client_addr);
 
     REQUIRE(client.ConnectTo(server.GetId()));
     REQUIRE(orch.WaitForConnection(server, client));

@@ -332,8 +332,10 @@ void Peer::handle_version(const message::VersionMessage &msg) {
       "Received VERSION from {} - version: {}, user_agent: {}, nonce: {}",
       address(), peer_version_, peer_user_agent_, peer_nonce_);
 
-  // Check for self-connection (inbound only, outbound is checked by
-  // NetworkManager)
+  // Defense-in-depth: Check for self-connection at Peer level (inbound only)
+  // NetworkManager also performs comprehensive nonce checking for all connections
+  // This check allows Peer to work standalone (e.g., in unit tests) and provides
+  // an early disconnect without needing to route through NetworkManager
   if (is_inbound_ && peer_nonce_ == local_nonce_) {
     LOG_NET_WARN("self connection detected, disconnecting peer={}", id_);
     disconnect();

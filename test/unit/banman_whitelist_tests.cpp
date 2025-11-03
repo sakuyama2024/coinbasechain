@@ -1,8 +1,8 @@
 // Copyright (c) 2024 Coinbase Chain
-// Unit tests for PeerManager whitelist (NoBan) functionality
+// Unit tests for ConnectionManager whitelist (NoBan) functionality
 
 #include "catch_amalgamated.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 #include "network/addr_manager.hpp"
 #include <boost/asio.hpp>
 #include <filesystem>
@@ -14,7 +14,6 @@ using namespace coinbasechain::network;
 class WhitelistTestFixture {
 public:
     boost::asio::io_context io_context;
-    AddressManager addr_manager;
     std::string test_dir;
 
     WhitelistTestFixture() {
@@ -27,8 +26,9 @@ public:
         std::filesystem::remove_all(test_dir);
     }
 
-    std::unique_ptr<PeerManager> CreatePeerManager(const std::string& datadir = "") {
-        auto pm = std::make_unique<PeerManager>(io_context, addr_manager);
+    std::unique_ptr<PeerLifecycleManager> CreatePeerLifecycleManager(const std::string& datadir = "") {
+        // Phase 2: ConnectionManager no longer requires AddressManager at construction
+        auto pm = std::make_unique<PeerLifecycleManager>(io_context);
         if (!datadir.empty()) {
             pm->LoadBans(datadir);
         }
@@ -36,9 +36,9 @@ public:
     }
 };
 
-TEST_CASE("PeerManager - Localhost not whitelisted by default", "[network][peermgr][whitelist][unit]") {
+TEST_CASE("ConnectionManager - Localhost not whitelisted by default", "[network][peermgr][whitelist][unit]") {
     WhitelistTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     // By default, localhost is NOT whitelisted; banning should work
     pm->Ban("127.0.0.1", 3600);
@@ -49,9 +49,9 @@ TEST_CASE("PeerManager - Localhost not whitelisted by default", "[network][peerm
     CHECK(pm->IsBanned("::1"));
 }
 
-TEST_CASE("PeerManager - Whitelist operations", "[network][peermgr][whitelist][unit]") {
+TEST_CASE("ConnectionManager - Whitelist operations", "[network][peermgr][whitelist][unit]") {
     WhitelistTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Add to whitelist") {
         REQUIRE_FALSE(pm->IsWhitelisted("10.0.0.1"));
@@ -72,9 +72,9 @@ TEST_CASE("PeerManager - Whitelist operations", "[network][peermgr][whitelist][u
     }
 }
 
-TEST_CASE("PeerManager - Whitelist interaction with bans", "[network][peermgr][whitelist][unit]") {
+TEST_CASE("ConnectionManager - Whitelist interaction with bans", "[network][peermgr][whitelist][unit]") {
     WhitelistTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Ban and whitelist are independent (can coexist)") {
         // Add to whitelist first
@@ -130,12 +130,12 @@ TEST_CASE("PeerManager - Whitelist interaction with bans", "[network][peermgr][w
     }
 }
 
-TEST_CASE("PeerManager - Whitelist persistence", "[network][peermgr][whitelist][persistence]") {
+TEST_CASE("ConnectionManager - Whitelist persistence", "[network][peermgr][whitelist][persistence]") {
     WhitelistTestFixture fixture;
 
     SECTION("Whitelist doesn't persist (in-memory only)") {
         {
-            auto pm = fixture.CreatePeerManager(fixture.test_dir);
+            auto pm = fixture.CreatePeerLifecycleManager(fixture.test_dir);
             pm->AddToWhitelist("10.0.0.1");
             pm->Ban("10.0.0.2", 0);
 
@@ -145,9 +145,9 @@ TEST_CASE("PeerManager - Whitelist persistence", "[network][peermgr][whitelist][
             pm->SaveBans();
         }
 
-        // Create new PeerManager - whitelist should not persist
+        // Create new ConnectionManager - whitelist should not persist
         {
-            auto pm = fixture.CreatePeerManager(fixture.test_dir);
+            auto pm = fixture.CreatePeerLifecycleManager(fixture.test_dir);
 
             // Whitelist is not persisted (in-memory only)
             REQUIRE_FALSE(pm->IsWhitelisted("10.0.0.1"));

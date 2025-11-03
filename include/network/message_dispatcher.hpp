@@ -25,12 +25,10 @@ using PeerPtr = std::shared_ptr<Peer>;
  * MessageDispatcher - Protocol message routing via handler registry
  *
  * Design:
- * - Zero hardcoded dispatch logic
  * - Managers register handlers for their message types
  * - Thread-safe registration and dispatch
  * - Extensible: new messages = new registration, no code changes
  *
- * Replaces MessageRouter with a cleaner, more maintainable architecture.
  *
  * Usage:
  *   MessageDispatcher dispatcher;

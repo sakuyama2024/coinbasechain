@@ -10,7 +10,7 @@ using namespace coinbasechain::test;
 
 static void SetZeroLatency(test::SimulatedNetwork& network){ test::SimulatedNetwork::NetworkConditions c; c.latency_min=c.latency_max=std::chrono::milliseconds(0); c.jitter_max=std::chrono::milliseconds(0); network.SetNetworkConditions(c);} 
 
-TEST_CASE("PeerManagerTest - BasicHandshake", "[peermanagertest][network]") {
+TEST_CASE("ConnectionManagerTest - BasicHandshake", "[peermanagertest][network]") {
     SimulatedNetwork network(12345);
     SimulatedNode node1(1,&network); SimulatedNode node2(2,&network);
 CHECK(node1.ConnectTo(2));
@@ -18,7 +18,7 @@ CHECK(node1.ConnectTo(2));
     REQUIRE(orch.WaitForConnection(node1, node2));
 }
 
-TEST_CASE("PeerManagerTest - MultipleConnections (2 peers)", "[peermanagertest][network]") {
+TEST_CASE("ConnectionManagerTest - MultipleConnections (2 peers)", "[peermanagertest][network]") {
     SimulatedNetwork network(12346);
     // Use small non-zero latency to avoid handshake reordering on burst connects
     SimulatedNetwork::NetworkConditions c; c.latency_min=std::chrono::milliseconds(1); c.latency_max=std::chrono::milliseconds(3); c.jitter_max=std::chrono::milliseconds(0); network.SetNetworkConditions(c);
@@ -33,13 +33,13 @@ for(int i=1;i<=2;i++){ CHECK(nodes[0]->ConnectTo(i+1)); REQUIRE(orch.WaitForCond
     for(int i=1;i<=2;i++){ REQUIRE(orch.WaitForCondition([&]{ return nodes[i]->GetInboundPeerCount()>=1; }, std::chrono::seconds(5))); }
 }
 
-TEST_CASE("PeerManagerTest - SelfConnectionPrevention", "[peermanagertest][network]") {
+TEST_CASE("ConnectionManagerTest - SelfConnectionPrevention", "[peermanagertest][network]") {
     SimulatedNetwork network(12347); SimulatedNode node(1,&network);
     CHECK_FALSE(node.ConnectTo(1));
     CHECK(node.GetPeerCount()==0);
 }
 
-TEST_CASE("PeerManagerTest - PeerDisconnection", "[peermanagertest][network]") {
+TEST_CASE("ConnectionManagerTest - PeerDisconnection", "[peermanagertest][network]") {
     SimulatedNetwork network(12348); SetZeroLatency(network);
     SimulatedNode node1(1,&network); SimulatedNode node2(2,&network);
 node1.ConnectTo(2);
@@ -50,7 +50,7 @@ node1.ConnectTo(2);
     REQUIRE(orch.WaitForPeerCount(node2, 0, std::chrono::seconds(2)));
 }
 
-TEST_CASE("PeerManagerTest - MaxConnectionLimits", "[peermanagertest][network]") {
+TEST_CASE("ConnectionManagerTest - MaxConnectionLimits", "[peermanagertest][network]") {
     SimulatedNetwork network(12349); SimulatedNode server(1,&network);
 std::vector<std::unique_ptr<SimulatedNode>> clients; int successful=0;
     for(int i=0;i<200;i++){ clients.push_back(std::make_unique<SimulatedNode>(100+i,&network)); if(clients.back()->ConnectTo(1)) successful++; }
@@ -59,7 +59,7 @@ std::vector<std::unique_ptr<SimulatedNode>> clients; int successful=0;
     CHECK(server.GetInboundPeerCount()<=125);
 }
 
-TEST_CASE("PeerManagerTest - PeerEviction", "[peermanagertest][network]") {
+TEST_CASE("ConnectionManagerTest - PeerEviction", "[peermanagertest][network]") {
     SimulatedNetwork network(12350); SimulatedNode server(1,&network);
     std::vector<std::unique_ptr<SimulatedNode>> clients; for(int i=0;i<126;i++){ clients.push_back(std::make_unique<SimulatedNode>(100+i,&network)); clients.back()->ConnectTo(1);} 
 TestOrchestrator orch(&network);

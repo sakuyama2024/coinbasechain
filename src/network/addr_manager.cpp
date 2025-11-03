@@ -1,12 +1,9 @@
 #include "network/addr_manager.hpp"
 #include "util/logging.hpp"
 #include "util/time.hpp"
-#include "util/sha256.hpp"
 #include <algorithm>
 #include <fstream>
-#include <iomanip>
 #include <nlohmann/json.hpp>
-#include <sstream>
 #include <filesystem>
 #include <fcntl.h>
 #include <unistd.h>
@@ -40,19 +37,6 @@ static constexpr uint32_t SELECT_COOLDOWN_SEC = 600;      // 10 minutes
 static constexpr int SELECT_ATTEMPT_BYPASS = 30;
 
 // AddrInfo implementation
-std::string AddrInfo::get_key() const {
-  std::stringstream ss;
-
-  // Convert IP bytes to string
-  for (size_t i = 0; i < 16; i++) {
-    ss << std::hex << std::setw(2) << std::setfill('0')
-       << static_cast<int>(address.ip[i]);
-  }
-  ss << ":" << std::dec << address.port;
-
-  return ss.str();
-}
-
 bool AddrInfo::is_stale(uint32_t now) const {
   if (timestamp == 0 || timestamp > now) return false; // avoid underflow and treat future/zero as not stale
   return (now - timestamp) > (STALE_AFTER_DAYS * SECONDS_PER_DAY);
@@ -80,6 +64,17 @@ uint32_t AddressManager::now() const {
   return static_cast<uint32_t>(util::GetTime());
 }
 
+std::mt19937 AddressManager::make_request_rng() {
+  // SECURITY: Per-request entropy prevents offline seed brute-force attacks
+  // An attacker observing getaddr responses could brute-force a static seed,
+  // then predict future address selections to enable eclipse attacks.
+  //
+  // Bitcoin Core pattern: mix base RNG state with time for each request
+  // Reference: FastRandomContext in Bitcoin Core's random.cpp
+  std::seed_seq seq{rng_(), static_cast<uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count())};
+  return std::mt19937(seq);
+}
+
 bool AddressManager::add(const protocol::NetworkAddress &addr,
                          uint32_t timestamp) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -100,7 +95,7 @@ bool AddressManager::add_internal(const protocol::NetworkAddress &addr,
   if (eff_ts > now_s || now_s - eff_ts > TEN_YEARS) eff_ts = now_s;
 
   AddrInfo info(addr, eff_ts);
-  std::string key = info.get_key();
+  AddrKey key(addr);
 
   // Check if already in tried table
   if (auto it = tried_.find(key); it != tried_.end()) {
@@ -147,8 +142,7 @@ size_t AddressManager::add_multiple(
 void AddressManager::attempt(const protocol::NetworkAddress &addr) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  AddrInfo probe(addr);
-  std::string key = probe.get_key();
+  AddrKey key(addr);
   uint32_t t = now();
 
   // Update in new table
@@ -167,45 +161,41 @@ void AddressManager::attempt(const protocol::NetworkAddress &addr) {
 void AddressManager::good(const protocol::NetworkAddress &addr) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  AddrInfo info(addr);
-  std::string key = info.get_key();
+  AddrKey key(addr);
   uint32_t current_time = now();
 
-  LOG_NET_TRACE("AddressManager::good() called for address: {}", key);
+  // Note: key logging removed (binary data not printable)
 
   // Check if in new table
   auto new_it = new_.find(key);
   if (new_it != new_.end()) {
     // Move from new to tried
-    LOG_NET_TRACE("Moving address {} from 'new' to 'tried' table", key);
     new_it->second.tried = true;
     new_it->second.last_success = current_time;
     new_it->second.attempts = 0; // Reset failure count
 
     tried_[key] = new_it->second;
     new_.erase(new_it);
-    LOG_NET_TRACE("Address {} successfully moved to 'tried'. New size: {}, Tried size: {}",
-                  key, new_.size(), tried_.size());
+    LOG_NET_TRACE("Address moved from 'new' to 'tried'. New size: {}, Tried size: {}",
+                  new_.size(), tried_.size());
     return;
   }
 
   // Already in tried table
   auto tried_it = tried_.find(key);
   if (tried_it != tried_.end()) {
-    LOG_NET_TRACE("Updating existing address {} in 'tried' table", key);
     tried_it->second.last_success = current_time;
     tried_it->second.attempts = 0; // Reset failure count
     return;
   }
 
-  LOG_NET_WARN("AddressManager::good() called for unknown address: {}", key);
+  LOG_NET_WARN("AddressManager::good() called for unknown address");
 }
 
 void AddressManager::failed(const protocol::NetworkAddress &addr) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  AddrInfo info(addr);
-  std::string key = info.get_key();
+  AddrKey key(addr);
 
   // Update in new table
   auto new_it = new_.find(key);
@@ -236,9 +226,12 @@ void AddressManager::failed(const protocol::NetworkAddress &addr) {
 std::optional<protocol::NetworkAddress> AddressManager::select() {
   std::lock_guard<std::mutex> lock(mutex_);
 
+  // SECURITY: Use per-request RNG to prevent seed prediction attacks
+  auto local_rng = make_request_rng();
+
   // Prefer tried addresses (SELECT_TRIED_BIAS_PERCENT% of the time)
   std::uniform_int_distribution<int> dist(0, 99);
-  bool use_tried = !tried_.empty() && (dist(rng_) < SELECT_TRIED_BIAS_PERCENT || new_.empty());
+  bool use_tried = !tried_.empty() && (dist(local_rng) < SELECT_TRIED_BIAS_PERCENT || new_.empty());
 
   const uint32_t now_ts = now();
 
@@ -254,7 +247,7 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
     const size_t max_checks = std::min<size_t>(tried_.size(), SELECT_MAX_CHECKS);
     for (size_t i = 0; i < max_checks; ++i) {
       auto it = tried_.begin();
-      std::advance(it, idx_dist(rng_));
+      std::advance(it, idx_dist(local_rng));
       if (ok(it->second)) {
         return it->second.address;
       }
@@ -265,19 +258,19 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
       const size_t n_checks = std::min<size_t>(new_.size(), SELECT_MAX_CHECKS);
       for (size_t i = 0; i < n_checks; ++i) {
         auto itn = new_.begin();
-        std::advance(itn, n_idx(rng_));
+        std::advance(itn, n_idx(local_rng));
         if (ok(itn->second)) {
           return itn->second.address;
         }
       }
       // Fallback to any NEW if all failed ok()
       auto itn = new_.begin();
-      std::advance(itn, n_idx(rng_));
+      std::advance(itn, n_idx(local_rng));
       return itn->second.address;
     }
     // As last resort, pick any tried (even if under cooldown)
     auto it = tried_.begin();
-    std::advance(it, idx_dist(rng_));
+    std::advance(it, idx_dist(local_rng));
     return it->second.address;
   }
 
@@ -286,7 +279,7 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
     const size_t max_checks = std::min<size_t>(new_.size(), SELECT_MAX_CHECKS);
     for (size_t i = 0; i < max_checks; ++i) {
       auto it = new_.begin();
-      std::advance(it, idx_dist(rng_));
+      std::advance(it, idx_dist(local_rng));
       if (ok(it->second)) {
         return it->second.address;
       }
@@ -297,19 +290,19 @@ std::optional<protocol::NetworkAddress> AddressManager::select() {
       const size_t t_checks = std::min<size_t>(tried_.size(), SELECT_MAX_CHECKS);
       for (size_t i = 0; i < t_checks; ++i) {
         auto itt = tried_.begin();
-        std::advance(itt, t_idx(rng_));
+        std::advance(itt, t_idx(local_rng));
         if (ok(itt->second)) {
           return itt->second.address;
         }
       }
       // Fallback to any TRIED if all failed ok()
       auto itt = tried_.begin();
-      std::advance(itt, t_idx(rng_));
+      std::advance(itt, t_idx(local_rng));
       return itt->second.address;
     }
     // Finally fallback to any NEW
     auto it = new_.begin();
-    std::advance(it, idx_dist(rng_));
+    std::advance(it, idx_dist(local_rng));
     return it->second.address;
   }
 
@@ -326,10 +319,13 @@ AddressManager::select_new_for_feeler() {
     return std::nullopt;
   }
 
+  // SECURITY: Use per-request RNG to prevent seed prediction attacks
+  auto local_rng = make_request_rng();
+
   // Select random address from "new" table only
   std::uniform_int_distribution<size_t> idx_dist(0, new_.size() - 1);
   auto it = new_.begin();
-  std::advance(it, idx_dist(rng_));
+  std::advance(it, idx_dist(local_rng));
   return it->second.address;
 }
 
@@ -362,8 +358,10 @@ AddressManager::get_addresses(size_t max_count) {
     result.push_back({info.timestamp, info.address});
   }
 
-  // Shuffle for privacy
-  std::shuffle(result.begin(), result.end(), rng_);
+  // SECURITY: Use per-request RNG to prevent seed prediction attacks
+  // Shuffle for privacy (prevents enumeration of address table order)
+  auto local_rng = make_request_rng();
+  std::shuffle(result.begin(), result.end(), local_rng);
 
   return result;
 }
@@ -451,19 +449,9 @@ bool AddressManager::Save(const std::string &filepath) {
     }
     root["new"] = new_array;
 
-    // Optional integrity checksum over tried+new arrays
-    try {
-      std::string payload = tried_array.dump() + new_array.dump();
-      unsigned char hash[CSHA256::OUTPUT_SIZE];
-      CSHA256().Write(reinterpret_cast<const unsigned char*>(payload.data()), payload.size()).Finalize(hash);
-      nlohmann::json checksum_arr = nlohmann::json::array();
-      for (size_t i = 0; i < CSHA256::OUTPUT_SIZE; ++i) checksum_arr.push_back(hash[i]);
-      root["checksum"] = checksum_arr;
-    } catch (...) {
-      // If checksum calculation fails, proceed without it
-    }
-
     // Atomic write: write to temp then rename (with fsync for durability)
+    // Rely on nlohmann::json parser error detection instead of manual checksum
+    // (checksums over JSON text are fragile to whitespace/key-order changes)
     const std::string tmp = filepath + ".tmp";
     std::string data = root.dump(2);
 
@@ -558,35 +546,8 @@ bool AddressManager::Load(const std::string &filepath) {
       return false;
     }
 
-    // Verify optional checksum
-    bool checksum_ok = true;
-    if (root.contains("checksum") && root["checksum"].is_array()) {
-      try {
-        std::string payload = (root.contains("tried") ? root["tried"].dump() : std::string()) +
-                              (root.contains("new") ? root["new"].dump() : std::string());
-        unsigned char hash[CSHA256::OUTPUT_SIZE];
-        CSHA256().Write(reinterpret_cast<const unsigned char*>(payload.data()), payload.size()).Finalize(hash);
-        const auto& arr = root["checksum"];
-        if (arr.size() != CSHA256::OUTPUT_SIZE) {
-          checksum_ok = false;
-        } else {
-          for (size_t i = 0; i < CSHA256::OUTPUT_SIZE; ++i) {
-            uint32_t v = arr[i].get<uint32_t>();
-            if (v > 255 || static_cast<unsigned char>(v) != hash[i]) { checksum_ok = false; break; }
-          }
-        }
-      } catch (...) {
-        checksum_ok = false;
-      }
-      if (!checksum_ok) {
-        LOG_NET_ERROR("Peer address file checksum mismatch; refusing to load {}");
-        tried_.clear();
-        new_.clear();
-        return false;
-      }
-    } else {
-      LOG_NET_DEBUG("Peers file has no checksum (accepting for backwards compatibility)");
-    }
+    // Rely on nlohmann::json parser error detection for corruption
+    // (manual checksums over JSON text are fragile to whitespace/key-order changes)
 
     // Clear existing data
     tried_.clear();
@@ -615,7 +576,7 @@ bool AddressManager::Load(const std::string &filepath) {
         info.attempts = addr_json["attempts"].get<int>();
         info.tried = true;
 
-        tried_[info.get_key()] = info;
+        tried_[AddrKey(addr)] = info;
       }
     }
 
@@ -642,7 +603,7 @@ bool AddressManager::Load(const std::string &filepath) {
         info.attempts = addr_json["attempts"].get<int>();
         info.tried = false;
 
-        new_[info.get_key()] = info;
+        new_[AddrKey(addr)] = info;
       }
     }
 

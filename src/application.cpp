@@ -1,5 +1,6 @@
 #include "application.hpp"
 #include "chain/randomx_pow.hpp"
+#include "network/peer_discovery_manager.hpp"
 #include "util/fs_lock.hpp"
 #include "util/logging.hpp"
 #include "util/time.hpp"
@@ -240,7 +241,7 @@ void Application::shutdown() {
   if (network_manager_) {
     LOG_INFO("Saving peer addresses to disk...");
     std::string peers_file = (config_.datadir / "peers.json").string();
-    if (!network_manager_->address_manager().Save(peers_file)) {
+    if (!network_manager_->discovery_manager().SaveAddresses(peers_file)) {
       LOG_ERROR("Failed to save peer addresses");
     }
   }
@@ -357,7 +358,7 @@ bool Application::init_network() {
 
   // Load peer addresses from disk
   std::string peers_file = (config_.datadir / "peers.json").string();
-  network_manager_->address_manager().Load(peers_file);
+  network_manager_->discovery_manager().LoadAddresses(peers_file);
 
 
   return true;
@@ -463,7 +464,7 @@ void Application::save_peers() {
   std::string peers_file = (config_.datadir / "peers.json").string();
   LOG_DEBUG("Periodic save: saving peer addresses to {}", peers_file);
 
-  if (!network_manager_->address_manager().Save(peers_file)) {
+  if (!network_manager_->discovery_manager().SaveAddresses(peers_file)) {
     LOG_ERROR("Periodic peer save failed");
   }
 }

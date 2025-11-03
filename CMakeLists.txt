@@ -222,12 +222,15 @@ add_library(network STATIC
     src/network/message.cpp
     src/network/peer.cpp
     src/network/addr_manager.cpp
-    src/network/peer_manager.cpp
+    src/network/ban_manager.cpp
+    src/network/misbehavior_manager.cpp
+    src/network/peer_lifecycle_manager.cpp
     src/network/anchor_manager.cpp
     src/network/header_sync_manager.cpp
     src/network/block_relay_manager.cpp
-    src/network/message_router.cpp
+    src/network/blockchain_sync_manager.cpp
     src/network/message_dispatcher.cpp
+    src/network/peer_discovery_manager.cpp
     src/network/network_manager.cpp
     src/network/real_transport.cpp
     # src/network/simulated_transport.cpp  # Not implemented yet
@@ -328,7 +331,7 @@ add_executable(coinbasechain_tests
     test/unit/protocol_tests.cpp
     test/unit/banman_tests.cpp
     test/unit/message_tests.cpp
-    test/unit/peer_manager_tests.cpp
+    test/unit/connection_manager_tests.cpp
     test/unit/message_router_tests.cpp
     test/unit/miner_tests.cpp
     # Integration tests

@@ -352,40 +352,9 @@ TEST_CASE("AddressManager persistence", "[network][addrman]") {
     std::filesystem::remove(test_file);
 }
 
-TEST_CASE("AddressManager persistence checksum tamper detection", "[network][addrman]") {
-    std::filesystem::path test_file = std::filesystem::temp_directory_path() / "addrman_checksum_test.json";
-    std::filesystem::remove(test_file);
-
-    AddressManager addrman1;
-    for (int i = 0; i < 5; ++i) {
-        auto a = MakeAddress("203.0.113." + std::to_string(10 + i), 8333);
-        addrman1.add(a);
-        if (i % 2 == 0) addrman1.good(a);
-    }
-    REQUIRE(addrman1.Save(test_file.string()));
-
-    // Tamper file: flip one digit in port field text
-    {
-        std::string s;
-        {
-            std::ifstream f(test_file);
-            REQUIRE(f.is_open());
-            s.assign((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-        }
-        auto pos = s.find("\"port\": 8333");
-        if (pos != std::string::npos) s.replace(pos, std::string("\"port\": 8333").size(), "\"port\": 8334");
-        std::ofstream f2(test_file, std::ios::trunc);
-        REQUIRE(f2.is_open());
-        f2 << s;
-    }
-
-    AddressManager addrman2;
-    // Expect checksum mismatch -> Load returns false and nothing loaded
-    REQUIRE_FALSE(addrman2.Load(test_file.string()));
-    REQUIRE(addrman2.size() == 0);
-
-    std::filesystem::remove(test_file);
-}
+// NOTE: Checksum tamper detection test removed - we no longer use checksums for
+// persistence (they are fragile to whitespace/key-order changes). We rely on
+// nlohmann::json parser error detection for malformed JSON instead.
 
 TEST_CASE("AddressManager timestamp clamping and validation", "[network][addrman]") {
     AddressManager addrman;

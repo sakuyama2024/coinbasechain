@@ -4,6 +4,7 @@
 #include "infra/simulated_network.hpp"
 #include "infra/simulated_node.hpp"
 #include "network/network_manager.hpp"
+#include "network/peer_discovery_manager.hpp"
 #include "network/addr_manager.hpp"
 #include "network/protocol.hpp"
 #include "network/message.hpp"
@@ -223,11 +224,11 @@ TEST_CASE("Peer discovery via ADDR messages populates AddressManager", "[network
 TEST_CASE("attempt_outbound_connections uses addresses from AddressManager", "[network][peer_discovery][integration]") {
     SimulatedNetwork net(2611);
     SimulatedNode node1(1, &net); node1.SetBypassPOWValidation(true);
-    auto& nm = node1.GetNetworkManager(); auto& addrman = nm.address_manager();
+    auto& nm = node1.GetNetworkManager(); auto& discovery = nm.discovery_manager();
     NetworkAddress addr1 = MakeIPv4Address("192.168.1.100", 9590);
     NetworkAddress addr2 = MakeIPv4Address("192.168.1.101", 9590);
-    REQUIRE(addrman.add(addr1)); REQUIRE(addrman.add(addr2));
-    REQUIRE(addrman.size() == 2);
+    REQUIRE(discovery.Add(addr1)); REQUIRE(discovery.Add(addr2));
+    REQUIRE(discovery.Size() == 2);
 }
 
 // Regression/documentation

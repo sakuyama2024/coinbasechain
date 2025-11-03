@@ -7,7 +7,7 @@
 #include "chain/chainparams.hpp"
 #include "network/message.hpp"
 #include "test_orchestrator.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 #include <cstring>
 
 using namespace coinbasechain;

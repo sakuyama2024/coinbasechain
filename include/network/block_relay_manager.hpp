@@ -1,7 +1,7 @@
 #pragma once
 
 #include "network/peer.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 #include "network/message.hpp"
 #include "util/uint.hpp"
 #include <memory>
@@ -28,7 +28,7 @@ class HeaderSyncManager;
 class BlockRelayManager {
 public:
   BlockRelayManager(validation::ChainstateManager& chainstate,
-                    PeerManager& peer_mgr,
+                    PeerLifecycleManager& peer_mgr,
                     HeaderSyncManager* header_sync);
 
   // Announce current tip to all connected peers (adds to their queues)
@@ -49,11 +49,11 @@ public:
 
 private:
   validation::ChainstateManager& chainstate_manager_;
-  PeerManager& peer_manager_;
+  PeerLifecycleManager& peer_manager_;
   HeaderSyncManager* header_sync_manager_; // Optional - for INV->GETHEADERS coordination
 
   // Note: Per-peer announcement tracking (last announced block/time) is now stored
-  // in PeerManager's consolidated PerPeerState. No separate maps or mutex needed.
+  // in PeerLifecycleManager's consolidated PerPeerState. No separate maps or mutex needed.
   // Cleanup is automatic via PerPeerState removal - no subscription needed.
 };
 

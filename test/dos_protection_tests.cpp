@@ -2,7 +2,7 @@
 // Test suite for DoS protection (misbehavior scoring, peer management)
 
 #include "catch_amalgamated.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 #include "network/peer.hpp"
 #include "network/addr_manager.hpp"
 #include <boost/asio.hpp>
@@ -21,10 +21,10 @@ static PeerPtr create_test_peer(boost::asio::io_context &io_context,
     return peer;
 }
 
-TEST_CASE("PeerManager basic operations", "[dos_protection]") {
+TEST_CASE("ConnectionManager basic operations", "[dos_protection]") {
     boost::asio::io_context io_context;
     AddressManager addr_manager;
-    PeerManager pm(io_context, addr_manager);
+    ConnectionManager pm(io_context, addr_manager);
 
     SECTION("Add and remove peers") {
         REQUIRE(pm.peer_count() == 0);
@@ -58,7 +58,7 @@ TEST_CASE("PeerManager basic operations", "[dos_protection]") {
 TEST_CASE("Misbehavior scoring - instant disconnect penalties", "[dos_protection]") {
     boost::asio::io_context io_context;
     AddressManager addr_manager;
-    PeerManager pm(io_context, addr_manager);
+    ConnectionManager pm(io_context, addr_manager);
 
     SECTION("INVALID_POW = instant disconnect") {
         auto peer = create_test_peer(io_context, "192.168.1.1");
@@ -94,7 +94,7 @@ TEST_CASE("Misbehavior scoring - instant disconnect penalties", "[dos_protection
 TEST_CASE("Misbehavior scoring - real-world scenarios", "[dos_protection]") {
     boost::asio::io_context io_context;
     AddressManager addr_manager;
-    PeerManager pm(io_context, addr_manager);
+    ConnectionManager pm(io_context, addr_manager);
 
     SECTION("Non-continuous headers (5x = disconnect)") {
         auto peer = create_test_peer(io_context, "192.168.1.1");
@@ -172,7 +172,7 @@ TEST_CASE("Misbehavior scoring - real-world scenarios", "[dos_protection]") {
 TEST_CASE("Permission flags - NoBan protection", "[dos_protection]") {
     boost::asio::io_context io_context;
     AddressManager addr_manager;
-    PeerManager pm(io_context, addr_manager);
+    ConnectionManager pm(io_context, addr_manager);
 
     SECTION("Normal peer can be banned") {
         auto peer = create_test_peer(io_context, "192.168.1.1");
@@ -210,7 +210,7 @@ TEST_CASE("Permission flags - NoBan protection", "[dos_protection]") {
 TEST_CASE("Permission flags - Manual connection", "[dos_protection]") {
     boost::asio::io_context io_context;
     AddressManager addr_manager;
-    PeerManager pm(io_context, addr_manager);
+    ConnectionManager pm(io_context, addr_manager);
 
     SECTION("Manual peer can still be banned (only NoBan prevents it)") {
         auto peer = create_test_peer(io_context, "192.168.1.1");
@@ -233,7 +233,7 @@ TEST_CASE("Permission flags - Manual connection", "[dos_protection]") {
 TEST_CASE("Unconnecting headers tracking", "[dos_protection]") {
     boost::asio::io_context io_context;
     AddressManager addr_manager;
-    PeerManager pm(io_context, addr_manager);
+    ConnectionManager pm(io_context, addr_manager);
 
     auto peer = create_test_peer(io_context, "192.168.1.1");
     int peer_id = pm.add_peer(peer, NetPermissionFlags::None, "192.168.1.1");
@@ -275,7 +275,7 @@ TEST_CASE("Unconnecting headers tracking", "[dos_protection]") {
 TEST_CASE("Multi-peer scenarios", "[dos_protection]") {
     boost::asio::io_context io_context;
     AddressManager addr_manager;
-    PeerManager pm(io_context, addr_manager);
+    ConnectionManager pm(io_context, addr_manager);
 
     SECTION("Scores are tracked independently per peer") {
         auto peer1 = create_test_peer(io_context, "192.168.1.1");
@@ -331,7 +331,7 @@ TEST_CASE("Multi-peer scenarios", "[dos_protection]") {
 TEST_CASE("Edge cases and boundary conditions", "[dos_protection]") {
     boost::asio::io_context io_context;
     AddressManager addr_manager;
-    PeerManager pm(io_context, addr_manager);
+    ConnectionManager pm(io_context, addr_manager);
 
     SECTION("Exact threshold value triggers disconnect") {
         auto peer = create_test_peer(io_context, "192.168.1.1");

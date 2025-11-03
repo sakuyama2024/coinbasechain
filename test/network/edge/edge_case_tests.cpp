@@ -72,5 +72,5 @@ TEST_CASE("Stale tip management - Node continues operating with stale tip", "[ne
     CHECK(node1.GetTipHash() != tip);
 }
 
-// Note: PeerManager persistence tests have been moved to test/unit/banman_tests.cpp
+// Note: ConnectionManager persistence tests have been moved to test/unit/banman_tests.cpp
 // This file now focuses only on network edge cases (slow peer eviction, stale tip management)

@@ -2,7 +2,9 @@
 #include <algorithm>
 #include <cstring>
 #include <boost/asio/ip/address.hpp>
+#include <boost/asio/ip/address_v4.hpp>
 #include <boost/asio/ip/address_v6.hpp>
+#include <boost/asio/ip/v6_only.hpp>
 
 namespace coinbasechain {
 namespace protocol {
@@ -140,6 +142,27 @@ InventoryVector::InventoryVector() : type(InventoryType::ERROR) {
 InventoryVector::InventoryVector(InventoryType t,
                                  const std::array<uint8_t, 32> &h)
     : type(t), hash(h) {}
+
+// Convert NetworkAddress to IP string (IPv4 or IPv6)
+// Returns std::nullopt if conversion fails
+std::optional<std::string> NetworkAddressToString(const NetworkAddress& addr) {
+  try {
+    // Convert 16-byte array to boost::asio IP address
+    boost::asio::ip::address_v6::bytes_type bytes;
+    std::copy(addr.ip.begin(), addr.ip.end(), bytes.begin());
+    auto v6_addr = boost::asio::ip::make_address_v6(bytes);
+
+    // Check if it's IPv4-mapped and convert if needed
+    if (v6_addr.is_v4_mapped()) {
+      return boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, v6_addr)
+                 .to_string();
+    } else {
+      return v6_addr.to_string();
+    }
+  } catch (const std::exception &) {
+    return std::nullopt;
+  }
+}
 
 } // namespace protocol
 } // namespace coinbasechain

@@ -93,11 +93,17 @@ void SimulatedNode::InitializeNetworking() {
     config.io_threads = io_threads_override_;  // 0 by default (deterministic); tests may override
     config.enable_nat = false;  // Disable NAT/UPnP in tests (would block trying to discover devices)
 
+    // Create shared_ptr wrapper for io_context (NetworkManager requires shared ownership)
+    // Use aliasing constructor with no-op deleter since SimulatedNode owns the io_context
+    auto io_context_ptr = std::shared_ptr<boost::asio::io_context>(
+        std::shared_ptr<void>{}, &io_context_
+    );
+
     network_manager_ = std::make_unique<network::NetworkManager>(
         *chainstate_,  // Pass TestChainstateManager (inherits from ChainstateManager)
         config,
         transport_,
-        &io_context_  // Pass our io_context so boost::asio::post() uses it
+        io_context_ptr  // Pass shared_ptr to our io_context
     );
 
     // Start networking
@@ -179,7 +185,7 @@ void SimulatedNode::DisconnectFrom(int peer_node_id) {
     oss << "127.0.0." << (peer_node_id % 255);
     std::string peer_addr = oss.str();
 
-    // Get peer ID by address (this returns the PeerManager map key)
+    // Get peer ID by address (this returns the ConnectionManager map key)
     auto& peer_mgr = network_manager_->peer_manager();
 
     // Search all peers to find one matching this address

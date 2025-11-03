@@ -1,5 +1,5 @@
 #include "network/anchor_manager.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 #include "network/peer.hpp"
 #include "util/logging.hpp"
 #include <nlohmann/json.hpp>
@@ -16,12 +16,8 @@
 namespace coinbasechain {
 namespace network {
 
-AnchorManager::AnchorManager(PeerManager& peer_mgr,
-                             AddressToStringCallback addr_to_str_cb,
-                             ConnectCallback connect_cb)
-    : peer_manager_(peer_mgr),
-      addr_to_string_callback_(std::move(addr_to_str_cb)),
-      connect_callback_(std::move(connect_cb)) {}
+AnchorManager::AnchorManager(PeerLifecycleManager& peer_mgr)
+    : peer_manager_(peer_mgr) {}
 
 std::vector<protocol::NetworkAddress> AnchorManager::GetAnchors() const {
   std::vector<protocol::NetworkAddress> anchors;
@@ -199,7 +195,7 @@ bool AnchorManager::SaveAnchors(const std::string &filepath) {
   }
 }
 
-bool AnchorManager::LoadAnchors(const std::string &filepath) {
+std::vector<protocol::NetworkAddress> AnchorManager::LoadAnchors(const std::string &filepath) {
   using json = nlohmann::json;
 
   try {
@@ -207,7 +203,7 @@ bool AnchorManager::LoadAnchors(const std::string &filepath) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
       LOG_NET_DEBUG("No anchors file found at {}", filepath);
-      return false; // Indicate no anchors loaded
+      return {}; // No anchors to load
     }
 
     // Parse JSON
@@ -218,7 +214,7 @@ bool AnchorManager::LoadAnchors(const std::string &filepath) {
       LOG_NET_WARN("Failed to parse anchors file {}: {}", filepath, e.what());
       file.close();
       std::filesystem::remove(filepath);
-      return false;
+      return {};
     }
     file.close();
 
@@ -227,7 +223,7 @@ bool AnchorManager::LoadAnchors(const std::string &filepath) {
     if (version != 1 || !root.contains("anchors") || !root["anchors"].is_array()) {
       LOG_NET_WARN("Invalid anchors file format/version, deleting {}", filepath);
       std::filesystem::remove(filepath);
-      return false;
+      return {};
     }
 
     const json &anchors_array = root["anchors"];
@@ -277,17 +273,7 @@ bool AnchorManager::LoadAnchors(const std::string &filepath) {
       if (anchors.size() == 2) break; // cap attempts
     }
 
-    LOG_NET_INFO("Loaded {} anchor addresses from {}", anchors.size(), filepath);
-
-    for (const auto &addr : anchors) {
-      auto maybe_ip_str = addr_to_string_callback_(addr);
-      if (!maybe_ip_str) {
-        LOG_NET_WARN("Failed to convert anchor address to string, skipping");
-        continue;
-      }
-      LOG_NET_INFO("Reconnecting to anchor: {}:{}", *maybe_ip_str, addr.port);
-      connect_callback_(addr, true /* noban */);
-    }
+    LOG_NET_INFO("Loaded {} anchor addresses from {} (passive - caller will connect)", anchors.size(), filepath);
 
     // Single-use file: delete after reading
     std::error_code ec;
@@ -298,12 +284,12 @@ bool AnchorManager::LoadAnchors(const std::string &filepath) {
       LOG_NET_DEBUG("Deleted anchors file after reading");
     }
 
-    return !anchors.empty();
+    return anchors;
 
   } catch (const std::exception &e) {
     LOG_NET_ERROR("Exception during LoadAnchors: {}", e.what());
     try { std::filesystem::remove(filepath); } catch (...) {}
-    return false;
+    return {};
   }
 }
 

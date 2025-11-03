@@ -1,7 +1,7 @@
 #pragma once
 
 /*
- PeerManager — unified peer lifecycle and misbehavior tracking for CoinbaseChain
+ ConnectionManager — unified peer lifecycle and misbehavior tracking for CoinbaseChain
 
  Purpose
  - Maintain a registry of active peer connections (both inbound and outbound)
@@ -16,6 +16,7 @@
  3. Misbehavior tracking: score accumulation, thresholds, disconnect decisions
  4. Permission system: NoBan and Manual flags to protect certain connections
  5. Integration: publishes NetworkNotifications for peer events
+ 6. Address lifecycle: reports connection outcomes to DiscoveryManager (Phase 2)
 
  Misbehavior system
  - Each peer has a misbehavior score; penalties are applied for protocol violations
@@ -52,10 +53,11 @@
  - Query methods: GetMisbehaviorScore(), ShouldDisconnect() for testing/debugging
  - NO direct penalty manipulation from external code; all penalties are internal
 
- AddressManager integration
- - On successful peer addition: addr_manager_.attempt() is called
- - On peer removal: addr_manager_.good() or failed() based on disconnect reason
- - PeerManager does NOT manage address selection; that's AddressManager's job
+ DiscoveryManager integration (Phase 2)
+ - DiscoveryManager is injected after construction via SetDiscoveryManager()
+ - On successful peer addition: discovery_manager_->Attempt() is called
+ - On peer removal: discovery_manager_->Good() or Failed() based on disconnect reason
+ - ConnectionManager does NOT manage address selection; that's DiscoveryManager's job
 
  Threading
  - All public methods are thread-safe (protected by mutex_)
@@ -79,6 +81,8 @@
 */
 
 #include "network/addr_manager.hpp"
+#include "network/ban_manager.hpp"
+#include "network/misbehavior_manager.hpp"
 #include "network/peer.hpp"
 #include "network/peer_misbehavior.hpp"  // For PeerMisbehaviorData, NetPermissionFlags, etc.
 #include "network/peer_state.hpp"
@@ -94,10 +98,17 @@
 namespace coinbasechain {
 namespace network {
 
+// Forward declarations
+class BanManager;
+class MisbehaviorManager;
+class PeerDiscoveryManager;
+class Transport;
+enum class ConnectionResult;  // From network_manager.hpp
+
 // Note: DoS constants, MisbehaviorPenalty, NetPermissionFlags, and PeerMisbehaviorData
 // have been moved to peer_misbehavior.hpp to avoid circular dependencies with peer_state.hpp
 
-class PeerManager {
+class PeerLifecycleManager {
 public:
   struct Config {
     size_t max_outbound_peers;    // Max outbound connections
@@ -110,14 +121,18 @@ public:
           target_outbound_peers(protocol::DEFAULT_MAX_OUTBOUND_CONNECTIONS) {}
   };
 
-  explicit PeerManager(boost::asio::io_context &io_context,
-                       AddressManager &addr_manager,
-                       const Config &config = Config{});
+  explicit PeerLifecycleManager(boost::asio::io_context &io_context,
+                       const Config &config = Config{},
+                       const std::string& datadir = "");
 
   // Max lifetime for a feeler connection before forced removal (defense-in-depth)
   static constexpr int FEELER_MAX_LIFETIME_SEC = 120;
 
-  ~PeerManager();
+  ~PeerLifecycleManager();
+
+  // Set PeerDiscoveryManager (must be called after construction to enable address tracking)
+  // Phase 2: Breaks circular dependency - PeerLifecycleManager created first, then PeerDiscoveryManager, then inject back
+  void SetDiscoveryManager(PeerDiscoveryManager* disc_mgr);
 
   // Shutdown: disable callbacks and mark as shutting down to avoid UAF during destructor
   void Shutdown();
@@ -137,7 +152,7 @@ public:
   int add_peer(PeerPtr peer, NetPermissionFlags permissions = NetPermissionFlags::None,
                const std::string &address = "");
 
-  // Remove a peer by ID
+  // Remove a peer by ID (idempotent - safe to call multiple times with same ID)
   void remove_peer(int peer_id);
 
   // Get a peer by ID
@@ -187,9 +202,8 @@ public:
   // Test-only: set a peer's creation time (used to simulate feeler aging)
   void TestOnlySetPeerCreatedAt(int peer_id, std::chrono::steady_clock::time_point tp);
 
-  // === Misbehavior Tracking (Public API) ===
-  // These are the ONLY methods that external code (like HeaderSync) should call
-  // All penalty application is handled internally
+  // === Misbehavior Tracking (delegated to MisbehaviorManager) ===
+  // Public API for reporting protocol violations
 
   // Track unconnecting headers from a peer
   void IncrementUnconnectingHeaders(int peer_id);
@@ -211,37 +225,16 @@ public:
   int GetMisbehaviorScore(int peer_id) const;
   bool ShouldDisconnect(int peer_id) const;
 
-  // === Ban Management (migrated from BanMan) ===
+  // === Ban Management (delegated to BanManager) ===
   // Two-tier system:
   // 1. Manual bans: Persistent, stored on disk, permanent or timed
   // 2. Discouragement: Temporary, in-memory, for misbehavior
-
-  // Ban entry structure (persistent bans)
-  struct CBanEntry {
-    static constexpr int CURRENT_VERSION = 1;
-    int nVersion{CURRENT_VERSION};
-    int64_t nCreateTime{0}; // Unix timestamp when ban was created
-    int64_t nBanUntil{0};   // Unix timestamp when ban expires (0 = permanent)
-
-    CBanEntry() = default;
-    CBanEntry(int64_t create_time, int64_t ban_until)
-        : nCreateTime(create_time), nBanUntil(ban_until) {}
-
-    bool IsExpired(int64_t now) const {
-      // nBanUntil == 0 means permanent ban
-      return nBanUntil > 0 && now >= nBanUntil;
-    }
-  };
-
-  // Policy constants
-  static constexpr int64_t DISCOURAGEMENT_DURATION = 24 * 60 * 60; // 24h
-  static constexpr size_t MAX_DISCOURAGED = 10000;
 
   // Persistent ban management
   void Ban(const std::string &address, int64_t ban_time_offset = 0);
   void Unban(const std::string &address);
   bool IsBanned(const std::string &address) const;
-  std::map<std::string, CBanEntry> GetBanned() const;
+  std::map<std::string, BanManager::CBanEntry> GetBanned() const;
   void ClearBanned();
   void SweepBanned();
 
@@ -287,15 +280,132 @@ public:
   // Get all peers' learned addresses (for iteration in GETADDR fallback)
   std::vector<std::pair<int, LearnedMap>> GetAllLearnedAddresses() const;
 
-private:
-  // === Internal Misbehavior Implementation ===
-  // These should NEVER be called by external code
+  // === Connection Management ===
 
-  // Record misbehavior for a peer
-  // Returns true if peer should be disconnected
-  bool Misbehaving(int peer_id, int penalty, const std::string &reason);
+  // Callback types for AttemptOutboundConnections
+  using ConnectCallback = std::function<ConnectionResult(const protocol::NetworkAddress&)>;
+  using IsRunningCallback = std::function<bool()>;
+
+  /**
+   * Attempt to establish new outbound connections
+   * Coordinates address selection, duplicate checking, and connection attempts
+   *
+   * @param is_running Callback to check if networking is still running
+   * @param connect_fn Callback to initiate a connection to an address
+   */
+  void AttemptOutboundConnections(IsRunningCallback is_running, ConnectCallback connect_fn);
+
+  // Callback types for AttemptFeelerConnection
+  using SetupMessageHandlerCallback = std::function<void(Peer*)>;
+  using GetTransportCallback = std::function<std::shared_ptr<Transport>()>;
+
+  /**
+   * Attempt a feeler connection to validate addresses in the "new" table
+   * Feeler connections are short-lived test connections that disconnect after handshake
+   *
+   * @param is_running Callback to check if networking is still running
+   * @param get_transport Callback to get the transport layer
+   * @param setup_handler Callback to setup message handler for the peer
+   * @param network_magic Network magic bytes for the connection
+   * @param current_height Current blockchain height for VERSION message
+   * @param local_nonce Unique nonce for self-connection detection
+   */
+  void AttemptFeelerConnection(IsRunningCallback is_running,
+                                GetTransportCallback get_transport,
+                                SetupMessageHandlerCallback setup_handler,
+                                uint32_t network_magic,
+                                int32_t current_height,
+                                uint64_t local_nonce);
+
+  /**
+   * Connect to anchor peers for eclipse attack resistance
+   * Anchors are the last 2-3 outbound peers from the previous session
+   *
+   * @param anchors List of anchor addresses to connect to
+   * @param connect_fn Callback to initiate a connection
+   */
+  void ConnectToAnchors(const std::vector<protocol::NetworkAddress>& anchors,
+                        ConnectCallback connect_fn);
+
+  /**
+   * Check if incoming nonce collides with our local nonce or any existing peer's remote nonce
+   * Bitcoin Core pattern (net.cpp:370-378): Detect self-connection and duplicate connections
+   *
+   * Checks:
+   * 1. Against local_nonce (self-connection: we connected to ourselves)
+   * 2. Against all existing peers' remote nonces (duplicate connection or nonce collision)
+   *
+   * @param nonce Nonce from incoming VERSION message
+   * @param local_nonce Our node's local nonce
+   * @return true if OK (unique nonce), false if collision detected
+   */
+  bool CheckIncomingNonce(uint64_t nonce, uint64_t local_nonce);
+
+  // Callbacks for ConnectTo method
+  using OnGoodCallback = std::function<void(const protocol::NetworkAddress&)>;
+  using OnAttemptCallback = std::function<void(const protocol::NetworkAddress&)>;
+
+  /**
+   * Connect to a peer address (main outbound connection logic)
+   * Performs all checks (banned, discouraged, already connected, slot availability)
+   * and creates the peer with async transport connection
+   *
+   * @param addr Address to connect to
+   * @param permissions Permission flags for this connection
+   * @param transport Transport layer for connection
+   * @param on_good Callback when connection succeeds (for discovery tracking)
+   * @param on_attempt Callback when connection is attempted (for discovery tracking)
+   * @param setup_message_handler Callback to setup peer message handler
+   * @param network_magic Network magic for VERSION message
+   * @param chain_height Current chain height for VERSION message
+   * @param local_nonce Local nonce for self-connection detection
+   * @return ConnectionResult indicating success or failure reason
+   */
+  ConnectionResult ConnectTo(
+      const protocol::NetworkAddress& addr,
+      NetPermissionFlags permissions,
+      std::shared_ptr<Transport> transport,
+      OnGoodCallback on_good,
+      OnAttemptCallback on_attempt,
+      SetupMessageHandlerCallback setup_message_handler,
+      uint32_t network_magic,
+      int32_t chain_height,
+      uint64_t local_nonce
+  );
+
+  /**
+   * Handle an inbound connection
+   * Processes incoming connections, validates against bans/limits, creates peer
+   *
+   * @param connection Transport connection from remote peer
+   * @param is_running Callback to check if networking is still running
+   * @param setup_handler Callback to setup message handler for the peer
+   * @param network_magic Network magic bytes for the connection
+   * @param current_height Current blockchain height for VERSION message
+   * @param local_nonce Unique nonce for self-connection detection
+   * @param permissions Permission flags for the inbound peer
+   */
+  void HandleInboundConnection(TransportConnectionPtr connection,
+                               IsRunningCallback is_running,
+                               SetupMessageHandlerCallback setup_handler,
+                               uint32_t network_magic,
+                               int32_t current_height,
+                               uint64_t local_nonce,
+                               NetPermissionFlags permissions = NetPermissionFlags::None);
+
+  // === Protocol Message Handlers ===
+
+  /**
+   * Handle VERACK message - mark outbound peers as successful in address manager
+   *
+   * @param peer Peer that successfully completed handshake
+   * @return true if handled successfully
+   */
+  bool HandleVerack(PeerPtr peer);
+
+private:
   boost::asio::io_context &io_context_;
-  AddressManager &addr_manager_;
+  PeerDiscoveryManager* discovery_manager_{nullptr};  // Phase 2: Injected after construction to break circular dependency
   Config config_;
 
   // === State Consolidation ===
@@ -311,26 +421,11 @@ private:
   // In-progress bulk shutdown (disconnect_all); reject add_peer while true (atomic for thread-safety)
   std::atomic<bool> stopping_all_{false};
 
-  // === Ban Management State (migrated from BanMan) ===
-  // Ban persistence configuration
-  std::string ban_file_path_;
-  bool ban_auto_save_{true};
+  // === Ban Management (delegated to BanManager) ===
+  std::unique_ptr<BanManager> ban_manager_;
 
-  // Banned addresses (persistent, stored on disk)
-  mutable std::mutex banned_mutex_;
-  std::map<std::string, CBanEntry> banned_;
-
-  // Discouraged addresses (temporary, in-memory with expiry times)
-  mutable std::mutex discouraged_mutex_;
-  std::map<std::string, int64_t> discouraged_; // address -> expiry time
-
-  // Whitelist (NoBan) state
-  mutable std::mutex whitelist_mutex_;
-  std::unordered_set<std::string> whitelist_;
-
-  // Internal helper methods for ban management
-  std::string GetBanlistPath() const;
-  bool SaveBansInternal(); // Must be called with banned_mutex_ held
+  // === Misbehavior Management (delegated to MisbehaviorManager) ===
+  std::unique_ptr<MisbehaviorManager> misbehavior_manager_;
 };
 
 } // namespace network

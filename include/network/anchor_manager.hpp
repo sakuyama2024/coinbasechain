@@ -3,14 +3,12 @@
 #include "network/protocol.hpp"
 #include <string>
 #include <vector>
-#include <functional>
-#include <optional>
 
 namespace coinbasechain {
 namespace network {
 
 // Forward declarations
-class PeerManager;
+class PeerLifecycleManager;
 
 /**
  * AnchorManager - Manages anchor peer persistence for eclipse attack resistance
@@ -18,39 +16,45 @@ class PeerManager;
  * Responsibilities:
  * - Select high-quality anchor peers from current connections
  * - Save anchor peers to disk for restart recovery
- * - Load and reconnect to anchor peers on startup
+ * - Load anchor addresses from disk (passive - returns addresses, doesn't initiate connections)
  *
  * Bitcoin Core uses anchors to mitigate eclipse attacks by remembering
- * a few high-quality peers from previous sessions. On restart, we reconnect
- * to these anchors before accepting other connections, making it harder for
- * an attacker to isolate the node.
+ * a few high-quality peers from previous sessions. On restart, NetworkManager
+ * reconnects to these anchors before accepting other connections, making it
+ * harder for an attacker to isolate the node.
  *
+ * Design: AnchorManager is passive - it manages address selection and persistence,
+ * but NetworkManager is responsible for initiating connections to anchor addresses.
+ * This avoids circular dependencies and maintains clean layering.
  */
 class AnchorManager {
 public:
-  // Callback type for converting NetworkAddress to IP string
-  using AddressToStringCallback = std::function<std::optional<std::string>(const protocol::NetworkAddress&)>;
+  explicit AnchorManager(PeerLifecycleManager& peer_mgr);
 
-  // Callback type for initiating connections (second parameter: noban flag)
-  using ConnectCallback = std::function<void(const protocol::NetworkAddress&, bool noban)>;
-
-  AnchorManager(PeerManager& peer_mgr,
-                AddressToStringCallback addr_to_str_cb,
-                ConnectCallback connect_cb);
-
-  // Get current anchor peers from connected outbound peers
+  /**
+   * Get current anchor peers from connected outbound peers
+   * Selects up to 2 high-quality outbound peers based on connection age and ping time
+   */
   std::vector<protocol::NetworkAddress> GetAnchors() const;
 
-  // Save current anchors to file
+  /**
+   * Save current anchors to file
+   * Atomically writes anchor addresses to disk for recovery after restart
+   */
   bool SaveAnchors(const std::string& filepath);
 
-  // Load anchors from file and reconnect to them
-  bool LoadAnchors(const std::string& filepath);
+  /**
+   * Load anchor addresses from file (PASSIVE - does not initiate connections)
+   * Returns list of anchor addresses for NetworkManager to connect to
+   * Deletes the anchors file after reading (single-use)
+   *
+   * @param filepath Path to anchors.json file
+   * @return Vector of anchor addresses to reconnect to (empty if file not found or invalid)
+   */
+  std::vector<protocol::NetworkAddress> LoadAnchors(const std::string& filepath);
 
 private:
-  PeerManager& peer_manager_;
-  AddressToStringCallback addr_to_string_callback_;
-  ConnectCallback connect_callback_;
+  PeerLifecycleManager& peer_manager_;
 };
 
 } // namespace network

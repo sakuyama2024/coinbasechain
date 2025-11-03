@@ -1,8 +1,8 @@
 // Copyright (c) 2024 Coinbase Chain
-// PeerManager adversarial tests - tests edge cases, attack scenarios, and robustness
+// ConnectionManager adversarial tests - tests edge cases, attack scenarios, and robustness
 
 #include "catch_amalgamated.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 #include "network/addr_manager.hpp"
 #include <boost/asio.hpp>
 #include <string>
@@ -13,16 +13,17 @@ using namespace coinbasechain::network;
 class AdversarialTestFixture {
 public:
     boost::asio::io_context io_context;
-    AddressManager addr_manager;
 
-    std::unique_ptr<PeerManager> CreatePeerManager() {
-        return std::make_unique<PeerManager>(io_context, addr_manager);
+    std::unique_ptr<PeerLifecycleManager> CreatePeerLifecycleManager() {
+        // Phase 2: PeerLifecycleManager no longer requires AddressManager at construction
+        // PeerDiscoveryManager injection not needed for these ban-focused unit tests
+        return std::make_unique<PeerLifecycleManager>(io_context);
     }
 };
 
-TEST_CASE("PeerManager Adversarial - Ban Evasion", "[adversarial][banman][critical]") {
+TEST_CASE("ConnectionManager Adversarial - Ban Evasion", "[adversarial][banman][critical]") {
     AdversarialTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Different ports same IP") {
         pm->Ban("192.168.1.100:8333", 3600);
@@ -41,9 +42,9 @@ TEST_CASE("PeerManager Adversarial - Ban Evasion", "[adversarial][banman][critic
     }
 }
 
-TEST_CASE("PeerManager Adversarial - Ban List Limits", "[adversarial][banman][dos]") {
+TEST_CASE("ConnectionManager Adversarial - Ban List Limits", "[adversarial][banman][dos]") {
     AdversarialTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Ban 100 different IPs (scaled down)") {
         // Test that we can ban a large number of addresses
@@ -69,9 +70,9 @@ TEST_CASE("PeerManager Adversarial - Ban List Limits", "[adversarial][banman][do
     }
 }
 
-TEST_CASE("PeerManager Adversarial - Time Manipulation", "[adversarial][banman][timing]") {
+TEST_CASE("ConnectionManager Adversarial - Time Manipulation", "[adversarial][banman][timing]") {
     AdversarialTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Permanent ban (offset = 0)") {
         pm->Ban("192.168.1.1", 0);
@@ -92,9 +93,9 @@ TEST_CASE("PeerManager Adversarial - Time Manipulation", "[adversarial][banman][
     }
 }
 
-TEST_CASE("PeerManager Adversarial - Edge Cases", "[adversarial][banman][edge]") {
+TEST_CASE("ConnectionManager Adversarial - Edge Cases", "[adversarial][banman][edge]") {
     AdversarialTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Empty address string") {
         pm->Ban("", 3600);
@@ -117,9 +118,9 @@ TEST_CASE("PeerManager Adversarial - Edge Cases", "[adversarial][banman][edge]")
     }
 }
 
-TEST_CASE("PeerManager Adversarial - Duplicate Operations", "[adversarial][banman][idempotent]") {
+TEST_CASE("ConnectionManager Adversarial - Duplicate Operations", "[adversarial][banman][idempotent]") {
     AdversarialTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Ban same address twice") {
         pm->Ban("192.168.1.1", 3600);
@@ -145,9 +146,9 @@ TEST_CASE("PeerManager Adversarial - Duplicate Operations", "[adversarial][banma
     }
 }
 
-TEST_CASE("PeerManager Adversarial - Ban vs Discourage", "[adversarial][banman][interaction]") {
+TEST_CASE("ConnectionManager Adversarial - Ban vs Discourage", "[adversarial][banman][interaction]") {
     AdversarialTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Ban AND discourage same address") {
         pm->Ban("192.168.1.1", 3600);
@@ -189,9 +190,9 @@ TEST_CASE("PeerManager Adversarial - Ban vs Discourage", "[adversarial][banman][
     }
 }
 
-TEST_CASE("PeerManager Adversarial - Sweep Operation", "[adversarial][banman][sweep]") {
+TEST_CASE("ConnectionManager Adversarial - Sweep Operation", "[adversarial][banman][sweep]") {
     AdversarialTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Sweep removes only expired (no-crash)") {
         pm->Ban("192.168.1.1", 3600);

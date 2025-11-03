@@ -137,7 +137,7 @@ public:
     // ============= Helper Utilities =============
     
     /**
-     * Get peer_id from PeerManager for a connected node
+     * Get peer_id from ConnectionManager for a connected node
      * Returns -1 if not found
      */
     int GetPeerId(SimulatedNode& node, SimulatedNode& peer_node);

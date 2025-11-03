@@ -3,6 +3,7 @@
 #include "infra/simulated_node.hpp"
 #include "test_orchestrator.hpp"
 #include "network/protocol.hpp"
+#include "network/peer_discovery_manager.hpp"
 
 using namespace coinbasechain;
 using namespace coinbasechain::test;
@@ -29,7 +30,7 @@ TEST_CASE("Feeler connects and auto-disconnects; no outbound slot consumed", "[n
 
     // Seed n2 in n1's new table
     auto addr2 = make_address(n2.GetAddress(), n2.GetPort());
-    n1.GetNetworkManager().address_manager().add(addr2);
+    n1.GetNetworkManager().discovery_manager().Add(addr2);
 
     size_t outbound_before = n1.GetNetworkManager().outbound_peer_count();
 

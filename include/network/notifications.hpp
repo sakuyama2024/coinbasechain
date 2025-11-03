@@ -70,11 +70,11 @@ public:
 
   // Callback types
   using PeerConnectedCallback =
-      std::function<void(int peer_id, const std::string &address,
+      std::function<void(int peer_id, const std::string &address, uint16_t port,
                          const std::string &connection_type)>;
   using PeerDisconnectedCallback =
-      std::function<void(int peer_id, const std::string &address,
-                         const std::string &reason)>;
+      std::function<void(int peer_id, const std::string &address, uint16_t port,
+                         const std::string &reason, bool mark_addr_good)>;
   using InvalidHeaderCallback =
       std::function<void(int peer_id, const uint256 &hash,
                          const std::string &reason)>;
@@ -130,17 +130,19 @@ public:
 
   /**
    * Notify all subscribers of peer connected
-   * Called by NetworkManager/PeerManager when new connection established
+   * Called by NetworkManager/PeerLifecycleManager when new connection established
    */
-  void NotifyPeerConnected(int peer_id, const std::string &address,
+  void NotifyPeerConnected(int peer_id, const std::string &address, uint16_t port,
                            const std::string &connection_type);
 
   /**
    * Notify all subscribers of peer disconnected
-   * Called by PeerManager when peer disconnects or is kicked
+   * Called by PeerLifecycleManager when peer disconnects or is kicked
+   * @param mark_addr_good If true, indicates this was a clean disconnect from a good peer
+   *                       and the address should be marked as good in the address manager
    */
-  void NotifyPeerDisconnected(int peer_id, const std::string &address,
-                              const std::string &reason);
+  void NotifyPeerDisconnected(int peer_id, const std::string &address, uint16_t port,
+                              const std::string &reason, bool mark_addr_good = false);
 
   /**
    * Notify all subscribers of invalid header

@@ -50,6 +50,7 @@ static constexpr int LOW_WORK_HEADERS = 10;
 static constexpr int INVALID_HEADER = 100;
 static constexpr int TOO_MANY_UNCONNECTING = 100;  // Instant disconnect after threshold
 static constexpr int TOO_MANY_ORPHANS = 100;       // Instant disconnect
+static constexpr int PRE_VERACK_MESSAGE = 100;     // Protocol messages before handshake complete (instant disconnect)
 }
 
 // Maximum unconnecting headers messages before penalty

@@ -6,7 +6,7 @@
 using namespace coinbasechain;
 using namespace coinbasechain::test;
 
-TEST_CASE("PeerManager inbound/outbound counts", "[network][peers]") {
+TEST_CASE("ConnectionManager inbound/outbound counts", "[network][peers]") {
     SimulatedNetwork network(777);
     TestOrchestrator orch(&network);
 

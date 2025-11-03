@@ -2,7 +2,7 @@
 // Integration tests for Header Sync with pre-VERACK gating
 //
 // Tests the interaction between:
-// - Pre-VERACK message gating (from MessageRouter)
+// - Pre-VERACK message gating (from NetworkManager (via MessageDispatcher))
 // - Header sync peer selection and management (HeaderSyncManager)
 // - Handshake completion and state transitions
 // - Multi-peer synchronization scenarios
@@ -89,7 +89,7 @@ TEST_CASE("Header Sync: Sync peer NOT adopted during pre-VERACK, adopted after",
  * - Later HEADERS (post-VERACK) from same peer work
  * 
  * Unique aspects:
- * - Verify gating happens at MessageRouter before HeaderSyncManager
+ * - Verify gating happens at NetworkManager (via MessageDispatcher) before HeaderSyncManager
  * - Verify no side effects in chainstate
  */
 

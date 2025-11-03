@@ -1,5 +1,5 @@
 #include "network/header_sync_manager.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 #include "network/peer.hpp"
 #include "network/protocol.hpp"
 #include "chain/chainstate_manager.hpp"
@@ -17,8 +17,7 @@ namespace {
   static constexpr int64_t kMicrosPerSecond = 1'000'000;
 
   // Headers sync stall timeout (microseconds). If no headers are received from the sync peer within
-  // this window, we disconnect it to allow reselection. Conservative for a headers-only chain; consider
-  // making this configurable if needed.
+  // this window, we disconnect it to allow reselection.
   static constexpr int64_t kHeadersSyncTimeoutUs = 120 * kMicrosPerSecond; // 120 seconds
 
   // During IBD we accept small unsolicited HEADERS announcements (e.g., INV-triggered) from any peer,
@@ -30,12 +29,12 @@ namespace coinbasechain {
 namespace network {
 
 HeaderSyncManager::HeaderSyncManager(validation::ChainstateManager& chainstate,
-                                     PeerManager& peer_mgr)
+                                     PeerLifecycleManager& peer_mgr)
     : chainstate_manager_(chainstate),
       peer_manager_(peer_mgr) {
   // Subscribe to peer disconnect events
   peer_disconnect_subscription_ = NetworkEvents().SubscribePeerDisconnected(
-      [this](int peer_id, const std::string&, const std::string&) {
+      [this](int peer_id, const std::string&, uint16_t, const std::string&, bool) {
         OnPeerDisconnected(static_cast<uint64_t>(peer_id));
       });
 }
@@ -110,7 +109,7 @@ void HeaderSyncManager::ProcessTimers() {
   if (last_us > 0 && (now_us - last_us) > kHeadersSyncTimeoutUs) {
     LOG_NET_INFO("Headers sync stalled for {:.1f}s with peer {}, disconnecting",
                 static_cast<double>(now_us - last_us) / static_cast<double>(kMicrosPerSecond), sync_id);
-    // Ask PeerManager to drop the peer. This triggers OnPeerDisconnected() via callback
+    // Ask ConnectionManager to drop the peer. This triggers OnPeerDisconnected() via callback
     peer_manager_.remove_peer(static_cast<int>(sync_id));
     // Do NOT call CheckInitialSync() here; SendMessages/maintenance cadence will do reselection.
   }
@@ -197,10 +196,9 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
   const auto &headers = msg->headers;
   int peer_id = peer->id();
 
-  // Bitcoin Core parity: During IBD, only process large (batch) headers from the
+  // During IBD, only process large (batch) headers from the
   // designated sync peer. Allow small unsolicited announcements (1-2 headers)
-  // from any peer. This avoids wasting bandwidth processing full batches from
-  // multiple peers.
+  // from any peer. This avoids wasting bandwidth processing full batches from multiple peers.
   // Gate large batches to the designated sync peer ONLY during IBD (Bitcoin Core behavior).
   if (chainstate_manager_.IsInitialBlockDownload()) {
     // Accept small unsolicited announcements (see kMaxUnsolicitedAnnouncement at top of file)

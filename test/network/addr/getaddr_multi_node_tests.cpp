@@ -3,7 +3,7 @@
 #include "infra/simulated_node.hpp"
 #include "network/message.hpp"
 #include "network/network_manager.hpp"
-#include "network/message_router.hpp"
+#include "network/peer_discovery_manager.hpp"
 #include "test_orchestrator.hpp"
 #include <cstring>
 
@@ -130,12 +130,12 @@ TEST_CASE("Multi-node: composition counters under mixed sources", "[network][add
     SimulatedNode C(3, &net);
 
     // Prefill AddrMan with some entries
-    auto& am = A.GetNetworkManager().address_manager();
+    auto& am = A.GetNetworkManager().discovery_manager();
     for (int i = 0; i < 5; ++i) {
         NetworkAddress a; a.services = NODE_NETWORK; a.port = 9590;
         for (int j=0;j<10;++j) a.ip[j]=0; a.ip[10]=0xFF; a.ip[11]=0xFF;
         a.ip[12] = 127; a.ip[13] = 0; a.ip[14] = 3; a.ip[15] = static_cast<uint8_t>(50+i);
-        am.add(a);
+        am.Add(a);
     }
 
     // Connect B and C
@@ -157,7 +157,7 @@ TEST_CASE("Multi-node: composition counters under mixed sources", "[network][add
     net.SendMessage(B.GetId(), A.GetId(), MakeWire(commands::GETADDR, {}));
     for (int i=0;i<6;++i) orch.AdvanceTime(std::chrono::milliseconds(100));
 
-    auto stats = A.GetNetworkManager().router_for_test().GetGetAddrDebugStats();
+    auto stats = A.GetNetworkManager().discovery_manager_for_test().GetGetAddrDebugStats();
     REQUIRE((stats.last_from_recent + stats.last_from_addrman + stats.last_from_learned) > 0);
     REQUIRE(stats.last_from_addrman >= 1);
 }

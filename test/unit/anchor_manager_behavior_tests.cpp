@@ -1,6 +1,6 @@
 #include "catch_amalgamated.hpp"
 #include "network/anchor_manager.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 #include "network/protocol.hpp"
 #include <boost/asio.hpp>
 #include <filesystem>
@@ -15,14 +15,10 @@ static std::string tmpfile(const char* name) { return std::string("/tmp/") + nam
 
 TEST_CASE("AnchorManager::SaveAnchors - no peers -> early return, no file", "[unit][anchor]") {
     boost::asio::io_context io;
-    AddressManager addrman;
-    PeerManager peermgr(io, addrman);
+    PeerLifecycleManager peermgr(io);
 
-    // Callbacks (unused in Save)
-    AnchorManager::AddressToStringCallback tostr = [](const protocol::NetworkAddress&){ return std::optional<std::string>{}; };
-AnchorManager::ConnectCallback connect = [](const protocol::NetworkAddress&, bool /*noban*/ ){};
-
-    AnchorManager am(peermgr, tostr, connect);
+    // Phase 2: No callbacks - AnchorManager is passive
+    AnchorManager am(peermgr);
 
     const std::string path = tmpfile("am_save_none.json");
     std::filesystem::remove(path);
@@ -31,31 +27,12 @@ AnchorManager::ConnectCallback connect = [](const protocol::NetworkAddress&, boo
     CHECK_FALSE(std::filesystem::exists(path));
 }
 
-TEST_CASE("AnchorManager::LoadAnchors - connects capped at 2 and deletes file", "[unit][anchor]") {
+TEST_CASE("AnchorManager::LoadAnchors - returns capped at 2 addresses and deletes file", "[unit][anchor]") {
     boost::asio::io_context io;
-    AddressManager addrman;
-    PeerManager peermgr(io, addrman);
+    PeerLifecycleManager peermgr(io);
 
-    // Helper to stringify NetworkAddress (IPv4-mapped IPv6)
-    auto to_ip_str = [](const protocol::NetworkAddress& addr) -> std::optional<std::string> {
-        try {
-            boost::asio::ip::address_v6::bytes_type bytes;
-            std::copy(addr.ip.begin(), addr.ip.end(), bytes.begin());
-            auto v6 = boost::asio::ip::make_address_v6(bytes);
-            if (v6.is_v4_mapped()) {
-                return boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, v6).to_string();
-            }
-            return v6.to_string();
-        } catch(...) { return std::nullopt; }
-    };
-
-    std::vector<std::pair<std::string,uint16_t>> attempts;
-AnchorManager::ConnectCallback connect = [&](const protocol::NetworkAddress& a, bool /*noban*/){
-        auto s = to_ip_str(a);
-        attempts.emplace_back(s.value_or("<bad>"), a.port);
-    };
-
-    AnchorManager am(peermgr, to_ip_str, connect);
+    // Phase 2: No callbacks - LoadAnchors returns vector of addresses
+    AnchorManager am(peermgr);
 
     const std::string path = tmpfile("am_load_caps.json");
     std::filesystem::remove(path);
@@ -75,20 +52,18 @@ AnchorManager::ConnectCallback connect = [&](const protocol::NetworkAddress& a, 
         f << root.dump(2);
     }
 
-    CHECK(am.LoadAnchors(path));
-    CHECK(attempts.size() == 2);
+    // Phase 2: LoadAnchors returns vector of addresses (capped at 2)
+    auto addresses = am.LoadAnchors(path);
+    CHECK(addresses.size() == 2);
     CHECK_FALSE(std::filesystem::exists(path));
 }
 
 TEST_CASE("AnchorManager::LoadAnchors - invalid IP array -> reject and delete", "[unit][anchor]") {
     boost::asio::io_context io;
-    AddressManager addrman;
-    PeerManager peermgr(io, addrman);
+    PeerLifecycleManager peermgr(io);
 
-    AnchorManager::AddressToStringCallback tostr = [](const protocol::NetworkAddress&){ return std::string("0.0.0.0"); };
-    size_t calls = 0;
-AnchorManager::ConnectCallback connect = [&](const protocol::NetworkAddress&, bool /*noban*/){ ++calls; };
-    AnchorManager am(peermgr, tostr, connect);
+    // Phase 2: No callbacks
+    AnchorManager am(peermgr);
 
     const std::string path = tmpfile("am_load_invalid.json");
     std::filesystem::remove(path);
@@ -101,7 +76,8 @@ AnchorManager::ConnectCallback connect = [&](const protocol::NetworkAddress&, bo
         std::ofstream f(path); REQUIRE(f.is_open()); f << root.dump(2);
     }
 
-    CHECK_FALSE(am.LoadAnchors(path));
-    CHECK(calls == 0);
+    // Phase 2: LoadAnchors returns empty vector for invalid data
+    auto addresses = am.LoadAnchors(path);
+    CHECK(addresses.empty());
     CHECK_FALSE(std::filesystem::exists(path));
 }

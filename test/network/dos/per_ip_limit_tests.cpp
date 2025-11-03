@@ -4,7 +4,7 @@
 #include "simulated_network.hpp"
 #include "simulated_node.hpp"
 #include "test_orchestrator.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 #include "chain/chainparams.hpp"
 
 using namespace coinbasechain;

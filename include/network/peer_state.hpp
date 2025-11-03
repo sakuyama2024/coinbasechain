@@ -59,7 +59,7 @@ using LearnedMap = std::unordered_map<AddressKey, LearnedEntry, AddressKey::Hash
  * - Simplifies cleanup: one erase removes all peer data
  *
  * Design:
- * - Stored in ThreadSafeMap<int, PerPeerState> in PeerManager
+ * - Stored in ThreadSafeMap<int, PerPeerState> in ConnectionManager
  * - Replaces 5 separate per-peer maps across different managers
  * - All fields grouped logically by functionality
  *
@@ -75,7 +75,7 @@ struct PerPeerState {
   std::chrono::steady_clock::time_point created_at;
 
   // === DoS & Permissions ===
-  // Misbehavior tracking (from PeerManager)
+  // Misbehavior tracking (from ConnectionManager)
   PeerMisbehaviorData misbehavior;
 
   // === Block Relay (from BlockRelayManager) ===

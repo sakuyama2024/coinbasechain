@@ -1,8 +1,8 @@
 // Copyright (c) 2024 Coinbase Chain
-// Unit tests for PeerManager discouragement cap functionality
+// Unit tests for ConnectionManager discouragement cap functionality
 
 #include "catch_amalgamated.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 #include "network/addr_manager.hpp"
 #include <boost/asio.hpp>
 #include <vector>
@@ -14,16 +14,17 @@ using namespace coinbasechain::network;
 class DiscouragementTestFixture {
 public:
     boost::asio::io_context io_context;
-    AddressManager addr_manager;
 
-    std::unique_ptr<PeerManager> CreatePeerManager() {
-        return std::make_unique<PeerManager>(io_context, addr_manager);
+    std::unique_ptr<PeerLifecycleManager> CreatePeerLifecycleManager() {
+        // Phase 2: ConnectionManager no longer requires AddressManager at construction
+        // DiscoveryManager injection not needed for these ban-focused unit tests
+        return std::make_unique<PeerLifecycleManager>(io_context);
     }
 };
 
-TEST_CASE("PeerManager - Discouragement Cap", "[network][peermgr][ban][unit]") {
+TEST_CASE("ConnectionManager - Discouragement Cap", "[network][peermgr][ban][unit]") {
     DiscouragementTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Can discourage up to MAX_DISCOURAGED addresses") {
         // MAX_DISCOURAGED = 10000 (from peer_manager.hpp)
@@ -84,9 +85,9 @@ TEST_CASE("PeerManager - Discouragement Cap", "[network][peermgr][ban][unit]") {
     }
 }
 
-TEST_CASE("PeerManager - Discouragement vs Bans", "[network][peermgr][ban][unit]") {
+TEST_CASE("ConnectionManager - Discouragement vs Bans", "[network][peermgr][ban][unit]") {
     DiscouragementTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Discouraged and banned are independent") {
         // Discourage an address

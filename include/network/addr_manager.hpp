@@ -9,7 +9,7 @@
    • "tried": previously successful connections
  - Select addresses for outbound and feeler dials with an 80% "tried" bias
    and a cooldown to avoid immediate re-dials
- - Persist state to JSON (peers.json) with atomic save and optional checksum
+ - Persist state to JSON (peers.json) with atomic save (fsync + rename)
  - Apply basic hygiene: minimal address validation, timestamp clamping,
    and stale/"terrible" eviction
 
@@ -20,8 +20,8 @@
  - Discovery policy location: GETADDR/ADDR privacy and echo-suppression policy
    lives in MessageRouter here, not inside AddrMan (Core intertwines more policy
    with addrman callers).
- - Persistence format: human-readable JSON with an optional SHA-256 checksum
-   (over tried/new arrays) vs Core's binary peers.dat with checksumming.
+ - Persistence format: human-readable JSON vs Core's binary peers.dat. Corruption
+   detection relies on nlohmann::json parser error handling.
  - Time handling: explicit timestamp clamping; future timestamps are not treated
    as stale. Tried entries record last_try so cooldown applies consistently.
  - Simpler scoring: no per-entry chance weighting or privacy scoring; limits like
@@ -48,6 +48,34 @@ namespace coinbasechain {
 namespace network {
 
 /**
+ * AddrKey - Binary key for address lookups (16-byte IP + 2-byte port, big-endian)
+ *
+ * SECURITY: Zero-allocation key structure prevents heap fragmentation and timing attacks.
+ * Using binary representation instead of hex strings eliminates:
+ * - String allocation overhead (36 bytes/key → stringstream heap allocations)
+ * - Collision risk from string conversion
+ * Total size: 18 bytes (16 IP + 2 port big-endian)
+ */
+struct AddrKey {
+  std::array<uint8_t, 18> data;  // 16-byte IPv6 + 2-byte port (big-endian)
+
+  // Construct from NetworkAddress
+  explicit AddrKey(const protocol::NetworkAddress &addr) {
+    // Copy 16-byte IP
+    std::copy(addr.ip.begin(), addr.ip.end(), data.begin());
+    // Copy 2-byte port (big-endian)
+    data[16] = static_cast<uint8_t>((addr.port >> 8) & 0xFF);
+    data[17] = static_cast<uint8_t>(addr.port & 0xFF);
+  }
+
+  // Comparison for std::map
+  bool operator<(const AddrKey &other) const { return data < other.data; }
+
+  // Equality for testing
+  bool operator==(const AddrKey &other) const { return data == other.data; }
+};
+
+/**
  * AddrInfo - Extended address information with connection history
  */
 struct AddrInfo {
@@ -69,9 +97,6 @@ struct AddrInfo {
 
   // Check if address is terrible (too many failed attempts, etc.)
   bool is_terrible(uint32_t now) const;
-
-  // Get key for this address (IP:port)
-  std::string get_key() const;
 };
 
 /**
@@ -124,13 +149,18 @@ private:
   mutable std::mutex mutex_;
 
   // "tried" table: addresses we've successfully connected to
-  std::map<std::string, AddrInfo> tried_;
+  std::map<AddrKey, AddrInfo> tried_;
 
   // "new" table: addresses we've heard about but haven't connected to
-  std::map<std::string, AddrInfo> new_;
+  std::map<AddrKey, AddrInfo> new_;
 
-  // Random number generator for selection
+  // Random number generator for selection (base entropy source)
+  // SECURITY: Not used directly - see make_request_rng() for per-request entropy
   std::mt19937 rng_;
+
+  // Create RNG with per-request entropy to prevent seed prediction attacks
+  // Bitcoin Core pattern: mix base RNG state with time to prevent offline seed brute-force
+  std::mt19937 make_request_rng();
 
   // Get current time as unix timestamp
   uint32_t now() const;

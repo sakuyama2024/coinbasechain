@@ -8,7 +8,7 @@
 #include "chain/chainparams.hpp"
 #include "chain/block.hpp"
 #include "test_orchestrator.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 
 using namespace coinbasechain;
 using namespace coinbasechain::test;
@@ -24,6 +24,8 @@ TEST_CASE("NetworkManager Adversarial - Oversized Headers Message", "[adversaria
         attacker.ConnectTo(1);
         network.AdvanceTime(network.GetCurrentTime() + 500);
         REQUIRE(victim.GetPeerCount() > 0);
+        // Ensure handshake completes before sending adversarial message
+        for (int i = 0; i < 20; ++i) network.AdvanceTime(network.GetCurrentTime() + 100);
         attacker.SendOversizedHeaders(1, MAX_HEADERS_SIZE + 1);
         for (int i = 0; i < 10; ++i) network.AdvanceTime(network.GetCurrentTime() + 200);
         CHECK(victim.GetPeerCount() == 0);
@@ -32,6 +34,8 @@ TEST_CASE("NetworkManager Adversarial - Oversized Headers Message", "[adversaria
     SECTION("Send exactly MAX_HEADERS_SIZE headers (at limit)") {
         attacker.ConnectTo(1);
         network.AdvanceTime(network.GetCurrentTime() + 500);
+        // Ensure handshake completes before sending adversarial message
+        for (int i = 0; i < 20; ++i) network.AdvanceTime(network.GetCurrentTime() + 100);
         // Build and send exactly MAX_HEADERS_SIZE headers; victim must not disconnect
         std::vector<CBlockHeader> headers;
         headers.reserve(MAX_HEADERS_SIZE);
@@ -136,6 +140,8 @@ TEST_CASE("NetworkManager Adversarial - Non-Continuous Headers", "[adversarial][
 
     attacker.ConnectTo(1);
     network.AdvanceTime(network.GetCurrentTime() + 500);
+    // Ensure handshake completes before sending adversarial message
+    for (int i = 0; i < 20; ++i) network.AdvanceTime(network.GetCurrentTime() + 100);
 
     // Baseline tip
     int tip_before = victim.GetTipHeight();
@@ -155,6 +161,8 @@ TEST_CASE("NetworkManager Adversarial - Invalid PoW Headers", "[adversarial][net
 
     attacker.ConnectTo(1);
     network.AdvanceTime(500);
+    // Ensure handshake completes before sending adversarial message
+    for (int i = 0; i < 20; ++i) network.AdvanceTime(network.GetCurrentTime() + 100);
 
     int tip_before = victim.GetTipHeight();
     attacker.SendInvalidPoWHeaders(1, victim.GetTipHash(), 10);
@@ -171,6 +179,8 @@ TEST_CASE("NetworkManager Adversarial - Orphan Headers Attack", "[adversarial][n
     attacker.ConnectTo(1);
     network.AdvanceTime(network.GetCurrentTime() + 500);
     REQUIRE(victim.GetPeerCount() > 0);
+    // Ensure handshake completes before sending adversarial message
+    for (int i = 0; i < 20; ++i) network.AdvanceTime(network.GetCurrentTime() + 100);
 
     int tip_before = victim.GetTipHeight();
     attacker.SendOrphanHeaders(1, 10);
@@ -187,6 +197,8 @@ TEST_CASE("NetworkManager Adversarial - Repeated Unconnecting Headers", "[advers
 
     attacker.ConnectTo(1);
     network.AdvanceTime(500);
+    // Ensure handshake completes before sending adversarial messages
+    for (int i = 0; i < 20; ++i) network.AdvanceTime(network.GetCurrentTime() + 100);
 
     int tip_before = victim.GetTipHeight();
     for (int i = 0; i < 5; i++) {
@@ -208,6 +220,8 @@ TEST_CASE("NetworkManager Adversarial - Empty Headers Message", "[adversarial][n
     attacker.ConnectTo(1);
     net.AdvanceTime(net.GetCurrentTime() + 500);
     REQUIRE(victim.GetPeerCount() > 0);
+    // Ensure handshake completes before sending adversarial message
+    for (int i = 0; i < 20; ++i) net.AdvanceTime(net.GetCurrentTime() + 100);
 
     // Record baseline tip
     int tip_before = victim.GetTipHeight();

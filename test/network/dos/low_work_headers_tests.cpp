@@ -51,6 +51,8 @@ TEST_CASE("DoS: Low-work headers ignored without penalty", "[dos][network]") {
     // Connect
     attacker.ConnectTo(1);
     REQUIRE(orchestrator.WaitForConnection(victim, attacker));
+    // Ensure handshake completes before sending adversarial messages
+    for (int i = 0; i < 20; ++i) orchestrator.AdvanceTime(std::chrono::milliseconds(100));
 
     // Attack: Spam low-work headers
     observer.OnCustomEvent("PHASE", -1, "Spamming low-work headers (20 batches)");

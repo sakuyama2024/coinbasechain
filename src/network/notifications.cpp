@@ -128,25 +128,25 @@ NetworkNotifications::SubscribeMisbehavior(MisbehaviorCallback callback) {
 }
 
 void NetworkNotifications::NotifyPeerConnected(
-    int peer_id, const std::string &address,
+    int peer_id, const std::string &address, uint16_t port,
     const std::string &connection_type) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   for (const auto &entry : callbacks_) {
     if (entry.peer_connected) {
-      entry.peer_connected(peer_id, address, connection_type);
+      entry.peer_connected(peer_id, address, port, connection_type);
     }
   }
 }
 
 void NetworkNotifications::NotifyPeerDisconnected(int peer_id,
-                                                  const std::string &address,
-                                                  const std::string &reason) {
+                                                  const std::string &address, uint16_t port,
+                                                  const std::string &reason, bool mark_addr_good) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   for (const auto &entry : callbacks_) {
     if (entry.peer_disconnected) {
-      entry.peer_disconnected(peer_id, address, reason);
+      entry.peer_disconnected(peer_id, address, port, reason, mark_addr_good);
     }
   }
 }

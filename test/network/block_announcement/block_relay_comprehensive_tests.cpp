@@ -5,7 +5,7 @@
 #include "infra/simulated_node.hpp"
 #include "network/protocol.hpp"
 #include "network/message.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 #include "network/peer.hpp"
 #include <random>
 #include <unordered_set>

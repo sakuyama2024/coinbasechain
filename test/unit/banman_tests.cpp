@@ -1,9 +1,9 @@
 // Copyright (c) 2024 Coinbase Chain
-// Unit tests for PeerManager ban functionality
+// Unit tests for ConnectionManager ban functionality
 // Focuses on persistence, expiration, and core operations
 
 #include "catch_amalgamated.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 #include "network/addr_manager.hpp"
 #include <boost/asio.hpp>
 #include <filesystem>
@@ -15,12 +15,11 @@
 using namespace coinbasechain::network;
 using json = nlohmann::json;
 
-// Test fixture to manage temporary directories and PeerManager dependencies
+// Test fixture to manage temporary directories and ConnectionManager dependencies
 class BanTestFixture {
 public:
     std::string test_dir;
     boost::asio::io_context io_context;
-    AddressManager addr_manager;
 
     BanTestFixture() {
         // Create unique test directory
@@ -38,9 +37,10 @@ public:
         return test_dir + "/banlist.json";
     }
 
-    // Helper to create a PeerManager for testing ban functionality
-    std::unique_ptr<PeerManager> CreatePeerManager(const std::string& datadir = "") {
-        auto pm = std::make_unique<PeerManager>(io_context, addr_manager);
+    // Helper to create a ConnectionManager for testing ban functionality
+    std::unique_ptr<PeerLifecycleManager> CreatePeerLifecycleManager(const std::string& datadir = "") {
+        // Phase 2: ConnectionManager no longer requires AddressManager at construction
+        auto pm = std::make_unique<PeerLifecycleManager>(io_context);
         if (!datadir.empty()) {
             pm->LoadBans(datadir);
         }
@@ -48,9 +48,9 @@ public:
     }
 };
 
-TEST_CASE("PeerManager - Basic Ban Operations", "[network][peermgr][ban][unit]") {
+TEST_CASE("ConnectionManager - Basic Ban Operations", "[network][peermgr][ban][unit]") {
     BanTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Ban and check") {
         REQUIRE_FALSE(pm->IsBanned("192.168.1.1"));
@@ -96,9 +96,9 @@ TEST_CASE("PeerManager - Basic Ban Operations", "[network][peermgr][ban][unit]")
     }
 }
 
-TEST_CASE("PeerManager - Discouragement", "[network][peermgr][ban][unit]") {
+TEST_CASE("ConnectionManager - Discouragement", "[network][peermgr][ban][unit]") {
     BanTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Discourage and check") {
         REQUIRE_FALSE(pm->IsDiscouraged("192.168.1.1"));
@@ -124,9 +124,9 @@ TEST_CASE("PeerManager - Discouragement", "[network][peermgr][ban][unit]") {
     }
 }
 
-TEST_CASE("PeerManager - Permanent Bans", "[network][peermgr][ban][unit]") {
+TEST_CASE("ConnectionManager - Permanent Bans", "[network][peermgr][ban][unit]") {
     BanTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Permanent ban (ban_time_offset = 0)") {
         pm->Ban("192.168.1.1", 0);  // 0 = permanent
@@ -138,9 +138,9 @@ TEST_CASE("PeerManager - Permanent Bans", "[network][peermgr][ban][unit]") {
     }
 }
 
-TEST_CASE("PeerManager - Ban Expiration", "[network][peermgr][ban][unit]") {
+TEST_CASE("ConnectionManager - Ban Expiration", "[network][peermgr][ban][unit]") {
     BanTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Ban expires after time passes") {
         auto now = std::chrono::system_clock::now().time_since_epoch().count() / 1000000;
@@ -160,12 +160,12 @@ TEST_CASE("PeerManager - Ban Expiration", "[network][peermgr][ban][unit]") {
     }
 }
 
-TEST_CASE("PeerManager - Ban Persistence", "[network][peermgr][ban][persistence]") {
+TEST_CASE("ConnectionManager - Ban Persistence", "[network][peermgr][ban][persistence]") {
     BanTestFixture fixture;
 
     SECTION("Save and load bans") {
         {
-            auto pm = fixture.CreatePeerManager(fixture.test_dir);
+            auto pm = fixture.CreatePeerLifecycleManager(fixture.test_dir);
             pm->Ban("192.168.1.1", 0);  // Permanent
             pm->Ban("192.168.1.2", 3600);
             pm->Ban("192.168.1.3", 0);  // Permanent
@@ -178,9 +178,9 @@ TEST_CASE("PeerManager - Ban Persistence", "[network][peermgr][ban][persistence]
             REQUIRE(pm->SaveBans());
         }
 
-        // Create new PeerManager and load bans
+        // Create new ConnectionManager and load bans
         {
-            auto pm = fixture.CreatePeerManager(fixture.test_dir);
+            auto pm = fixture.CreatePeerLifecycleManager(fixture.test_dir);
 
             REQUIRE(pm->IsBanned("192.168.1.1"));
             REQUIRE(pm->IsBanned("192.168.1.2"));
@@ -193,7 +193,7 @@ TEST_CASE("PeerManager - Ban Persistence", "[network][peermgr][ban][persistence]
 
     SECTION("Unban persists correctly") {
         {
-            auto pm = fixture.CreatePeerManager(fixture.test_dir);
+            auto pm = fixture.CreatePeerLifecycleManager(fixture.test_dir);
             pm->Ban("192.168.1.1", 0);
             pm->Ban("192.168.1.2", 0);
             pm->Ban("192.168.1.3", 0);
@@ -207,7 +207,7 @@ TEST_CASE("PeerManager - Ban Persistence", "[network][peermgr][ban][persistence]
         }
 
         {
-            auto pm = fixture.CreatePeerManager(fixture.test_dir);
+            auto pm = fixture.CreatePeerLifecycleManager(fixture.test_dir);
 
             REQUIRE(pm->IsBanned("192.168.1.1"));
             REQUIRE_FALSE(pm->IsBanned("192.168.1.2"));
@@ -216,9 +216,9 @@ TEST_CASE("PeerManager - Ban Persistence", "[network][peermgr][ban][persistence]
     }
 }
 
-TEST_CASE("PeerManager - Whitelist (NoBan)", "[network][peermgr][ban][unit]") {
+TEST_CASE("ConnectionManager - Whitelist (NoBan)", "[network][peermgr][ban][unit]") {
     BanTestFixture fixture;
-    auto pm = fixture.CreatePeerManager();
+    auto pm = fixture.CreatePeerLifecycleManager();
 
     SECTION("Whitelisted address can be banned (like Bitcoin Core)") {
         pm->AddToWhitelist("192.168.1.1");

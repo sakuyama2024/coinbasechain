@@ -22,7 +22,7 @@ using namespace coinbasechain::chain;
 #include "test_orchestrator.hpp"
 #include "network_observer.hpp"
 #include "chain/chainparams.hpp"
-#include "network/peer_manager.hpp"
+#include "network/peer_lifecycle_manager.hpp"
 
 using namespace coinbasechain;
 using namespace coinbasechain::test;
