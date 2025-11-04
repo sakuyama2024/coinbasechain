@@ -5,6 +5,7 @@
 #include "test_chainstate_manager.hpp"
 #include "chain/chainparams.hpp"
 #include "chain/block.hpp"
+#include "chain/validation.hpp"
 
 using namespace coinbasechain;
 using namespace coinbasechain::chain;

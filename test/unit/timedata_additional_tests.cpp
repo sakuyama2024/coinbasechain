@@ -13,24 +13,26 @@ static NetworkAddress A(uint32_t v4){ return NetworkAddress::from_ipv4(NODE_NETW
 TEST_CASE("TimeData - median update and limits", "[timedata][add]") {
     TestOnlyResetTimeData();
 
-    // 5 samples (odd) → update median
+    // 5 samples added; note CMedianFilter includes an initial 0, so after 5 samples
+    // the internal size is 6 (even) and the last update occurred at 4 samples (size=5),
+    // yielding a median of 20.
     AddTimeData(A(0x01010101), 10);   // +10s
     AddTimeData(A(0x02020202), 20);   // +20s
     AddTimeData(A(0x03030303), 30);   // +30s
     AddTimeData(A(0x04040404), 40);   // +40s
-    AddTimeData(A(0x05050505), 50);   // +50s → median = 30
+    AddTimeData(A(0x05050505), 50);   // +50s
 
-    REQUIRE(GetTimeOffset() == 30);
+    REQUIRE(GetTimeOffset() == 20);
 
-    // Even number of samples (6) → no update per Core quirk
+    // 6th sample makes total size odd (7 including initial 0) → median updates to 30
     AddTimeData(A(0x06060606), 60);
     REQUIRE(GetTimeOffset() == 30);
 
-    // Add large positive sample beyond DEFAULT_MAX_TIME_ADJUSTMENT; offset resets to 0
+    // Add large positive sample beyond DEFAULT_MAX_TIME_ADJUSTMENT; with only one outlier
+    // the median remains unchanged (still within range) and size becomes even → no update
     int64_t too_far = DEFAULT_MAX_TIME_ADJUSTMENT + 600; // > +70 min
     AddTimeData(A(0x07070707), too_far);
-    // After adding to odd size (7), median likely exceeds range → offset set to 0
-    REQUIRE(GetTimeOffset() == 0);
+    REQUIRE(GetTimeOffset() == 30);
 }
 
 TEST_CASE("TimeData - duplicate source ignored and size cap", "[timedata][add]") {
