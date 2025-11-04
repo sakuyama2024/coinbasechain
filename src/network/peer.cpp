@@ -424,9 +424,8 @@ void Peer::handle_version(const message::VersionMessage &msg) {
     chain::AddTimeData(net_addr, time_offset);
   }
 
-  // If we're inbound, send our VERSION first (BEFORE VERACK)
-  // This is critical: peer must receive VERSION before VERACK to avoid protocol
-  // violation
+  // Inbound handshake: Send our VERSION response, then send VERACK
+  // Order matters: VERSION must be sent before VERACK to avoid protocol violations
   if (is_inbound_ && state_ == PeerState::CONNECTED) {
     send_version();
   }
