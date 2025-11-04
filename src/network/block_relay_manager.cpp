@@ -64,16 +64,24 @@ void BlockRelayManager::AnnounceTipToAllPeers() {
       }
 
       // Thread-safe access to block announcement queue
+      // Fix: Avoid nested lock acquisition (block_inv_mutex_ -> peer_states_)
+      // to prevent deadlock. Record announcement AFTER releasing block_inv_mutex_.
+      bool should_record = false;
+      int peer_id_to_record = peer->id();
       peer->with_block_inv_queue([&](auto& queue) {
         // Only add if not already in this peer's queue (per-peer deduplication)
         // TTL refresh policy: we refresh last_announce_time_s_ ONLY when we enqueue;
         // if already present, we leave timestamps unchanged to avoid extending TTL spuriously.
         if (std::find(queue.begin(), queue.end(), current_tip_hash) == queue.end()) {
           queue.push_back(current_tip_hash);
-          // Record last announcement (hash + time)
-          peer_manager_.SetLastAnnouncedBlock(peer->id(), current_tip_hash, now_s);
+          should_record = true;
         }
       });
+
+      // Record last announcement (hash + time) AFTER releasing block_inv_mutex_
+      if (should_record) {
+        peer_manager_.SetLastAnnouncedBlock(peer_id_to_record, current_tip_hash, now_s);
+      }
     }
   }
 }
@@ -99,8 +107,12 @@ void BlockRelayManager::AnnounceTipToPeer(Peer* peer) {
   const int64_t now_s = util::GetTime();
   static constexpr int64_t REANNOUNCE_INTERVAL_SEC = 10LL * 60;
 
-  // Add to peer's announcement queue 
+  // Add to peer's announcement queue
   // Thread-safe access to block announcement queue
+  // Fix: Avoid nested lock acquisition (block_inv_mutex_ -> peer_states_)
+  // to prevent deadlock. Record announcement AFTER releasing block_inv_mutex_.
+  bool should_record = false;
+  int peer_id_to_record = peer->id();
   peer->with_block_inv_queue([&](auto& queue) {
     // Only add if not already in this peer's queue (per-peer deduplication)
     const bool already_queued = (std::find(queue.begin(), queue.end(), current_tip_hash) != queue.end());
@@ -109,10 +121,14 @@ void BlockRelayManager::AnnounceTipToPeer(Peer* peer) {
     // Note: If already queued, we do NOT refresh last_announce_time_s_ here; TTL refresh only on enqueue.
     if (!already_queued) {
       queue.push_back(current_tip_hash);
-      // Record last announcement via ConnectionManager
-      peer_manager_.SetLastAnnouncedBlock(peer->id(), current_tip_hash, now_s);
+      should_record = true;
     }
   });
+
+  // Record last announcement AFTER releasing block_inv_mutex_
+  if (should_record) {
+    peer_manager_.SetLastAnnouncedBlock(peer_id_to_record, current_tip_hash, now_s);
+  }
 }
 
 void BlockRelayManager::FlushBlockAnnouncements() {

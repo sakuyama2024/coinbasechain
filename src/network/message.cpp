@@ -220,9 +220,11 @@ uint64_t MessageDeserializer::read_varint() {
   return vi.value;
 }
 
-std::string MessageDeserializer::read_string() {
+std::string MessageDeserializer::read_string(size_t max_length) {
   uint64_t len = read_varint();
-  if (error_ || len > bytes_remaining()) {
+
+  // Enforce maximum length BEFORE allocation (Bitcoin Core pattern: LIMITED_STRING)
+  if (error_ || len > max_length || len > bytes_remaining()) {
     error_ = true;
     return "";
   }
@@ -447,13 +449,11 @@ bool VersionMessage::deserialize(const uint8_t *data, size_t size) {
   addr_recv = d.read_network_address(false);
   addr_from = d.read_network_address(false);
   nonce = d.read_uint64();
-  user_agent = d.read_string();
 
   // SECURITY: Enforce maximum user agent length to prevent memory exhaustion
+  // Matches Bitcoin Core's LIMITED_STRING pattern - limit enforced DURING deserialization
   // Legitimate user agents are ~20-50 bytes (e.g., "/CoinbaseChain:1.0.0/")
-  if (user_agent.length() > protocol::MAX_SUBVERSION_LENGTH) {
-    return false;
-  }
+  user_agent = d.read_string(protocol::MAX_SUBVERSION_LENGTH);
 
   start_height = d.read_int32();
   return !d.has_error();

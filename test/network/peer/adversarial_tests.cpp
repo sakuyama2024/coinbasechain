@@ -592,8 +592,10 @@ TEST_CASE("Adversarial - UnknownMessageFlooding", "[adversarial][flood][quickwin
 
     for (int i = 0; i < 100; i++) {
         std::string fake_cmd = fake_commands[i % fake_commands.size()];
-        std::vector<uint8_t> empty_payload;
-        auto unknown_msg = create_test_message(magic, fake_cmd, empty_payload);
+        // SECURITY: Only VERACK and GETADDR are allowed zero-length payloads
+        // Unknown commands must have non-empty payloads to pass protocol validation
+        std::vector<uint8_t> dummy_payload = {0x01, 0x02, 0x03, 0x04};
+        auto unknown_msg = create_test_message(magic, fake_cmd, dummy_payload);
         mock_conn->simulate_receive(unknown_msg);
         io_context.poll();
         if (!peer->is_connected()) {
@@ -838,8 +840,10 @@ TEST_CASE("Adversarial - TransportCallbackOrdering", "[adversarial][race][p3]") 
         auto version = create_version_message(magic, 54321);
         mock_conn->simulate_receive(version);
         io_context.poll();
+        // SECURITY: After disconnect(), callbacks are cleared to prevent use-after-free
+        // Messages received after disconnect() should NOT be processed
         CHECK(peer->state() == PeerState::DISCONNECTED);
-        CHECK(peer->version() == protocol::PROTOCOL_VERSION);
+        CHECK(peer->version() == 0);  // VERSION not processed (callback cleared)
     }
 
     SECTION("Disconnect callback fires twice") {

@@ -16,14 +16,9 @@
  How this differs from Bitcoin Core's addrman
  - No bucketization/source-grouping: this first release does NOT implement Core's
    bucket model. Selection is simpler (tried/new + cooldown) and has lower Sybil
-   resistance. A bucketized design is planned for a future release.
- - Discovery policy location: GETADDR/ADDR privacy and echo-suppression policy
-   lives in MessageRouter here, not inside AddrMan (Core intertwines more policy
-   with addrman callers).
+   resistance. 
  - Persistence format: human-readable JSON vs Core's binary peers.dat. Corruption
    detection relies on nlohmann::json parser error handling.
- - Time handling: explicit timestamp clamping; future timestamps are not treated
-   as stale. Tried entries record last_try so cooldown applies consistently.
  - Simpler scoring: no per-entry chance weighting or privacy scoring; limits like
    STALE_AFTER_DAYS and MAX_FAILURES are compile-time constants.
 

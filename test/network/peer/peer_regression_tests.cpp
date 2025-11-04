@@ -107,15 +107,20 @@ TEST_CASE("Peer - StatsInitialization", "[peer][stats][regression]") {
     peer->start();
     io_context.poll();
 
-    auto stats = peer->stats();
+    const auto& stats = peer->stats();
 
-    CHECK(stats.connected_time != std::chrono::steady_clock::time_point{});
-    CHECK(stats.last_send >= stats.connected_time);
-    CHECK(stats.last_recv >= stats.connected_time);
+    // Load atomic durations
+    auto connected_time = stats.connected_time.load(std::memory_order_relaxed);
+    CHECK(connected_time.count() > 0);
 
-    auto now = std::chrono::steady_clock::now();
-    auto idle_time = std::chrono::duration_cast<std::chrono::seconds>(
-        now - stats.last_recv);
+    auto last_send = stats.last_send.load(std::memory_order_relaxed);
+    auto last_recv = stats.last_recv.load(std::memory_order_relaxed);
+    CHECK(last_send >= connected_time);
+    CHECK(last_recv >= connected_time);
+
+    auto now = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now().time_since_epoch());
+    auto idle_time = now - last_recv;
 
     CHECK(idle_time.count() < 1);
 }
@@ -139,7 +144,13 @@ TEST_CASE("Peer - MessageCounters", "[peer][stats][regression]") {
 
     REQUIRE(peer->state() == PeerState::READY);
 
-    auto stats_before = peer->stats();
+    const auto& stats = peer->stats();
+
+    // Load atomic values before sending messages
+    uint64_t msgs_recv_before = stats.messages_received.load(std::memory_order_relaxed);
+    uint64_t msgs_sent_before = stats.messages_sent.load(std::memory_order_relaxed);
+    uint64_t bytes_recv_before = stats.bytes_received.load(std::memory_order_relaxed);
+    uint64_t bytes_sent_before = stats.bytes_sent.load(std::memory_order_relaxed);
 
     for (int i = 0; i < 5; i++) {
         auto ping = create_ping_message(magic, 2000 + i);
@@ -147,12 +158,16 @@ TEST_CASE("Peer - MessageCounters", "[peer][stats][regression]") {
         io_context.poll();
     }
 
-    auto stats_after = peer->stats();
+    // Load atomic values after sending messages
+    uint64_t msgs_recv_after = stats.messages_received.load(std::memory_order_relaxed);
+    uint64_t msgs_sent_after = stats.messages_sent.load(std::memory_order_relaxed);
+    uint64_t bytes_recv_after = stats.bytes_received.load(std::memory_order_relaxed);
+    uint64_t bytes_sent_after = stats.bytes_sent.load(std::memory_order_relaxed);
 
-    CHECK(stats_after.messages_received > stats_before.messages_received);
-    CHECK(stats_after.messages_sent > stats_before.messages_sent);
-    CHECK(stats_after.bytes_received > stats_before.bytes_received);
-    CHECK(stats_after.bytes_sent > stats_before.bytes_sent);
+    CHECK(msgs_recv_after > msgs_recv_before);
+    CHECK(msgs_sent_after > msgs_sent_before);
+    CHECK(bytes_recv_after > bytes_recv_before);
+    CHECK(bytes_sent_after > bytes_sent_before);
 }
 
 // =============================================================================

@@ -70,6 +70,7 @@ private:
   // Send queue (protected by mutex)
   std::mutex send_mutex_;
   std::queue<std::vector<uint8_t>> send_queue_;
+  size_t send_queue_bytes_ = 0;  // Total bytes in send queue (for DoS protection)
   bool writing_ = false;
 
   // Receive buffer (single large buffer for efficiency)

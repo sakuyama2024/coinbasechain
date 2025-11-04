@@ -2,6 +2,7 @@
 // Real transport implementation using boost::asio TCP sockets
 
 #include "network/real_transport.hpp"
+#include "network/protocol.hpp"
 #include "util/logging.hpp"
 #include <thread>
 
@@ -48,7 +49,22 @@ RealTransportConnection::RealTransportConnection(
     : io_context_(io_context), socket_(io_context), is_inbound_(is_inbound),
       id_(next_id_++), recv_buffer_(RECV_BUFFER_SIZE) {}
 
-RealTransportConnection::~RealTransportConnection() { close(); }
+RealTransportConnection::~RealTransportConnection() {
+  // SECURITY: Destructor should be defensive-only, never initiate cleanup
+  // All cleanup must happen in close() while the shared_ptr is still alive
+  // Reason: If we close socket here, pending async operations might invoke
+  // callbacks during/after destructor execution (use-after-free)
+  //
+  // Correct lifecycle: close() is called -> callbacks cleared -> socket closed
+  // Then later: destructor runs on already-cleaned-up object
+  if (open_.load()) {
+    LOG_NET_ERROR("CRITICAL: RealTransportConnection destructor called without "
+                  "prior close() - address:{}:{}. This indicates a lifecycle bug. "
+                  "close() must be called while shared_ptr is alive.",
+                  remote_addr_, remote_port_);
+    // Don't attempt cleanup here - would risk use-after-free if async ops pending
+  }
+}
 
 void RealTransportConnection::do_connect(const std::string &address,
                                          uint16_t port,
@@ -149,10 +165,13 @@ void RealTransportConnection::start_read() {
             LOG_NET_TRACE("read error from {}:{}: {}", remote_addr_, remote_port_,
                       ec.message());
           }
+          // Save disconnect callback before close() clears it
+          auto saved_disconnect_cb = disconnect_callback_;
           close();
-          if (disconnect_callback_) {
+          // Invoke saved callback after close() (safe: we're in async callback with shared_ptr)
+          if (saved_disconnect_cb) {
             try {
-              disconnect_callback_();
+              saved_disconnect_cb();
             } catch (const std::exception &e) {
               LOG_NET_TRACE("exception in disconnect callback: {}", e.what());
             } catch (...) {
@@ -189,7 +208,36 @@ bool RealTransportConnection::send(const std::vector<uint8_t> &data) {
 
   {
     std::lock_guard<std::mutex> lock(send_mutex_);
+
+    // DoS Protection: Enforce send queue size limit (prevent slow-reading peer from exhausting memory)
+    // If peer is not reading fast enough, disconnect rather than accumulating unbounded queue
+    if (send_queue_bytes_ + data.size() > protocol::DEFAULT_SEND_QUEUE_SIZE) {
+      LOG_NET_WARN("Send queue overflow (current: {} bytes, incoming: {} bytes, limit: {} bytes), "
+                   "disconnecting slow-reading peer {}:{}",
+                   send_queue_bytes_, data.size(), protocol::DEFAULT_SEND_QUEUE_SIZE,
+                   remote_addr_, remote_port_);
+      // Mark as closed to prevent further sends; actual disconnect happens in close()
+      open_ = false;
+
+      // Schedule disconnect callback on io_context thread to avoid lock ordering issues
+      boost::asio::post(io_context_, [this, self = shared_from_this()]() {
+        close();
+        if (disconnect_callback_) {
+          try {
+            disconnect_callback_();
+          } catch (const std::exception &e) {
+            LOG_NET_TRACE("exception in disconnect callback: {}", e.what());
+          } catch (...) {
+            LOG_NET_TRACE("unknown exception in disconnect callback");
+          }
+        }
+      });
+
+      return false;
+    }
+
     send_queue_.push(data);
+    send_queue_bytes_ += data.size();
   }
 
   // Trigger write if not already writing
@@ -222,10 +270,13 @@ void RealTransportConnection::do_write() {
         if (ec) {
           LOG_NET_TRACE("write error to {}:{}: {}", remote_addr_, remote_port_,
                     ec.message());
+          // Save disconnect callback before close() clears it
+          auto saved_disconnect_cb = disconnect_callback_;
           close();
-          if (disconnect_callback_) {
+          // Invoke saved callback after close() (safe: we're in async callback with shared_ptr)
+          if (saved_disconnect_cb) {
             try {
-              disconnect_callback_();
+              saved_disconnect_cb();
             } catch (const std::exception &e) {
               LOG_NET_TRACE("exception in disconnect callback: {}", e.what());
             } catch (...) {
@@ -235,8 +286,10 @@ void RealTransportConnection::do_write() {
           return;
         }
 
-        // Remove sent message
+        // Remove sent message and update byte counter
+        size_t sent_bytes = send_queue_.front().size();
         send_queue_.pop();
+        send_queue_bytes_ -= sent_bytes;
 
         // Continue writing if more queued
         // IMPORTANT: Don't call do_write() directly here - that would cause
@@ -254,6 +307,11 @@ void RealTransportConnection::close() {
     return; // Already closed
   }
 
+  // SECURITY: Clear callbacks BEFORE shutting down socket to prevent use-after-free
+  // If pending async operations complete after close(), they should not invoke callbacks
+  receive_callback_ = {};
+  disconnect_callback_ = {};
+
   boost::system::error_code ec;
   socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
   socket_.close(ec);
@@ -264,6 +322,7 @@ void RealTransportConnection::close() {
     writing_ = false;
     std::queue<std::vector<uint8_t>> empty;
     std::swap(send_queue_, empty);
+    send_queue_bytes_ = 0;
   }
 }
 

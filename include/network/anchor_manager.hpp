@@ -25,7 +25,6 @@ class PeerLifecycleManager;
  *
  * Design: AnchorManager is passive - it manages address selection and persistence,
  * but NetworkManager is responsible for initiating connections to anchor addresses.
- * This avoids circular dependencies and maintains clean layering.
  */
 class AnchorManager {
 public:
@@ -44,7 +43,7 @@ public:
   bool SaveAnchors(const std::string& filepath);
 
   /**
-   * Load anchor addresses from file (PASSIVE - does not initiate connections)
+   * Load anchor addresses from file 
    * Returns list of anchor addresses for NetworkManager to connect to
    * Deletes the anchors file after reading (single-use)
    *

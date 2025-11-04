@@ -136,6 +136,10 @@ ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,
   }
 
   // Step 9: Anti-DoS gate – require caller to have validated sufficient work
+  // SECURITY: Follows Bitcoin Core pattern (TryLowWorkHeadersSync). Caller MUST perform
+  // batch-level work validation using GetAntiDoSWorkThreshold() BEFORE calling this function.
+  // See HeaderSyncManager::ProcessHeaders() for reference implementation (lines 312-357).
+  // This parameter is a defense-in-depth gate to prevent programming errors.
   if (!min_pow_checked) {
     LOG_CHAIN_TRACE("Not adding header {}: min_pow_checked=false (anti-DoS)", hash.ToString().substr(0, 16));
     state.Invalid("too-little-chainwork", "missing anti-DoS work validation");

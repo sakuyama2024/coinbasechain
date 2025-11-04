@@ -131,15 +131,13 @@ int PeerLifecycleManager::add_peer(PeerPtr peer, NetPermissionFlags permissions,
       return -1; // Couldn't evict anyone, reject connection
     }
     // Recompute inbound counts after eviction to avoid TOCTOU
-    if (is_inbound) {
-      size_t inbound_now = 0;
-      peer_states_.ForEach([&](int id, const PerPeerState& state) {
-        if (state.peer && state.peer->is_inbound()) inbound_now++;
-      });
-      if (inbound_now >= config_.max_inbound_peers) {
-        LOG_NET_TRACE("add_peer: inbound still at capacity after eviction, rejecting");
-        return -1;
-      }
+    size_t inbound_now = 0;
+    peer_states_.ForEach([&](int id, const PerPeerState& state) {
+      if (state.peer && state.peer->is_inbound()) inbound_now++;
+    });
+    if (inbound_now >= config_.max_inbound_peers) {
+      LOG_NET_TRACE("add_peer: inbound still at capacity after eviction, rejecting");
+      return -1;
     }
     // Successfully evicted and capacity confirmed; continue
   }
@@ -250,15 +248,13 @@ bool PeerLifecycleManager::add_peer_with_id(int peer_id, PeerPtr peer, NetPermis
       return false;
     }
     // Recompute inbound counts after eviction
-    if (is_inbound) {
-      size_t inbound_now = 0;
-      peer_states_.ForEach([&](int id, const PerPeerState& state) {
-        if (state.peer && state.peer->is_inbound()) inbound_now++;
-      });
-      if (inbound_now >= config_.max_inbound_peers) {
-        LOG_NET_TRACE("add_peer_with_id: inbound still at capacity after eviction");
-        return false;
-      }
+    size_t inbound_now = 0;
+    peer_states_.ForEach([&](int id, const PerPeerState& state) {
+      if (state.peer && state.peer->is_inbound()) inbound_now++;
+    });
+    if (inbound_now >= config_.max_inbound_peers) {
+      LOG_NET_TRACE("add_peer_with_id: inbound still at capacity after eviction");
+      return false;
     }
   }
 
@@ -522,14 +518,18 @@ bool PeerLifecycleManager::evict_inbound_peer() {
     }
 
     // Protect recently connected peers (within 10 seconds)
-    auto connection_age = std::chrono::duration_cast<std::chrono::seconds>(
-        now - state.peer->stats().connected_time);
+    auto connected_time = state.peer->stats().connected_time.load(std::memory_order_relaxed);
+    auto now_duration = std::chrono::duration_cast<std::chrono::seconds>(
+        now.time_since_epoch());
+    auto connection_age = now_duration - connected_time;
     if (connection_age.count() < 10) {
       return;
     }
 
-    candidates.push_back(
-        {id, state.peer->stats().connected_time, state.peer->stats().ping_time_ms});
+    auto ping_ms = state.peer->stats().ping_time_ms.load(std::memory_order_relaxed);
+    // Convert connected_time back to time_point for sorting
+    auto connected_tp = std::chrono::steady_clock::time_point(connected_time);
+    candidates.push_back({id, connected_tp, ping_ms.count()});
   });
 
   // If no candidates, can't evict
@@ -1258,13 +1258,17 @@ void PeerLifecycleManager::HandleInboundConnection(TransportConnectionPtr connec
     // Setup message handler via callback
     setup_handler(peer.get());
 
-    // Start the peer (waits for VERSION from peer)
-    peer->start();
-
-    // Add to peer manager
+    // Add to peer manager FIRST (sets peer ID)
     int peer_id = add_peer(std::move(peer), permissions);
     if (peer_id < 0) {
       LOG_NET_ERROR("Failed to add inbound peer to manager");
+      return;
+    }
+
+    // Retrieve peer and start it (NOW id_ is set correctly)
+    auto peer_state = peer_states_.Get(peer_id);
+    if (peer_state && peer_state->peer) {
+      peer_state->peer->start();
     }
   }
 }

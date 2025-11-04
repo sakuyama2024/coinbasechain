@@ -69,9 +69,13 @@ std::vector<protocol::NetworkAddress> AnchorManager::GetAnchors() const {
       Candidate c;
       c.peer = peer;
       c.addr = addr;
-      auto age = std::chrono::duration_cast<std::chrono::seconds>(now - peer->stats().connected_time).count();
+      // Load atomic durations
+      auto connected_time = peer->stats().connected_time.load(std::memory_order_relaxed);
+      auto connected_tp = std::chrono::steady_clock::time_point(connected_time);
+      auto age = std::chrono::duration_cast<std::chrono::seconds>(now - connected_tp).count();
       c.age_s = std::max<int64_t>(0, age);
-      c.ping_ms = (peer->stats().ping_time_ms >= 0) ? peer->stats().ping_time_ms : std::numeric_limits<int64_t>::max();
+      auto ping_ms_val = peer->stats().ping_time_ms.load(std::memory_order_relaxed);
+      c.ping_ms = (ping_ms_val.count() >= 0) ? ping_ms_val.count() : std::numeric_limits<int64_t>::max();
       candidates.push_back(std::move(c));
     } catch (const std::exception &e) {
       LOG_NET_WARN("Exception parsing IP address '{}': {}", ip_str, e.what());

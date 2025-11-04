@@ -654,8 +654,10 @@ RPCServer::HandleGetPeerInfo(const std::vector<std::string> &params) {
 
     // Calculate connection duration in seconds
     auto now = std::chrono::steady_clock::now();
+    auto connected_time = stats.connected_time.load(std::memory_order_relaxed);
+    auto connected_tp = std::chrono::steady_clock::time_point(connected_time);
     auto duration = std::chrono::duration_cast<std::chrono::seconds>(
-        now - stats.connected_time);
+        now - connected_tp);
 
     // Get misbehavior score from ConnectionManager
     int misbehavior_score = 0;
@@ -683,7 +685,7 @@ RPCServer::HandleGetPeerInfo(const std::vector<std::string> &params) {
         << "    \"services\": \"" << std::hex << std::setfill('0')
         << std::setw(16) << peer->services() << std::dec << "\",\n"
         << "    \"startingheight\": " << peer->start_height() << ",\n"
-        << "    \"pingtime\": " << (stats.ping_time_ms / 1000.0) << ",\n"
+        << "    \"pingtime\": " << (stats.ping_time_ms.load(std::memory_order_relaxed).count() / 1000.0) << ",\n"
         << "    \"bytessent\": " << stats.bytes_sent << ",\n"
         << "    \"bytesrecv\": " << stats.bytes_received << ",\n"
         << "    \"messagessent\": " << stats.messages_sent << ",\n"
@@ -1069,7 +1071,12 @@ RPCServer::HandleGetNetworkHashPS(const std::vector<std::string> &params) {
   // Default to DEFAULT_HASHRATE_CALCULATION_BLOCKS
   int nblocks = protocol::DEFAULT_HASHRATE_CALCULATION_BLOCKS;
   if (!params.empty()) {
-    nblocks = std::stoi(params[0]);
+    // Fix: Use SafeParseInt to prevent integer overflow/crash (was std::stoi)
+    auto nblocks_opt = SafeParseInt(params[0], -1, 10000000);
+    if (!nblocks_opt) {
+      return "{\"error\":\"Invalid nblocks parameter (must be -1 to 10000000)\"}\n";
+    }
+    nblocks = *nblocks_opt;
     if (nblocks == -1 || nblocks == 0) {
       nblocks = protocol::DEFAULT_HASHRATE_CALCULATION_BLOCKS;
     }

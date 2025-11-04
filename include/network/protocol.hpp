@@ -85,7 +85,7 @@ constexpr size_t MAX_VECTOR_ALLOCATE =
 // Network message limits (Bitcoin Core src/net.h)
 constexpr size_t MAX_PROTOCOL_MESSAGE_LENGTH = 4 * 1000 * 1000; // 4 MB - Single message limit
 constexpr size_t DEFAULT_MAX_RECEIVE_BUFFER = 5 * 1000; // 5 KB per peer (unused - we use RECV_FLOOD_SIZE)
-constexpr size_t DEFAULT_MAX_SEND_BUFFER = 1 * 1000; // 1 KB per peer (unused - send queue unbounded)
+constexpr size_t DEFAULT_SEND_QUEUE_SIZE = 5 * 1000 * 1000; // 5 MB - Send queue limit per peer (enforced)
 constexpr size_t DEFAULT_RECV_FLOOD_SIZE = 5 * 1000 * 1000; // 5 MB - Flood protection (enforced)
 
 // Protocol-specific limits

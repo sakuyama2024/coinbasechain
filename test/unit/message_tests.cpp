@@ -617,3 +617,162 @@ TEST_CASE("Message - GetAddr", "[network][message][unit]") {
         REQUIRE(getaddr.deserialize(empty, 0));
     }
 }
+
+// ============================================================================
+// DoS Protection Tests - Message Size Limits
+// ============================================================================
+
+TEST_CASE("VERSION Message - User Agent Length Enforcement", "[network][message][dos][security]") {
+    // Tests for CVE fix: user_agent length must be enforced DURING deserialization
+    // to prevent memory exhaustion attacks (max 256 bytes per Bitcoin Core)
+
+    SECTION("Normal user agent - should succeed") {
+        MessageSerializer s;
+        s.write_int32(70015);  // version
+        s.write_uint64(1);     // services
+        s.write_int64(1234567890);  // timestamp
+
+        // addr_recv (26 bytes)
+        s.write_uint64(0);  // services
+        std::array<uint8_t, 16> ipv6 = {0};
+        s.write_bytes(ipv6.data(), 16);
+        s.write_uint16(8333);  // port
+
+        // addr_from (26 bytes)
+        s.write_uint64(0);  // services
+        s.write_bytes(ipv6.data(), 16);
+        s.write_uint16(0);  // port
+
+        s.write_uint64(0x123456789abcdef);  // nonce
+        s.write_string("/CoinbaseChain:1.0.0/");  // user_agent (normal length)
+        s.write_int32(0);  // start_height
+
+        auto data = s.data();
+        VersionMessage msg;
+        REQUIRE(msg.deserialize(data.data(), data.size()));
+        REQUIRE(msg.user_agent == "/CoinbaseChain:1.0.0/");
+    }
+
+    SECTION("User agent at MAX_SUBVERSION_LENGTH (256) - should succeed") {
+        MessageSerializer s;
+        s.write_int32(70015);
+        s.write_uint64(1);
+        s.write_int64(1234567890);
+
+        // addr_recv
+        s.write_uint64(0);
+        std::array<uint8_t, 16> ipv6 = {0};
+        s.write_bytes(ipv6.data(), 16);
+        s.write_uint16(8333);
+
+        // addr_from
+        s.write_uint64(0);
+        s.write_bytes(ipv6.data(), 16);
+        s.write_uint16(0);
+
+        s.write_uint64(0x123456789abcdef);
+
+        // Create string exactly at limit (256 bytes)
+        std::string max_user_agent(MAX_SUBVERSION_LENGTH, 'A');
+        s.write_string(max_user_agent);
+        s.write_int32(0);
+
+        auto data = s.data();
+        VersionMessage msg;
+        REQUIRE(msg.deserialize(data.data(), data.size()));
+        REQUIRE(msg.user_agent == max_user_agent);
+        REQUIRE(msg.user_agent.length() == MAX_SUBVERSION_LENGTH);
+    }
+
+    SECTION("User agent over MAX_SUBVERSION_LENGTH - should fail") {
+        MessageSerializer s;
+        s.write_int32(70015);
+        s.write_uint64(1);
+        s.write_int64(1234567890);
+
+        // addr_recv
+        s.write_uint64(0);
+        std::array<uint8_t, 16> ipv6 = {0};
+        s.write_bytes(ipv6.data(), 16);
+        s.write_uint16(8333);
+
+        // addr_from
+        s.write_uint64(0);
+        s.write_bytes(ipv6.data(), 16);
+        s.write_uint16(0);
+
+        s.write_uint64(0x123456789abcdef);
+
+        // Create string OVER limit (257 bytes)
+        std::string oversized_user_agent(MAX_SUBVERSION_LENGTH + 1, 'A');
+        s.write_string(oversized_user_agent);
+        s.write_int32(0);
+
+        auto data = s.data();
+        VersionMessage msg;
+        // Should fail deserialization due to limit enforcement
+        REQUIRE_FALSE(msg.deserialize(data.data(), data.size()));
+    }
+
+    SECTION("Very large user agent (4KB) - should fail without OOM") {
+        // This tests that we reject large strings BEFORE allocation
+        MessageSerializer s;
+        s.write_int32(70015);
+        s.write_uint64(1);
+        s.write_int64(1234567890);
+
+        // addr_recv
+        s.write_uint64(0);
+        std::array<uint8_t, 16> ipv6 = {0};
+        s.write_bytes(ipv6.data(), 16);
+        s.write_uint16(8333);
+
+        // addr_from
+        s.write_uint64(0);
+        s.write_bytes(ipv6.data(), 16);
+        s.write_uint16(0);
+
+        s.write_uint64(0x123456789abcdef);
+
+        // Create very large string (4KB)
+        std::string huge_user_agent(4096, 'B');
+        s.write_string(huge_user_agent);
+        s.write_int32(0);
+
+        auto data = s.data();
+        VersionMessage msg;
+        // Should fail quickly without allocating 4KB
+        REQUIRE_FALSE(msg.deserialize(data.data(), data.size()));
+    }
+
+    SECTION("Malformed varint for user_agent length - should fail") {
+        MessageSerializer s;
+        s.write_int32(70015);
+        s.write_uint64(1);
+        s.write_int64(1234567890);
+
+        // addr_recv
+        s.write_uint64(0);
+        std::array<uint8_t, 16> ipv6 = {0};
+        s.write_bytes(ipv6.data(), 16);
+        s.write_uint16(8333);
+
+        // addr_from
+        s.write_uint64(0);
+        s.write_bytes(ipv6.data(), 16);
+        s.write_uint16(0);
+
+        s.write_uint64(0x123456789abcdef);
+
+        // Manually write a varint claiming huge size but with insufficient data
+        s.write_uint8(0xfd);  // 3-byte varint prefix
+        s.write_uint16(5000); // Claims 5000 bytes
+        // But don't provide 5000 bytes - only provide a few
+        s.write_string("short");
+        s.write_int32(0);
+
+        auto data = s.data();
+        VersionMessage msg;
+        REQUIRE_FALSE(msg.deserialize(data.data(), data.size()));
+    }
+}

@@ -91,7 +91,7 @@ public:
 
   // Read variable-length
   uint64_t read_varint();
-  std::string read_string();
+  std::string read_string(size_t max_length = SIZE_MAX);
   std::vector<uint8_t> read_bytes(size_t count);
 
   // Read protocol structures

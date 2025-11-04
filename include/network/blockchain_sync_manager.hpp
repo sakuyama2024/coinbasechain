@@ -58,8 +58,7 @@ class BlockchainSyncManager {
 public:
   // Constructor: Creates owned sync managers internally
   // BlockchainSyncManager creates and owns HeaderSyncManager and BlockRelayManager
-  BlockchainSyncManager(validation::ChainstateManager& chainstate,
-                        PeerLifecycleManager& peer_manager);
+  BlockchainSyncManager(validation::ChainstateManager& chainstate, PeerLifecycleManager& peer_manager);
 
   ~BlockchainSyncManager();
 
@@ -102,7 +101,6 @@ public:
 
   // === Component Accessors ===
   // Provide access to owned managers for NetworkManager to call their methods
-  // These replace direct member access after ownership transfer
 
   HeaderSyncManager& header_sync() { return *header_sync_manager_; }
   const HeaderSyncManager& header_sync() const { return *header_sync_manager_; }

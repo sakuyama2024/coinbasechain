@@ -30,15 +30,18 @@ enum class PeerState {
 };
 
 // Peer connection statistics
+// SECURITY: All fields are atomic to prevent data races between timer callbacks
+// and send/receive operations that may run on different threads
+// Pattern matches Bitcoin Core: atomic duration types for timestamps
 struct PeerStats {
-  uint64_t bytes_sent = 0;
-  uint64_t bytes_received = 0;
-  uint64_t messages_sent = 0;
-  uint64_t messages_received = 0;
-  std::chrono::steady_clock::time_point connected_time;
-  std::chrono::steady_clock::time_point last_send;
-  std::chrono::steady_clock::time_point last_recv;
-  int64_t ping_time_ms = -1; // -1 means not measured yet
+  std::atomic<uint64_t> bytes_sent{0};
+  std::atomic<uint64_t> bytes_received{0};
+  std::atomic<uint64_t> messages_sent{0};
+  std::atomic<uint64_t> messages_received{0};
+  std::atomic<std::chrono::seconds> connected_time{std::chrono::seconds{0}};
+  std::atomic<std::chrono::seconds> last_send{std::chrono::seconds{0}};
+  std::atomic<std::chrono::seconds> last_recv{std::chrono::seconds{0}};
+  std::atomic<std::chrono::milliseconds> ping_time_ms{std::chrono::milliseconds{-1}};  // -1 means not measured yet
 };
 
 // Message handler callback type (returns true if message handled successfully)
@@ -147,7 +150,7 @@ private:
   void handle_verack();
 
   // Message I/O
-  void process_received_data(std::vector<uint8_t> &buffer);
+  void process_received_data();  // Uses recv_buffer_ with offset pattern
   void process_message(const protocol::MessageHeader &header,
                        const std::vector<uint8_t> &payload);
 
@@ -160,6 +163,12 @@ private:
   void start_handshake_timeout();
   void start_inactivity_timeout();
   void cancel_all_timers();
+
+  // SECURITY: Post disconnect to io_context to prevent use-after-free
+  // If caller holds last shared_ptr and calls disconnect() synchronously,
+  // the destructor runs while still in the call stack (re-entrancy bug).
+  // Posting disconnect defers it until after current call finishes.
+  void post_disconnect();
 
   // Member variables
   boost::asio::io_context &io_context_;
@@ -199,7 +208,9 @@ private:
   uint64_t peer_nonce_ = 0; // Peer's nonce from their VERSION message
 
   // Receive buffer (accumulates data until complete message received)
+  // Uses read offset pattern to avoid O(n²) erase-from-front
   std::vector<uint8_t> recv_buffer_;
+  size_t recv_buffer_offset_ = 0;  // Read position in recv_buffer_
 
   // Ping tracking
   uint64_t last_ping_nonce_ = 0;

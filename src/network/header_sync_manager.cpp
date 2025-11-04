@@ -500,7 +500,13 @@ bool HeaderSyncManager::HandleGetHeadersMessage(
     return false;
   }
 
-  LOG_NET_TRACE("peer={} requested headers (locator size: {})", peer->id(),
+  int peer_id = peer->id();
+
+  // NOTE: Bitcoin Core does NOT rate limit GETHEADERS requests
+  // DoS protection relies on bounded response size (MAX_HEADERS_SIZE = 2000)
+  // Rate limiting would break legitimate IBD sync which sends many requests rapidly
+
+  LOG_NET_TRACE("peer={} requested headers (locator size: {})", peer_id,
                 msg->block_locator_hashes.size());
 
   // Find the fork point using the block locator
