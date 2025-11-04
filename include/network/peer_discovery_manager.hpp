@@ -253,15 +253,13 @@ private:
   // Cap per-peer learned cache to bound memory
   static constexpr size_t MAX_LEARNED_PER_PEER = 2000;
 
-  // Mutex guarding recent ring buffer (recent_addrs_)
-  mutable std::mutex addr_mutex_;
-
   // Recently learned addresses (global ring buffer) to improve GETADDR responsiveness
+  // Single-threaded: accessed only from io_context thread (message handlers)
   std::deque<protocol::TimestampedAddress> recent_addrs_;
   static constexpr size_t RECENT_ADDRS_MAX = 5000;
 
   // Debug counters/state for GETADDR decisions
-  mutable std::mutex stats_mutex_;
+  // Single-threaded: updated from io_context thread, read from tests
   uint64_t stats_getaddr_total_{0};
   uint64_t stats_getaddr_served_{0};
   uint64_t stats_getaddr_ignored_outbound_{0};

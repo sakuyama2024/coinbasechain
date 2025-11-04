@@ -6,7 +6,6 @@
 #include "util/uint.hpp"
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -17,7 +16,7 @@ namespace coinbasechain {
  *
  * Design philosophy (mirrors ChainNotifications):
  * - Simple observer pattern with std::function
- * - Thread-safe using std::mutex
+ * - Single-threaded (io_context thread only, no mutex needed)
  * - No background queue (synchronous callbacks)
  * - RAII-based subscription management
  * - Singleton pattern (no wiring needed)
@@ -192,7 +191,7 @@ private:
     MisbehaviorCallback misbehavior;
   };
 
-  std::mutex mutex_;
+  // Single-threaded (io_context thread only, no mutex needed)
   std::vector<CallbackEntry> callbacks_;
   size_t next_id_{1}; // 0 reserved for invalid
 };

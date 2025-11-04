@@ -40,7 +40,6 @@ HeaderSyncManager::HeaderSyncManager(validation::ChainstateManager& chainstate,
 }
 
 uint64_t HeaderSyncManager::GetSyncPeerId() const {
-  std::lock_guard<std::mutex> lock(sync_mutex_);
   return sync_state_.sync_peer_id;
 }
 
@@ -53,7 +52,6 @@ void HeaderSyncManager::SetSyncPeerUnlocked(uint64_t peer_id) {
 }
 
 void HeaderSyncManager::SetSyncPeer(uint64_t peer_id) {
-  std::lock_guard<std::mutex> lock(sync_mutex_);
   SetSyncPeerUnlocked(peer_id);
 }
 
@@ -71,14 +69,12 @@ void HeaderSyncManager::ClearSyncPeerUnlocked() {
 }
 
 void HeaderSyncManager::ClearSyncPeer() {
-  std::lock_guard<std::mutex> lock(sync_mutex_);
   ClearSyncPeerUnlocked();
 }
 
 void HeaderSyncManager::OnPeerDisconnected(uint64_t peer_id) {
   // Bitcoin Core cleanup (FinalizeNode): if (state->fSyncStarted) nSyncStarted--;
   // If this was our sync peer, reset sync state to allow retry with another peer
-  std::lock_guard<std::mutex> lock(sync_mutex_);
   if (sync_state_.sync_peer_id == peer_id) {
     LOG_NET_DEBUG("Sync peer {} disconnected, clearing sync state", peer_id);
     ClearSyncPeerUnlocked();
@@ -89,13 +85,9 @@ void HeaderSyncManager::ProcessTimers() {
   // Basic headers sync stall detection (loosely based on Bitcoin Core)
   // If initial sync is running and we haven't received headers for a while,
   // disconnect the sync peer to allow retrying another peer.
-  uint64_t sync_id = NO_SYNC_PEER;
-  int64_t last_us = 0;
-  {
-    std::lock_guard<std::mutex> lock(sync_mutex_);
-    sync_id = sync_state_.sync_peer_id;
-    last_us = sync_state_.last_headers_received_us;
-  }
+  uint64_t sync_id = sync_state_.sync_peer_id;
+  int64_t last_us = sync_state_.last_headers_received_us;
+
   if (sync_id == NO_SYNC_PEER) return;
 
   // Use mockable wall-clock time for determinism in tests
@@ -122,13 +114,6 @@ void HeaderSyncManager::CheckInitialSync() {
   // Bitcoin Core uses nSyncStarted counter - only selects new sync peer when nSyncStarted==0.
   if (HasSyncPeer()) {
     LOG_NET_TRACE("CheckInitialSync: already have sync peer, returning");
-    return;
-  }
-
-  // Protect peer selection with mutex to prevent races
-  std::lock_guard<std::mutex> lock(sync_mutex_);
-  if (sync_state_.sync_peer_id != NO_SYNC_PEER) {
-    LOG_NET_TRACE("CheckInitialSync: sync peer set while acquiring lock, returning");
     return;
   }
 
@@ -234,10 +219,7 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
                 headers.size(), peer_id, skip_dos_checks);
 
   // Update last headers received timestamp
-  {
-    std::lock_guard<std::mutex> lock(sync_mutex_);
-    sync_state_.last_headers_received_us = util::GetTime() * kMicrosPerSecond;
-  }
+  sync_state_.last_headers_received_us = util::GetTime() * kMicrosPerSecond;
 
   // Empty reply: peer has no more headers to offer from our locator.
   // Clear current sync peer so the next CheckInitialSync() can choose another peer
@@ -356,11 +338,8 @@ bool HeaderSyncManager::HandleHeadersMessage(PeerPtr peer,
     LOG_NET_TRACE("Skipping low-work check for peer {} (headers already validated)", peer_id);
   }
 
-  // Store batch size under lock
-  {
-    std::lock_guard<std::mutex> lock(sync_mutex_);
-    last_batch_size_ = headers.size();
-  }
+  // Store batch size
+  last_batch_size_ = headers.size();
 
   // Accept all headers into block index
   for (const auto &header : headers) {
@@ -614,7 +593,6 @@ bool HeaderSyncManager::ShouldRequestMore() const {
   // IMPORTANT: Do NOT check IsSynced() here! In regtest, blocks are mined
   // instantly so tip is always "recent", which would cause us to abandon
   // sync peers prematurely. Bitcoin Core doesn't check sync state here either.
-  std::lock_guard<std::mutex> lock(sync_mutex_);
   return last_batch_size_ == protocol::MAX_HEADERS_SIZE;
 }
 

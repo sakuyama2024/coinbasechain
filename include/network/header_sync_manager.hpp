@@ -27,7 +27,6 @@
 #include "network/message.hpp"
 #include "network/notifications.hpp"
 #include <cstdint>
-#include <mutex>
 #include <memory>
 #include <limits>
 
@@ -82,9 +81,9 @@ public:
   bool HasSyncPeer() const { return GetSyncPeerId() != NO_SYNC_PEER; }
   void SetSyncPeer(uint64_t peer_id);
   void ClearSyncPeer();
-  
+
 private:
-  // Internal helpers (require sync_mutex_ held)
+  // Internal helpers (io_context thread only)
   void SetSyncPeerUnlocked(uint64_t peer_id);
   void ClearSyncPeerUnlocked();
 
@@ -95,7 +94,8 @@ private:
   validation::ChainstateManager& chainstate_manager_;
   PeerLifecycleManager& peer_manager_;
 
-  // Serialized sync state (single domain under sync_mutex_)
+  // Sync state (single-threaded: accessed only from io_context thread)
+  // No mutex needed - all accesses serialized by io_context reactor
   struct SyncState {
     uint64_t sync_peer_id = NO_SYNC_PEER;     // NO_SYNC_PEER = no sync peer
     int64_t sync_start_time_us = 0;           // When sync started (microseconds since epoch)
@@ -104,10 +104,9 @@ private:
     // sync peer via HasSyncPeer() check in CheckInitialSync(), so no counter needed.
   };
 
-  mutable std::mutex sync_mutex_;
   SyncState sync_state_{};
 
-  // Header batch tracking (protected by sync_mutex_)
+  // Header batch tracking (io_context thread only)
   size_t last_batch_size_{0};  // Size of last headers batch received
 
   // NetworkNotifications subscription (RAII cleanup on destruction)

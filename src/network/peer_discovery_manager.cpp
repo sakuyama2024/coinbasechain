@@ -187,13 +187,10 @@ bool PeerDiscoveryManager::HandleAddr(PeerPtr peer, message::AddrMessage* msg) {
   }
 
   // Global recent ring (O(1) eviction)
-  {
-    std::lock_guard<std::mutex> g(addr_mutex_);
-    for (const auto& ta : msg->addresses) {
-      recent_addrs_.push_back(ta);
-      if (recent_addrs_.size() > RECENT_ADDRS_MAX) {
-        recent_addrs_.pop_front();
-      }
+  for (const auto& ta : msg->addresses) {
+    recent_addrs_.push_back(ta);
+    if (recent_addrs_.size() > RECENT_ADDRS_MAX) {
+      recent_addrs_.pop_front();
     }
   }
 
@@ -211,10 +208,7 @@ bool PeerDiscoveryManager::HandleGetAddr(PeerPtr peer) {
     return false;
   }
 
-  {
-    std::lock_guard<std::mutex> sg(stats_mutex_);
-    stats_getaddr_total_++;
-  }
+  stats_getaddr_total_++;
 
   // Respond only to INBOUND peers (fingerprinting protection)
   // This asymmetric behavior prevents attackers from fingerprinting nodes by:
@@ -222,10 +216,7 @@ bool PeerDiscoveryManager::HandleGetAddr(PeerPtr peer) {
   // 2. Later requesting GETADDR to check if those addresses are returned
   // Reference: Bitcoin Core net_processing.cpp ProcessMessage("getaddr")
   if (!peer->is_inbound()) {
-    {
-      std::lock_guard<std::mutex> sg(stats_mutex_);
-      stats_getaddr_ignored_outbound_++;
-    }
+    stats_getaddr_ignored_outbound_++;
     LOG_NET_DEBUG("GETADDR ignored: outbound peer={} (inbound-only policy)", peer->id());
     return true; // Not an error; just ignore
   }
@@ -236,10 +227,7 @@ bool PeerDiscoveryManager::HandleGetAddr(PeerPtr peer) {
   // Once-per-connection gating (reply to GETADDR only once per connection)
   // Use ConnectionManager accessor
   if (peer_manager_ && peer_manager_->HasRepliedToGetAddr(peer_id)) {
-    {
-      std::lock_guard<std::mutex> sg(stats_mutex_);
-      stats_getaddr_ignored_repeat_++;
-    }
+    stats_getaddr_ignored_repeat_++;
     LOG_NET_DEBUG("GETADDR ignored: repeat on same connection peer={}", peer_id);
     return true;
   }
@@ -299,16 +287,13 @@ bool PeerDiscoveryManager::HandleGetAddr(PeerPtr peer) {
   size_t c_suppressed = 0;
 
   // 1) Prefer recently learned addresses (most recent first)
-  {
-    std::lock_guard<std::mutex> g(addr_mutex_);
-    for (auto it = recent_addrs_.rbegin(); it != recent_addrs_.rend(); ++it) {
-      if (response->addresses.size() >= protocol::MAX_ADDR_SIZE) break;
-      AddressKey k = MakeKey(it->address);
-      if (is_suppressed(k)) { c_suppressed++; continue; }
-      if (!included.insert(k).second) continue;
-      response->addresses.push_back(*it);
-      c_from_recent++;
-    }
+  for (auto it = recent_addrs_.rbegin(); it != recent_addrs_.rend(); ++it) {
+    if (response->addresses.size() >= protocol::MAX_ADDR_SIZE) break;
+    AddressKey k = MakeKey(it->address);
+    if (is_suppressed(k)) { c_suppressed++; continue; }
+    if (!included.insert(k).second) continue;
+    response->addresses.push_back(*it);
+    c_from_recent++;
   }
 
   // 2) Top-up from AddrMan sample
@@ -342,13 +327,10 @@ bool PeerDiscoveryManager::HandleGetAddr(PeerPtr peer) {
   }
 
   // Save composition stats and log
-  {
-    std::lock_guard<std::mutex> sg(stats_mutex_);
-    last_resp_from_addrman_ = c_from_addrman;
-    last_resp_from_recent_ = c_from_recent;
-    last_resp_from_learned_ = c_from_learned;
-    last_resp_suppressed_ = c_suppressed;
-  }
+  last_resp_from_addrman_ = c_from_addrman;
+  last_resp_from_recent_ = c_from_recent;
+  last_resp_from_learned_ = c_from_learned;
+  last_resp_suppressed_ = c_suppressed;
   LOG_NET_DEBUG("GETADDR served peer={} addrs_total={} from_recent={} from_addrman={} from_learned={} suppressed={}",
                 peer_id, response->addresses.size(), c_from_recent, c_from_addrman, c_from_learned, c_suppressed);
 
@@ -364,15 +346,11 @@ bool PeerDiscoveryManager::HandleGetAddr(PeerPtr peer) {
   }
 
   peer->send_message(std::move(response));
-  {
-    std::lock_guard<std::mutex> sg(stats_mutex_);
-    stats_getaddr_served_++;
-  }
+  stats_getaddr_served_++;
   return true;
 }
 
 PeerDiscoveryManager::GetAddrDebugStats PeerDiscoveryManager::GetGetAddrDebugStats() const {
-  std::lock_guard<std::mutex> sg(stats_mutex_);
   GetAddrDebugStats s;
   s.total = stats_getaddr_total_;
   s.served = stats_getaddr_served_;

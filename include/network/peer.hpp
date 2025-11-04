@@ -144,6 +144,7 @@ public:
 private:
 
   // Connection management
+  void do_disconnect();  // Internal implementation (runs on io_context thread)
   void on_connected();
   void on_disconnect();
   void on_transport_receive(const std::vector<uint8_t> &data);
@@ -206,6 +207,10 @@ private:
   bool sync_started_{false};  // Bitcoin Core: CNodeState::fSyncStarted - whether we've started headers sync with this peer
   bool getaddr_sent_{false};  // Whether we've sent GETADDR to this peer (discovery)
 
+  // Thread-safe guard for start(): ensures start() executes exactly once
+  // even if called concurrently (init happens once, atomic is appropriate)
+  std::atomic<bool> started_{false};
+
   // Peer info from VERSION
   int32_t peer_version_ = 0;
   uint64_t peer_services_ = 0;
@@ -225,7 +230,12 @@ private:
   // Block announcement queue (like Bitcoin's m_blocks_for_inv_relay)
   // Blocks to announce to this peer via INV messages
   std::vector<uint256> blocks_for_inv_relay_;
-  mutable std::mutex block_inv_mutex_;  // Protects blocks_for_inv_relay_
+
+  // CROSS-THREAD ACCESS: Protects blocks_for_inv_relay_
+  // - Chain validation thread: writes via BlockConnected → relay_block() → RelayBlock()
+  // - Networking io_context thread: reads/writes via AnnounceTipToAllPeers(), FlushBlockAnnouncements()
+  // This mutex is REQUIRED and must not be removed.
+  mutable std::mutex block_inv_mutex_;
 
 public:
   // Thread-safe accessor for block announcement queue

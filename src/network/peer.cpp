@@ -94,15 +94,30 @@ void Peer::start() {
 LOG_NET_TRACE("Peer::start() peer={} state={} is_inbound={} address={}",
                 id_, static_cast<int>(state_), is_inbound_, address());
 
-  // SECURITY: Prevent double-start corruption (multiple timers, overwritten callbacks)
-  // Only allow start() to be called once: CONNECTING -> CONNECTED transition
+  // SECURITY: Thread-safe start() guard using atomic compare-exchange
+  // Prevents race condition where two threads both call start() concurrently:
+  //   Thread 1: checks state_, passes guard
+  //   Thread 2: checks state_, passes guard (TOCTOU bug!)
+  //   Both threads: register callbacks (second overwrites first)
+  //   Both threads: call connection_->start() twice
+  //   Both threads: start timers twice
+  //   Result: double callbacks, use-after-free, memory corruption
+  //
+  // Solution: Atomic CAS ensures exactly one thread wins the race
+  bool expected = false;
+  if (!started_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+    LOG_NET_TRACE("Peer {} already started (concurrent start() detected), ignoring duplicate call",
+                  id_);
+    return;
+  }
+
+  // Additional state validation after winning the race
   if (state_ != PeerState::CONNECTING && state_ != PeerState::CONNECTED) {
     if (state_ == PeerState::DISCONNECTED) {
       LOG_NET_ERROR("Cannot start disconnected peer - id:{}, address:{}, connection:{}",
                     id_, address(), connection_ ? "exists" : "null");
     } else {
-      // Already started (VERSION_SENT, READY, etc.) - idempotency guard
-      LOG_NET_TRACE("Peer {} already started (state={}), ignoring duplicate start() call",
+      LOG_NET_TRACE("Peer {} in unexpected state (state={}), ignoring start() call",
                     id_, static_cast<int>(state_));
     }
     return;
@@ -158,9 +173,27 @@ LOG_NET_TRACE("Peer::start() peer={} state={} is_inbound={} address={}",
 }
 
 void Peer::disconnect() {
-LOG_NET_TRACE("Peer::disconnect() peer={} address={} current_state={}",
+  // SECURITY: Thread-safe disconnect() via io_context serialization
+  // If called from external thread (RPC, background tasks), post to io_context
+  // If already on io_context thread (timers, callbacks), execute directly
+  // This serializes all disconnect operations on the single-threaded networking reactor
+  if (io_context_.get_executor().running_in_this_thread()) {
+    // Already on io_context thread - safe to execute directly
+    do_disconnect();
+  } else {
+    // External thread - post to io_context for serialization
+    auto self = shared_from_this();
+    boost::asio::post(io_context_, [self]() {
+      self->do_disconnect();
+    });
+  }
+}
+
+void Peer::do_disconnect() {
+  LOG_NET_TRACE("Peer::do_disconnect() peer={} address={} current_state={}",
                 id_, address(), static_cast<int>(state_));
 
+  // Simple state check - no atomics needed, we're on single-threaded io_context
   if (state_ == PeerState::DISCONNECTED || state_ == PeerState::DISCONNECTING) {
     LOG_NET_TRACE("Peer {} already disconnected/disconnecting, skipping", id_);
     return;
