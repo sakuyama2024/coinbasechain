@@ -12,6 +12,7 @@
 #include "chain/randomx_pow.hpp"
 #include "chain/timedata.hpp"
 #include "util/uint.hpp"
+#include "util/time.hpp"
 
 namespace coinbasechain {
 namespace validation {
@@ -97,22 +98,9 @@ bool ContextualCheckBlockHeader(const CBlockHeader &header,
 // This allows it to access m_failed_blocks and m_best_header
 
 int64_t GetAdjustedTime() {
-  // Network-adjusted time: system time + median offset from peers
-  //
-  // This is critical for blockchain security:
-  // - Prevents nodes with incorrect clocks from accepting invalid blocks
-  // - Protects against timestamp manipulation in difficulty adjustment
-  // - Mitigates eclipse attacks where attacker controls victim's time
-  // perception
-  //
-  // Implementation details:
-  // 1. Track time samples from peers (collected from version messages)
-  // 2. Calculate median offset from trusted peers (requires ≥5 peers)
-  // 3. Cap adjustment to ±70 minutes (DEFAULT_MAX_TIME_ADJUSTMENT)
-  // 4. Warn user if local clock differs significantly from network
-  //
+  // Network-adjusted time: mockable wall clock + median offset from peers
   // See chain/timedata.cpp for full implementation (based on Bitcoin Core)
-  return static_cast<int64_t>(std::time(nullptr)) + chain::GetTimeOffset();
+  return ::coinbasechain::util::GetTime() + chain::GetTimeOffset();
 }
 
 // ============================================================================

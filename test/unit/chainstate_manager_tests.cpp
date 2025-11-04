@@ -821,3 +821,78 @@ TEST_CASE("ChainstateManager - Edge Cases", "[chain][chainstate_manager][unit]")
         REQUIRE(csm.GetOrphanHeaderCount() == 1);
     }
 }
+
+TEST_CASE("ChainstateManager - Anti-DoS gate (min_pow_checked=false)", "[chain][chainstate_manager][unit]") {
+    auto params = ChainParams::CreateRegTest();
+    TestChainstateManager csm(*params);
+
+    CBlockHeader genesis = CreateTestHeader();
+    csm.Initialize(genesis);
+
+    SECTION("Reject when min_pow_checked is false") {
+        CBlockHeader block1 = CreateChildHeader(genesis.GetHash(), 1234567900);
+        ValidationState state;
+
+        CBlockIndex* p = csm.AcceptBlockHeader(block1, state, /*min_pow_checked=*/false);
+        REQUIRE(p == nullptr);
+        REQUIRE_FALSE(state.IsValid());
+        REQUIRE(state.GetRejectReason() == "too-little-chainwork");
+        REQUIRE(csm.LookupBlockIndex(block1.GetHash()) == nullptr);
+    }
+}
+
+TEST_CASE("ChainstateManager - Duplicate invalid re-announce", "[chain][chainstate_manager][unit]") {
+    auto params = ChainParams::CreateRegTest();
+    TestChainstateManager csm(*params);
+
+    CBlockHeader genesis = CreateTestHeader();
+    csm.Initialize(genesis);
+
+    // Accept a valid header first
+    CBlockHeader block1 = CreateChildHeader(genesis.GetHash(), 1234567900);
+    {
+        ValidationState st;
+        CBlockIndex* p1 = csm.AcceptBlockHeader(block1, st, /*min_pow_checked=*/true);
+        REQUIRE(p1 != nullptr);
+        REQUIRE(st.IsValid());
+    }
+
+    // Invalidate it
+    REQUIRE(csm.InvalidateBlock(block1.GetHash()));
+
+    // Re-announce the same header: should be rejected as duplicate (known invalid)
+    ValidationState st2;
+    CBlockIndex* p2 = csm.AcceptBlockHeader(block1, st2, /*min_pow_checked=*/true);
+    REQUIRE(p2 == nullptr);
+    REQUIRE_FALSE(st2.IsValid());
+    REQUIRE(st2.GetRejectReason() == "duplicate");
+}
+
+TEST_CASE("ChainstateManager - Descendant of invalid is rejected", "[chain][chainstate_manager][unit]") {
+    auto params = ChainParams::CreateRegTest();
+    TestChainstateManager csm(*params);
+
+    CBlockHeader genesis = CreateTestHeader();
+    csm.Initialize(genesis);
+
+    // Build chain: genesis -> A1 -> A2
+    CBlockHeader A1 = CreateChildHeader(genesis.GetHash(), 1000);
+    CBlockHeader A2 = CreateChildHeader(A1.GetHash(), 2000);
+
+    {
+        ValidationState s1; REQUIRE(csm.AcceptBlockHeader(A1, s1, /*min_pow_checked=*/true) != nullptr);
+        ValidationState s2; REQUIRE(csm.AcceptBlockHeader(A2, s2, /*min_pow_checked=*/true) != nullptr);
+    }
+
+    // Invalidate A1 (marks A1 failed and A2 as FAILED_CHILD)
+    REQUIRE(csm.InvalidateBlock(A1.GetHash()));
+
+    // Now try to accept a child of A2 (A3) -> parent is invalid (FAILED_CHILD)
+    CBlockHeader A3 = CreateChildHeader(A2.GetHash(), 3000);
+    ValidationState s3;
+    CBlockIndex* p3 = csm.AcceptBlockHeader(A3, s3, /*min_pow_checked=*/true);
+
+    REQUIRE(p3 == nullptr);
+    REQUIRE_FALSE(s3.IsValid());
+    REQUIRE(s3.GetRejectReason() == "bad-prevblk");
+}

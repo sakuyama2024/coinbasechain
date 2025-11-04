@@ -6,6 +6,10 @@
 #include "chain/block_index.hpp"
 #include "chain/block_manager.hpp"
 #include <set>
+#ifdef COINBASECHAIN_TESTS
+#include "util/uint.hpp"
+#include <vector>
+#endif
 
 namespace coinbasechain {
 namespace validation {
@@ -79,6 +83,20 @@ private:
 
   // Best header we've seen (most chainwork, may not be on active chain)
   chain::CBlockIndex *m_best_header{nullptr};
+
+#ifdef COINBASECHAIN_TESTS
+public:
+  // TEST-ONLY: debug accessors for candidate set; compiled only in tests
+  size_t DebugCandidateCount() const { return m_candidates.size(); }
+  std::vector<uint256> DebugCandidateHashes() const {
+    std::vector<uint256> out;
+    out.reserve(m_candidates.size());
+    for (auto* p : m_candidates) {
+      out.push_back(p->GetBlockHash());
+    }
+    return out;
+  }
+#endif
 };
 
 } // namespace validation

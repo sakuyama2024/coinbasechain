@@ -74,6 +74,13 @@ private:
   BlockTemplate CreateBlockTemplate();
   bool ShouldRegenerateTemplate(const uint256& prev_hash); // e.g., chain tip changed
 
+#ifdef COINBASECHAIN_TESTS
+public:
+  // TEST-ONLY: expose selected internals for deterministic unit testing
+  bool DebugShouldRegenerateTemplate(const uint256& prev_hash) { return ShouldRegenerateTemplate(prev_hash); }
+  BlockTemplate DebugCreateBlockTemplate() { return CreateBlockTemplate(); }
+#endif
+
 private:
   // Chain params
   const chain::ChainParams &params_;

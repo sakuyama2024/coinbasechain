@@ -717,6 +717,7 @@ bool ChainstateManager::Save(const std::string &filepath) const {
   return block_manager_.Save(filepath);
 }
 
+
 size_t ChainstateManager::GetBlockCount() const {
   std::lock_guard<std::recursive_mutex> lock(validation_mutex_);
   return block_manager_.GetBlockCount();
@@ -840,7 +841,7 @@ bool ChainstateManager::TryAddOrphanHeader(const CBlockHeader &header,
   }
 
   // Add to orphan pool
-  m_orphan_headers[hash] = OrphanHeader{header, std::time(nullptr), peer_id};
+  m_orphan_headers[hash] = OrphanHeader{header, util::GetTime(), peer_id};
 
   // Update peer count
   m_peer_orphan_count[peer_id]++;
@@ -860,7 +861,7 @@ size_t ChainstateManager::EvictOrphanHeaders() {
     return 0;
   }
 
-  int64_t now = std::time(nullptr);
+  int64_t now = util::GetTime();
   size_t evicted = 0;
 
   // Strategy 1: Evict expired orphans (older than chain-specific timeout)

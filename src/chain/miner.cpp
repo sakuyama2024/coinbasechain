@@ -9,6 +9,7 @@
 #include <ctime>
 #include <thread>
 #include "util/arith_uint256.hpp"
+#include "util/time.hpp"
 #include "chain/chainstate_manager.hpp"
 #include "util/logging.hpp"
 #include "chain/pow.hpp"
@@ -194,7 +195,7 @@ void CPUMiner::MiningWorker() {
     if (nonce == 0) {
       // Nonce space exhausted - increment timestamp
       // This gives us a fresh nonce space to search
-      uint32_t current_time = static_cast<uint32_t>(std::time(nullptr));
+      uint32_t current_time = static_cast<uint32_t>(util::GetTime());
       uint32_t max_future_time = current_time + (2 * 60 * 60); // +2 hours (Bitcoin rule)
 
       if (local_template.header.nTime < max_future_time) {
@@ -237,7 +238,7 @@ BlockTemplate CPUMiner::CreateBlockTemplate() {
   tmpl.header.nVersion = 1;
   tmpl.header.hashPrevBlock = tmpl.hashPrevBlock;
   tmpl.header.minerAddress = GetMiningAddress(); // Thread-safe access via mutex
-  tmpl.header.nTime = static_cast<uint32_t>(std::time(nullptr));
+  tmpl.header.nTime = static_cast<uint32_t>(util::GetTime());
   tmpl.header.nBits = tmpl.nBits;
   tmpl.header.nNonce = 0;
   tmpl.header.hashRandomX.SetNull();

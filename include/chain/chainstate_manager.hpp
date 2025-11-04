@@ -141,6 +141,19 @@ private:
                   std::vector<PendingNotification> &events);
   bool DisconnectTip(std::vector<PendingNotification> &events);
 
+#ifdef COINBASECHAIN_TESTS
+public:
+  // TEST-ONLY: expose candidate info for assertions in unit tests
+  inline size_t DebugCandidateCount() const {
+    std::lock_guard<std::recursive_mutex> lock(validation_mutex_);
+    return chain_selector_.GetCandidateCount();
+  }
+  inline std::vector<uint256> DebugCandidateHashes() const {
+    std::lock_guard<std::recursive_mutex> lock(validation_mutex_);
+    return chain_selector_.DebugCandidateHashes();
+  }
+#endif
+
   // Process orphan headers waiting for parent (recursive)
   // Assumes validation_mutex_ held by caller
   void ProcessOrphanHeaders(const uint256 &parentHash);

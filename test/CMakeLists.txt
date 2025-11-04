@@ -19,6 +19,11 @@ target_link_libraries(test2_network_infra PUBLIC
     network
 )
 
+# Enable test-only hooks in production headers for test infra as well
+ target_compile_definitions(test2_network_infra PUBLIC COINBASECHAIN_TESTS=1)
+ # Ensure network library compiles test hooks for this build of tests
+ target_compile_definitions(network PUBLIC COINBASECHAIN_TESTS=1)
+
 # Test executable
 add_executable(coinbasechain_tests
     ${CMAKE_SOURCE_DIR}/test/catch_amalgamated.cpp  # Use existing Catch2
@@ -102,6 +107,9 @@ target_link_libraries(coinbasechain_tests PRIVATE
     test2_network_infra
     network
 )
+
+# Define test-only macro to enable debug hooks in production code (tests only)
+ target_compile_definitions(coinbasechain_tests PRIVATE COINBASECHAIN_TESTS=1)
 
 # Set output directory
 set_target_properties(coinbasechain_tests PROPERTIES
