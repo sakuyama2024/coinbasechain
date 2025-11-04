@@ -24,7 +24,7 @@ static int64_t get_timestamp() { return util::GetTime(); }
 
 
 // Peer implementation
-Peer::Peer(boost::asio::io_context &io_context,
+Peer::Peer(PrivateTag, boost::asio::io_context &io_context,
            TransportConnectionPtr connection, uint32_t network_magic,
            bool is_inbound, int32_t start_height,
            const std::string &target_address, uint16_t target_port,
@@ -67,10 +67,11 @@ PeerPtr Peer::create_outbound(boost::asio::io_context &io_context,
                               const std::string &target_address,
                               uint16_t target_port,
                               ConnectionType conn_type) {
-  auto peer = PeerPtr(
-      new Peer(io_context, connection, network_magic, false,
-               start_height, target_address, target_port, conn_type));
-  return peer;
+  // Use make_shared with PrivateTag to ensure enable_shared_from_this is
+  // initialized before start() could be called
+  return std::make_shared<Peer>(PrivateTag{}, io_context, connection,
+                                network_magic, false, start_height,
+                                target_address, target_port, conn_type);
 }
 
 PeerPtr Peer::create_inbound(boost::asio::io_context &io_context,
@@ -82,10 +83,11 @@ PeerPtr Peer::create_inbound(boost::asio::io_context &io_context,
   std::string addr = connection ? connection->remote_address() : "";
   uint16_t port = connection ? connection->remote_port() : 0;
 
-  auto peer = PeerPtr(
-      new Peer(io_context, connection, network_magic, true,
-               start_height, addr, port, ConnectionType::INBOUND));
-  return peer;
+  // Use make_shared with PrivateTag to ensure enable_shared_from_this is
+  // initialized before start() could be called
+  return std::make_shared<Peer>(PrivateTag{}, io_context, connection,
+                                network_magic, true, start_height, addr, port,
+                                ConnectionType::INBOUND);
 }
 
 void Peer::start() {

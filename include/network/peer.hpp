@@ -56,6 +56,10 @@ using MessageHandler =
 // NOTE: assumes networking reactor is single-threaded (no strand/locks inside Peer)
 //       NetworkManager must run with Config::io_threads = 1.
 class Peer : public std::enable_shared_from_this<Peer> {
+private:
+  // Passkey idiom: allows make_shared while preventing direct construction
+  struct PrivateTag {};
+
 public:
   // Create outbound peer (we initiate connection)
   static PeerPtr create_outbound(boost::asio::io_context &io_context,
@@ -129,13 +133,15 @@ public:
   bool has_sent_getaddr() const { return getaddr_sent_; }
   void mark_getaddr_sent() { getaddr_sent_ = true; }
 
-private:
-  // Private constructor - use create_outbound/create_inbound
-  Peer(boost::asio::io_context &io_context, TransportConnectionPtr connection,
+  // Public constructor for make_shared, but requires PrivateTag (passkey idiom)
+  // DO NOT call directly - use create_outbound() or create_inbound() factory functions
+  Peer(PrivateTag, boost::asio::io_context &io_context, TransportConnectionPtr connection,
        uint32_t network_magic, bool is_inbound,
        int32_t start_height,
        const std::string &target_address = "", uint16_t target_port = 0,
        ConnectionType conn_type = ConnectionType::OUTBOUND);
+
+private:
 
   // Connection management
   void on_connected();
