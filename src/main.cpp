@@ -11,13 +11,8 @@ void print_usage(const char *program_name) {
       << "Options:\n"
       << "  --datadir=<path>     Data directory (default: ~/.coinbasechain)\n"
       << "  --port=<port>        Listen port (default: 9590 mainnet, 19590 testnet, 29590 regtest)\n"
-      << "  --listen             Enable inbound connections\n"
-      << "  --nolisten           Disable inbound connections (default)\n"
-      << "  --threads=<n>        Number of IO threads (default: 4)\n"
-      << "  --par=<n>            Number of parallel RandomX verification "
-         "threads (default: 0 = auto)\n"
-      << "  --suspiciousreorgdepth=<n>  Max reorg depth before halt (default: "
-         "100, 0 = unlimited)\n"
+      << "  --nolisten           Disable inbound connections (inbound is enabled by default)\n"
+      << "  --suspiciousreorgdepth=<n>  Override suspicious reorg depth (0 = use chain default)\n"
       << "  --regtest            Use regression test chain (easy mining)\n"
       << "  --testnet            Use test network\n"
       << "\n"
@@ -57,11 +52,16 @@ int main(int argc, char *argv[]) {
       } else if (arg.find("--port=") == 0) {
         config.network_config.listen_port = std::stoi(arg.substr(7));
       } else if (arg == "--listen") {
+        // Deprecated: inbound is enabled by default; keep for backward compatibility
         config.network_config.listen_enabled = true;
       } else if (arg == "--nolisten") {
         config.network_config.listen_enabled = false;
       } else if (arg.find("--threads=") == 0) {
-        config.network_config.io_threads = std::stoi(arg.substr(10));
+        // Deprecated and ignored: networking is single-threaded; always use 1 IO thread
+        std::cerr << "WARNING: --threads is deprecated and ignored; networking is single-threaded" << std::endl;
+      } else if (arg.find("--par=") == 0) {
+        // Not supported: RandomX verification uses thread-local VMs automatically
+        std::cerr << "WARNING: --par is not supported; RandomX verification threads are managed automatically" << std::endl;
       } else if (arg.find("--suspiciousreorgdepth=") == 0) {
         config.suspicious_reorg_depth = std::stoi(arg.substr(23));
       } else if (arg == "--regtest") {

@@ -24,14 +24,11 @@ services:
 
     # Environment variables for configuration
     environment:
-      - COINBASECHAIN_THREADS=4
       - COINBASECHAIN_VERBOSE=1
 
     # Default command-line arguments
     command: [
-      "--listen",
       "--verbose",
-      "--threads=4",
       "--datadir=/home/coinbasechain/.coinbasechain"
     ]
 
@@ -74,9 +71,7 @@ services:
 
     command: [
       "--testnet",
-      "--listen",
       "--verbose",
-      "--threads=2",
       "--datadir=/home/coinbasechain/.coinbasechain"
     ]
 
@@ -108,9 +103,7 @@ services:
 
     command: [
       "--regtest",
-      "--listen",
       "--verbose",
-      "--threads=1",
       "--datadir=/home/coinbasechain/.coinbasechain"
     ]
 
@@ -147,8 +140,6 @@ services:
 
     command: [
       "--regtest",
-      "--listen",
-      "--threads=1",
       "--datadir=/home/coinbasechain/.coinbasechain",
       "--debug=all"
     ]

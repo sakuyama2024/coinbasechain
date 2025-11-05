@@ -355,8 +355,6 @@ docker run -d \
   -p 29334:29334 \
   -v /var/lib/coinbasechain:/home/coinbasechain/.coinbasechain \
   -e COINBASECHAIN_NETWORK=regtest \
-  -e COINBASECHAIN_LISTEN=1 \
-  -e COINBASECHAIN_THREADS=2 \
   -e COINBASECHAIN_MAXCONNECTIONS=10 \
   coinbasechain:latest
 ```
@@ -492,7 +490,6 @@ The container accepts these environment variables:
 
 ```bash
 COINBASECHAIN_NETWORK     # Network type: mainnet, testnet, regtest (default: mainnet)
-COINBASECHAIN_THREADS     # Number of IO threads (default: 4)
 COINBASECHAIN_PORT        # P2P port (default: network-specific)
 COINBASECHAIN_LISTEN      # Enable listening: 0 or 1 (default: 1)
 COINBASECHAIN_SERVER      # Not used (RPC always enabled)

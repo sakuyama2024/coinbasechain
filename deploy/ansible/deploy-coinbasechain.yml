@@ -165,9 +165,6 @@
           - "{{ docker_data_dir }}:/home/coinbasechain/.coinbasechain"
         env:
           COINBASECHAIN_NETWORK: "{{ coinbasechain_network }}"
-          COINBASECHAIN_LISTEN: "1"
-          COINBASECHAIN_SERVER: "1"
-          COINBASECHAIN_THREADS: "2"
           COINBASECHAIN_MAXCONNECTIONS: "10"
         command: []
       tags: [deploy]

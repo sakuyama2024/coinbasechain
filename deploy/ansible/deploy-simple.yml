@@ -114,9 +114,6 @@
           -v {{ docker_data_dir }}:/home/coinbasechain/.coinbasechain \
           -e COINBASECHAIN_NETWORK={{ coinbasechain_network }} \
           -e COINBASECHAIN_PORT={{ p2p_port }} \
-          -e COINBASECHAIN_LISTEN=1 \
-          -e COINBASECHAIN_SERVER=1 \
-          -e COINBASECHAIN_THREADS=2 \
           -e COINBASECHAIN_MAXCONNECTIONS=10 \
           coinbasechain:latest
       tags: [deploy]

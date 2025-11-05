@@ -8,7 +8,6 @@ set -e
 DATADIR="${DATADIR:-/home/coinbasechain/.coinbasechain}"
 
 # Default settings (can be overridden via environment variables)
-THREADS="${COINBASECHAIN_THREADS:-4}"
 PORT="${COINBASECHAIN_PORT:-9590}"
 LISTEN="${COINBASECHAIN_LISTEN:-1}"
 SERVER="${COINBASECHAIN_SERVER:-0}"
@@ -23,7 +22,6 @@ mkdir -p "$DATADIR"
 # Build command-line arguments
 ARGS=()
 ARGS+=("--datadir=$DATADIR")
-ARGS+=("--threads=$THREADS")
 
 # Network selection
 case "$NETWORK" in
@@ -62,9 +60,7 @@ if [ -n "$PORT" ]; then
 fi
 
 # Listen configuration
-if [ "$LISTEN" = "1" ]; then
-  ARGS+=("--listen")
-else
+if [ "$LISTEN" = "0" ]; then
   ARGS+=("--nolisten")
 fi
 
@@ -98,7 +94,6 @@ echo "========================================="
 echo "Network:    $NETWORK"
 echo "Data Dir:   $DATADIR"
 echo "Port:       $PORT"
-echo "Threads:    $THREADS"
 echo "Listen:     $LISTEN"
 echo "Server:     $SERVER"
 echo "Verbose:    $VERBOSE"

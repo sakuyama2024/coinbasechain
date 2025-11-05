@@ -378,7 +378,7 @@ Each node runs:
 Network topology:
 - **Full mesh** - Each node connects to all other nodes
 - **Regtest mode** - Low difficulty for fast testing
-- **2 mining threads** per node (configurable via `COINBASECHAIN_THREADS`)
+- Inbound P2P is enabled by default (set `COINBASECHAIN_LISTEN=0` to disable)
 
 ## Security Notes
 
@@ -389,15 +389,10 @@ Network topology:
 
 ## Performance Tuning
 
-### Reduce Mining Threads
+### Performance tips
 
-If experiencing high CPU usage:
-
-```bash
-# Redeploy with 1 thread
-ansible coinbasechain_nodes -i inventory.yml -m shell -a "docker rm -f coinbasechain-regtest"
-ansible-playbook -i inventory.yml deploy-coinbasechain.yml --tags deploy -e "COINBASECHAIN_THREADS=1"
-```
+- Reduce log verbosity (omit --verbose unless debugging)
+- Limit number of peers via firewall or container resource limits if needed
 
 ### Increase Connection Limits
 
