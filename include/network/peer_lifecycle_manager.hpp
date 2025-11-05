@@ -53,11 +53,6 @@
  - Query methods: GetMisbehaviorScore(), ShouldDisconnect() for testing/debugging
  - NO direct penalty manipulation from external code; all penalties are internal
 
- DiscoveryManager integration (Phase 2)
- - DiscoveryManager is injected after construction via SetDiscoveryManager()
- - On successful peer addition: discovery_manager_->Attempt() is called
- - On peer removal: discovery_manager_->Good() or Failed() based on disconnect reason
- - ConnectionManager does NOT manage address selection; that's DiscoveryManager's job
 
  Threading
  - All public methods are thread-safe (protected by mutex_)
@@ -329,7 +324,7 @@ public:
 
   /**
    * Check if incoming nonce collides with our local nonce or any existing peer's remote nonce
-   * Bitcoin Core pattern (net.cpp:370-378): Detect self-connection and duplicate connections
+   * Detect self-connection and duplicate connections
    *
    * Checks:
    * 1. Against local_nonce (self-connection: we connected to ourselves)

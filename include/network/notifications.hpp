@@ -22,7 +22,6 @@ namespace coinbasechain {
  * - Singleton pattern (no wiring needed)
  *
  * Purpose:
- * - Breaks circular dependencies between network managers
  * - Enables decoupled inter-component communication
  * - Same pattern as ChainNotifications for consistency
  */

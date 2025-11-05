@@ -93,6 +93,12 @@ void SimulatedNode::InitializeNetworking() {
     config.io_threads = io_threads_override_;  // 0 by default (deterministic); tests may override
     config.enable_nat = false;  // Disable NAT/UPnP in tests (would block trying to discover devices)
 
+    // CRITICAL: Set unique test_nonce for each node to prevent self-connection rejection
+    // In multi-node tests, each SimulatedNode needs a unique nonce (node_id + offset)
+    // Setting test_nonce disables process-wide nonce, and each peer gets this value
+    // via set_local_nonce() in PeerLifecycleManager, ensuring different nodes can connect
+    config.test_nonce = static_cast<uint64_t>(node_id_) + 1000000;
+
     // Create shared_ptr wrapper for io_context (NetworkManager requires shared ownership)
     // Use aliasing constructor with no-op deleter since SimulatedNode owns the io_context
     auto io_context_ptr = std::shared_ptr<boost::asio::io_context>(

@@ -22,6 +22,8 @@ static uint64_t generate_ping_nonce() {
 // Helper to get current timestamp (uses mockable time for testing)
 static int64_t get_timestamp() { return util::GetTime(); }
 
+// Initialize process-wide nonce (set by NetworkManager at startup)
+std::atomic<uint64_t> Peer::process_nonce_{0};
 
 // Peer implementation
 Peer::Peer(PrivateTag, boost::asio::io_context &io_context,
@@ -33,11 +35,12 @@ Peer::Peer(PrivateTag, boost::asio::io_context &io_context,
       handshake_timer_(io_context), ping_timer_(io_context),
       inactivity_timer_(io_context), network_magic_(network_magic),
       is_inbound_(is_inbound), connection_type_(conn_type), id_(-1),
-      local_nonce_(/*temporary default, overridden by NetworkManager*/ generate_ping_nonce()), local_start_height_(start_height),
+      local_nonce_(process_nonce_.load() != 0 ? process_nonce_.load() : generate_ping_nonce()), local_start_height_(start_height),
       target_address_(target_address), target_port_(target_port),
       state_(connection && connection->is_open()
                  ? PeerState::CONNECTED
-                 : (connection ? PeerState::CONNECTING : PeerState::DISCONNECTED)) {}
+                 : (connection ? PeerState::CONNECTING : PeerState::DISCONNECTED)),
+      last_unknown_reset_(util::GetSteadyTime()) {}
 
 Peer::~Peer() {
   // SECURITY: Destructor should be defensive-only, never initiate cleanup
@@ -329,7 +332,18 @@ void Peer::on_transport_receive(const std::vector<uint8_t> &data) {
   if (recv_buffer_offset_ > 0 && recv_buffer_offset_ >= recv_buffer_.size() / 2) {
     recv_buffer_.erase(recv_buffer_.begin(), recv_buffer_.begin() + recv_buffer_offset_);
     recv_buffer_offset_ = 0;
-    LOG_NET_TRACE("Peer {} compacted buffer, new size: {} bytes", address(), recv_buffer_.size());
+
+    // SECURITY: Shrink capacity if buffer is empty or very small to prevent
+    // permanent memory waste after processing large messages
+    // Example: 5MB burst → buffer grows to 5MB → consumed → shrink to 0
+    // This prevents each peer from wasting up to 5MB indefinitely
+    // With 125 inbound peers, this saves up to 625MB memory
+    if (recv_buffer_.empty() || recv_buffer_.size() < 1024) {
+      recv_buffer_.shrink_to_fit();
+      LOG_NET_TRACE("Peer {} compacted and shrunk buffer (freed capacity)", address());
+    } else {
+      LOG_NET_TRACE("Peer {} compacted buffer, new size: {} bytes", address(), recv_buffer_.size());
+    }
   }
 
   // Accumulate received data into buffer
@@ -353,12 +367,24 @@ void Peer::on_transport_receive(const std::vector<uint8_t> &data) {
 
 void Peer::on_transport_disconnect() {
   LOG_NET_TRACE("Transport disconnected: {}:{}", address(), port());
-  // Transport closed the connection - just update state to DISCONNECTED
-  // Don't call disconnect() as that would try to close connection again (already closed)
-  // Leave callbacks intact; they capture weak_ptr and are safe even after disconnect.
-  // Timers are canceled and we mark the peer as disconnected.
+
+  // SECURITY: Remote close path - must break reference cycle to prevent leak
+  // Reference cycle: Peer → connection_ → callbacks → Peer (via captured shared_ptr)
+  //
+  // Transport already closed connection, but we must:
+  // 1. Clear callbacks to break cycle (callbacks capture shared_ptr)
+  // 2. Release connection_ to decrement refcount
+  // 3. Cancel timers and mark disconnected
   if (state_ != PeerState::DISCONNECTED) {
     cancel_all_timers();
+
+    // Break reference cycle: clear callbacks and release connection
+    if (connection_) {
+      connection_->set_receive_callback({});
+      connection_->set_disconnect_callback({});
+      connection_.reset();
+    }
+
     on_disconnect();
   }
 }
@@ -427,9 +453,30 @@ void Peer::handle_version(const message::VersionMessage &msg) {
   peer_user_agent_ = msg.user_agent;
   peer_nonce_ = msg.nonce;
 
+  // SECURITY: Sanitize user_agent before logging to prevent:
+  // 1. Log spam (attacker sends 4MB user_agent → 4MB log line)
+  // 2. Control char injection (ANSI codes, format strings)
+  // 3. Null byte injection (truncates logs)
+  std::string sanitized_ua = peer_user_agent_;
+
+  // Cap size to 256 chars (Bitcoin Core uses 256 = MAX_SUBVERSION_LENGTH)
+  if (sanitized_ua.size() > protocol::MAX_SUBVERSION_LENGTH) {
+    sanitized_ua = sanitized_ua.substr(0, protocol::MAX_SUBVERSION_LENGTH) + "...[truncated]";
+  }
+
+  // Remove control characters (except tab)
+  sanitized_ua.erase(
+    std::remove_if(sanitized_ua.begin(), sanitized_ua.end(),
+                   [](unsigned char c) { return c < 32 && c != '\t'; }),
+    sanitized_ua.end()
+  );
+
+  // Replace null bytes with spaces (prevent log truncation)
+  std::replace(sanitized_ua.begin(), sanitized_ua.end(), '\0', ' ');
+
   LOG_NET_TRACE(
       "Received VERSION from {} - version: {}, user_agent: {}, nonce: {}",
-      address(), peer_version_, peer_user_agent_, peer_nonce_);
+      address(), peer_version_, sanitized_ua, peer_nonce_);
 
   // Defense-in-depth: Check for self-connection at Peer level (inbound only)
   // NetworkManager also performs comprehensive nonce checking for all connections
@@ -597,7 +644,36 @@ void Peer::process_message(const protocol::MessageHeader &header,
   // Create message object
   auto msg = message::create_message(command);
   if (!msg) {
-    LOG_NET_WARN("unknown message type: {} peer={}", command, id_);
+    // SECURITY: Rate limit unknown commands to prevent log spam DoS
+    // Attacker strategy: Send 1000 tiny unknown messages/sec → disk fills, logs unusable
+    // Defense: Track count per 60s window, log first 5, disconnect after 20
+    auto now = util::GetSteadyTime();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        now - last_unknown_reset_).count();
+
+    if (elapsed > 60) {
+      // Reset counter every 60 seconds
+      unknown_command_count_.store(0, std::memory_order_relaxed);
+      last_unknown_reset_ = now;
+    }
+
+    int count = unknown_command_count_.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    // Log first 5 unknown commands within window
+    if (count <= 5) {
+      LOG_NET_WARN("unknown message type: {} peer={} (count: {}/60s)",
+                   command, id_, count);
+    } else if (count == 6) {
+      LOG_NET_WARN("suppressing further unknown command logs from peer={} "
+                   "(limit: 5/60s)", id_);
+    }
+
+    // Disconnect if excessive unknown commands (likely attack or broken client)
+    if (count > 20) {
+      LOG_NET_ERROR("excessive unknown commands from peer={} ({}/60s), "
+                    "disconnecting (possible attack)", id_, count);
+      post_disconnect();
+    }
     return;
   }
 

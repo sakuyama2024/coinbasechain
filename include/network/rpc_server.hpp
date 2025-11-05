@@ -41,7 +41,6 @@ namespace rpc {
  * Why Unix Sockets Instead of TCP:
  * - Security: No network exposure, eliminating remote attack vectors
  * - Simplicity: No need for RPC credentials, ports, or firewall rules
- * - Performance: Lower overhead for local IPC
  * - Access Control: Managed via file system permissions on the socket
  *
  * Trade-offs:

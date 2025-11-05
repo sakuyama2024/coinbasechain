@@ -590,7 +590,10 @@ TEST_CASE("Adversarial - UnknownMessageFlooding", "[adversarial][flood][quickwin
         "GARBAGE", "RANDOM"
     };
 
-    for (int i = 0; i < 100; i++) {
+    // SECURITY: Our DoS protection disconnects after 20 unknown commands in 60 seconds
+    // Send 25 unknown messages and verify peer gets disconnected
+    int messages_sent = 0;
+    for (int i = 0; i < 25; i++) {
         std::string fake_cmd = fake_commands[i % fake_commands.size()];
         // SECURITY: Only VERACK and GETADDR are allowed zero-length payloads
         // Unknown commands must have non-empty payloads to pass protocol validation
@@ -598,11 +601,15 @@ TEST_CASE("Adversarial - UnknownMessageFlooding", "[adversarial][flood][quickwin
         auto unknown_msg = create_test_message(magic, fake_cmd, dummy_payload);
         mock_conn->simulate_receive(unknown_msg);
         io_context.poll();
+        messages_sent++;
         if (!peer->is_connected()) {
             break;
         }
     }
-    CHECK(peer->is_connected());
+    // Verify peer was disconnected (should disconnect after ~20 unknown commands)
+    CHECK_FALSE(peer->is_connected());
+    CHECK(messages_sent > 20);  // Disconnected after exceeding limit
+    CHECK(messages_sent <= 25);  // Disconnected before sending all 25
 }
 
 TEST_CASE("Adversarial - StatisticsOverflow", "[adversarial][resource][quickwin]") {
@@ -836,6 +843,7 @@ TEST_CASE("Adversarial - TransportCallbackOrdering", "[adversarial][race][p3]") 
 
     SECTION("Receive callback after disconnect") {
         peer->disconnect();
+        io_context.poll();  // Process the disconnect operation
         CHECK(peer->state() == PeerState::DISCONNECTED);
         auto version = create_version_message(magic, 54321);
         mock_conn->simulate_receive(version);
@@ -855,8 +863,10 @@ TEST_CASE("Adversarial - TransportCallbackOrdering", "[adversarial][race][p3]") 
         io_context.poll();
         REQUIRE(peer->state() == PeerState::READY);
         peer->disconnect();
+        io_context.poll();  // Process first disconnect
         CHECK(peer->state() == PeerState::DISCONNECTED);
         peer->disconnect();
+        io_context.poll();  // Process second disconnect (should be no-op)
         CHECK(peer->state() == PeerState::DISCONNECTED);
     }
 }

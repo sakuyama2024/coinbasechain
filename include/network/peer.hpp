@@ -30,7 +30,7 @@ enum class PeerState {
 };
 
 // Peer connection statistics
-// SECURITY: All fields are atomic to prevent data races between timer callbacks
+// All fields are atomic to prevent data races between timer callbacks
 // and send/receive operations that may run on different threads
 // Pattern matches Bitcoin Core: atomic duration types for timestamps
 struct PeerStats {
@@ -94,6 +94,11 @@ public:
   void set_id(int id) { id_ = id; }
   // Override the node-local handshake nonce (used for self-connection detection)
   void set_local_nonce(uint64_t nonce) { local_nonce_ = nonce; }
+
+  // SECURITY: Process-wide nonce for self-connection detection
+  // Set once at startup, shared by all peers for reliable self-connect detection
+  static void set_process_nonce(uint64_t nonce) { process_nonce_ = nonce; }
+  static uint64_t get_process_nonce() { return process_nonce_; }
 
   // Getters
   PeerState state() const { return state_; }
@@ -227,6 +232,10 @@ private:
   uint64_t last_ping_nonce_ = 0;
   std::chrono::steady_clock::time_point ping_sent_time_;
 
+  // SECURITY: Rate limiting for unknown commands to prevent log spam DoS
+  std::atomic<int> unknown_command_count_{0};
+  std::chrono::steady_clock::time_point last_unknown_reset_{};
+
   // Block announcement queue (like Bitcoin's m_blocks_for_inv_relay)
   // Blocks to announce to this peer via INV messages
   std::vector<uint256> blocks_for_inv_relay_;
@@ -236,6 +245,9 @@ private:
   // - Networking io_context thread: reads/writes via AnnounceTipToAllPeers(), FlushBlockAnnouncements()
   // This mutex is REQUIRED and must not be removed.
   mutable std::mutex block_inv_mutex_;
+
+  // Process-wide nonce for self-connection detection (set once at startup)
+  static std::atomic<uint64_t> process_nonce_;
 
 public:
   // Thread-safe accessor for block announcement queue

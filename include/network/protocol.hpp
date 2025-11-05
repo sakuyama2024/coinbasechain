@@ -39,8 +39,7 @@ enum ServiceFlags : uint64_t {
 };
 
 // Message types - 12 bytes, null-padded
-// Headers-only chain: no transactions, compact blocks, bloom filters, or
-// mempool
+// Headers-only chain: no transactions, compact blocks, bloom filters, or mempool
 namespace commands {
 // Handshake
 constexpr const char *VERSION = "version";
@@ -77,10 +76,8 @@ constexpr size_t CHECKSUM_SIZE = 4;
 // ============================================================================
 
 // Serialization limits (Bitcoin Core src/serialize.h)
-constexpr uint64_t MAX_SIZE =
-    0x02000000; // 32 MB - Maximum serialized object size
-constexpr size_t MAX_VECTOR_ALLOCATE =
-    5 * 1000 * 1000; // 5 MB - Incremental allocation limit
+constexpr uint64_t MAX_SIZE =  0x02000000; // 32 MB - Maximum serialized object size
+constexpr size_t MAX_VECTOR_ALLOCATE = 5 * 1000 * 1000; // 5 MB - Incremental allocation limit
 
 // Network message limits (Bitcoin Core src/net.h)
 constexpr size_t MAX_PROTOCOL_MESSAGE_LENGTH = 4 * 1000 * 1000; // 4 MB - Single message limit

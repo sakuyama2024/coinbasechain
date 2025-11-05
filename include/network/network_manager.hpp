@@ -255,9 +255,9 @@ private:
   std::unique_ptr<boost::asio::steady_timer> connect_timer_;
   std::unique_ptr<boost::asio::steady_timer> maintenance_timer_;
   std::unique_ptr<boost::asio::steady_timer> feeler_timer_;
-  std::unique_ptr<boost::asio::steady_timer> sendmessages_timer_;  // Bitcoin-like SendMessages loop
+  std::unique_ptr<boost::asio::steady_timer> sendmessages_timer_;  
   static constexpr std::chrono::minutes FEELER_INTERVAL{2};
-  static constexpr std::chrono::seconds SENDMESSAGES_INTERVAL{1};  // Flush announcements every 1s (Bitcoin pattern)
+  static constexpr std::chrono::seconds SENDMESSAGES_INTERVAL{1};  // Flush announcements every 1s 
 
   // Tip announcement tracking (for periodic re-announcements)
   int64_t last_tip_announcement_time_{0}; // Last time we announced (mockable time)

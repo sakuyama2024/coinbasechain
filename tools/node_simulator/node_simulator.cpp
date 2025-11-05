@@ -1,8 +1,8 @@
 // Copyright (c) 2024 Coinbase Chain
-// Attack Node - Test utility for DoS protection testing
+// Node Simulator - Test utility for P2P protocol testing
 //
-// This tool connects to a node and sends malicious P2P messages to test
-// DoS protection mechanisms. It should ONLY be used for testing on private networks.
+// This tool connects to a node and sends custom P2P messages to test
+// protocol behavior and DoS protection mechanisms. It should ONLY be used for testing on private networks.
 
 #include <boost/asio.hpp>
 #include <iostream>
@@ -19,9 +19,9 @@
 using namespace coinbasechain;
 namespace asio = boost::asio;
 
-class AttackNode {
+class NodeSimulator {
 public:
-    AttackNode(asio::io_context& io_context, const std::string& host, uint16_t port)
+    NodeSimulator(asio::io_context& io_context, const std::string& host, uint16_t port)
         : socket_(io_context), host_(host), port_(port)
     {
     }
@@ -59,7 +59,7 @@ public:
         msg.addr_recv = protocol::NetworkAddress();
         msg.addr_from = protocol::NetworkAddress();
         msg.nonce = 0x123456789ABCDEF0ULL;  // Fixed nonce for testing
-        msg.user_agent = "/AttackNode:0.1.0/";
+        msg.user_agent = "/NodeSimulator:0.1.0/";
         msg.start_height = 0;
 
         auto payload = msg.serialize();
@@ -73,8 +73,8 @@ public:
     }
 
     // Attack: Send headers with invalid PoW
-    void attack_invalid_pow(const uint256& prev_hash) {
-        std::cout << "\n=== ATTACK: Invalid PoW ===" << std::endl;
+    void test_invalid_pow(const uint256& prev_hash) {
+        std::cout << "\n=== TEST: Invalid PoW ===" << std::endl;
 
         CBlockHeader header;
         header.nVersion = 1;
@@ -95,8 +95,8 @@ public:
     }
 
     // Attack: Send oversized headers message
-    void attack_oversized_headers() {
-        std::cout << "\n=== ATTACK: Oversized Headers ===" << std::endl;
+    void test_oversized_headers() {
+        std::cout << "\n=== TEST: Oversized Headers ===" << std::endl;
 
         // Create more than MAX_HEADERS_COUNT (2000) headers
         // Use 2100 headers - just over the limit but still deserializable
@@ -129,8 +129,8 @@ public:
     }
 
     // Attack: Send non-continuous headers
-    void attack_non_continuous_headers(const uint256& prev_hash) {
-        std::cout << "\n=== ATTACK: Non-Continuous Headers ===" << std::endl;
+    void test_non_continuous_headers(const uint256& prev_hash) {
+        std::cout << "\n=== TEST: Non-Continuous Headers ===" << std::endl;
 
         // Create headers that don't connect
         // Use a very small dummy RandomX hash that will pass regtest commitment check
@@ -167,11 +167,11 @@ public:
     }
 
     // Attack: Spam with repeated non-continuous headers
-    void attack_spam_non_continuous(const uint256& prev_hash, int count) {
-        std::cout << "\n=== ATTACK: Spam Non-Continuous Headers (" << count << " times) ===" << std::endl;
+    void test_spam_non_continuous(const uint256& prev_hash, int count) {
+        std::cout << "\n=== TEST: Spam Non-Continuous Headers (" << count << " times) ===" << std::endl;
 
         for (int i = 0; i < count; i++) {
-            attack_non_continuous_headers(prev_hash);
+            test_non_continuous_headers(prev_hash);
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
@@ -236,12 +236,12 @@ void print_usage(const char* prog) {
               << "Options:\n"
               << "  --host <host>        Target host (default: 127.0.0.1)\n"
               << "  --port <port>        Target port (default: 18444)\n"
-              << "  --attack <type>      Attack type:\n"
+              << "  --test <type>        Test scenario type:\n"
               << "                         invalid-pow      : Send headers with invalid PoW\n"
               << "                         oversized        : Send oversized headers message\n"
               << "                         non-continuous   : Send non-continuous headers\n"
               << "                         spam-continuous  : Spam with non-continuous headers (5x)\n"
-              << "                         all              : Run all attacks\n"
+              << "                         all              : Run all test scenarios\n"
               << "  --help               Show this help\n"
               << std::endl;
 }
@@ -249,7 +249,7 @@ void print_usage(const char* prog) {
 int main(int argc, char* argv[]) {
     std::string host = "127.0.0.1";
     uint16_t port = 18444;
-    std::string attack_type = "all";
+    std::string test_type = "all";
 
     // Parse arguments
     for (int i = 1; i < argc; i++) {
@@ -261,8 +261,8 @@ int main(int argc, char* argv[]) {
             host = argv[++i];
         } else if (arg == "--port" && i + 1 < argc) {
             port = std::stoi(argv[++i]);
-        } else if (arg == "--attack" && i + 1 < argc) {
-            attack_type = argv[++i];
+        } else if ((arg == "--test" || arg == "--attack") && i + 1 < argc) {
+            test_type = argv[++i];
         } else {
             std::cerr << "Unknown argument: " << arg << std::endl;
             print_usage(argv[0]);
@@ -270,10 +270,10 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::cout << "=== Attack Node Test Tool ===" << std::endl;
+    std::cout << "=== Node Simulator ===" << std::endl;
     std::cout << "Target: " << host << ":" << port << std::endl;
-    std::cout << "Attack: " << attack_type << std::endl;
-    std::cout << "\nWARNING: This tool sends malicious P2P messages." << std::endl;
+    std::cout << "Test: " << test_type << std::endl;
+    std::cout << "\nWARNING: This tool sends custom P2P messages for testing." << std::endl;
     std::cout << "Only use on private test networks!\n" << std::endl;
 
     // Get genesis hash for testing (in real test, we'd query via RPC)
@@ -281,11 +281,11 @@ int main(int argc, char* argv[]) {
     genesis_hash.SetHex("0233b37bb6942bfb471cfd7fb95caab0e0f7b19cc8767da65fbef59eb49e45bd");
 
     // Helper lambda to perform handshake
-    auto do_handshake = [](AttackNode& attacker) {
+    auto do_handshake = [](NodeSimulator& simulator) {
         std::cout << "\n--- Handshake ---" << std::endl;
-        attacker.send_version();
-        attacker.receive_messages(2);
-        attacker.send_verack();
+        simulator.send_version();
+        simulator.receive_messages(2);
+        simulator.send_verack();
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     };
 
@@ -294,79 +294,79 @@ int main(int argc, char* argv[]) {
 
         // If running "all" attacks, create separate connection for each to avoid
         // early disconnection affecting later tests
-        if (attack_type == "all") {
+        if (test_type == "all") {
             // Test 1: Invalid PoW (instant disconnect - score=100)
             std::cout << "\n========== TEST 1: Invalid PoW ==========" << std::endl;
             {
-                AttackNode attacker(io_context, host, port);
-                if (!attacker.connect()) return 1;
-                do_handshake(attacker);
-                attacker.attack_invalid_pow(genesis_hash);
-                attacker.receive_messages(2);
-                attacker.close();
+                NodeSimulator simulator(io_context, host, port);
+                if (!simulator.connect()) return 1;
+                do_handshake(simulator);
+                simulator.test_invalid_pow(genesis_hash);
+                simulator.receive_messages(2);
+                simulator.close();
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
             }
 
             // Test 2: Oversized headers (+20 score)
             std::cout << "\n========== TEST 2: Oversized Headers ==========" << std::endl;
             {
-                AttackNode attacker(io_context, host, port);
-                if (!attacker.connect()) return 1;
-                do_handshake(attacker);
-                attacker.attack_oversized_headers();
-                attacker.receive_messages(2);
-                attacker.close();
+                NodeSimulator simulator(io_context, host, port);
+                if (!simulator.connect()) return 1;
+                do_handshake(simulator);
+                simulator.test_oversized_headers();
+                simulator.receive_messages(2);
+                simulator.close();
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
             }
 
             // Test 3: Non-continuous headers (+20 score)
             std::cout << "\n========== TEST 3: Non-Continuous Headers ==========" << std::endl;
             {
-                AttackNode attacker(io_context, host, port);
-                if (!attacker.connect()) return 1;
-                do_handshake(attacker);
-                attacker.attack_non_continuous_headers(genesis_hash);
-                attacker.receive_messages(2);
-                attacker.close();
+                NodeSimulator simulator(io_context, host, port);
+                if (!simulator.connect()) return 1;
+                do_handshake(simulator);
+                simulator.test_non_continuous_headers(genesis_hash);
+                simulator.receive_messages(2);
+                simulator.close();
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
             }
 
             // Test 4: Spam attack (5x non-continuous = 100 score, disconnect)
             std::cout << "\n========== TEST 4: Spam Non-Continuous (5x) ==========" << std::endl;
             {
-                AttackNode attacker(io_context, host, port);
-                if (!attacker.connect()) return 1;
-                do_handshake(attacker);
-                attacker.attack_spam_non_continuous(genesis_hash, 5);
-                attacker.receive_messages(3);
-                attacker.close();
+                NodeSimulator simulator(io_context, host, port);
+                if (!simulator.connect()) return 1;
+                do_handshake(simulator);
+                simulator.test_spam_non_continuous(genesis_hash, 5);
+                simulator.receive_messages(3);
+                simulator.close();
             }
         } else {
             // Single attack type - use one connection
-            AttackNode attacker(io_context, host, port);
+            NodeSimulator simulator(io_context, host, port);
 
-            if (!attacker.connect()) {
+            if (!simulator.connect()) {
                 return 1;
             }
 
-            do_handshake(attacker);
+            do_handshake(simulator);
 
             // Run single attack
-            if (attack_type == "invalid-pow") {
-                attacker.attack_invalid_pow(genesis_hash);
-                attacker.receive_messages(2);
-            } else if (attack_type == "oversized") {
-                attacker.attack_oversized_headers();
-                attacker.receive_messages(2);
-            } else if (attack_type == "non-continuous") {
-                attacker.attack_non_continuous_headers(genesis_hash);
-                attacker.receive_messages(2);
-            } else if (attack_type == "spam-continuous") {
-                attacker.attack_spam_non_continuous(genesis_hash, 5);
-                attacker.receive_messages(3);
+            if (test_type == "invalid-pow") {
+                simulator.test_invalid_pow(genesis_hash);
+                simulator.receive_messages(2);
+            } else if (test_type == "oversized") {
+                simulator.test_oversized_headers();
+                simulator.receive_messages(2);
+            } else if (test_type == "non-continuous") {
+                simulator.test_non_continuous_headers(genesis_hash);
+                simulator.receive_messages(2);
+            } else if (test_type == "spam-continuous") {
+                simulator.test_spam_non_continuous(genesis_hash, 5);
+                simulator.receive_messages(3);
             }
 
-            attacker.close();
+            simulator.close();
         }
 
         std::cout << "\n--- Test Complete ---" << std::endl;

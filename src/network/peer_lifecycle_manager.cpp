@@ -1030,7 +1030,7 @@ void PeerLifecycleManager::AttemptFeelerConnection(IsRunningCallback is_running,
   // Set pre-allocated ID
   peer->set_id(peer_id);
 
-  // Set local nonce
+  // Set local nonce (in test mode where process-wide nonce is not set)
   peer->set_local_nonce(local_nonce);
 
   // Setup message handler via callback
@@ -1192,7 +1192,7 @@ ConnectionResult PeerLifecycleManager::ConnectTo(
   // Set the pre-allocated ID on the peer
   peer->set_id(peer_id);
 
-  // Use a node-wide nonce for self-connection detection and VERSION.nonce
+  // Set local nonce (in test mode where process-wide nonce is not set)
   peer->set_local_nonce(local_nonce);
 
   // Setup message handler before adding to manager
@@ -1252,7 +1252,7 @@ void PeerLifecycleManager::HandleInboundConnection(TransportConnectionPtr connec
   auto peer = Peer::create_inbound(io_context_, connection,
                                    network_magic, current_height);
   if (peer) {
-    // Use node-wide nonce for self-connection detection and VERSION.nonce
+    // Set local nonce (in test mode where process-wide nonce is not set)
     peer->set_local_nonce(local_nonce);
 
     // Setup message handler via callback

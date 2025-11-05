@@ -1,7 +1,7 @@
 #include "catch_amalgamated.hpp"
 #include "infra/simulated_network.hpp"
 #include "infra/simulated_node.hpp"
-#include "infra/attack_simulated_node.hpp"
+#include "infra/node_simulator.hpp"
 #include "network/protocol.hpp"
 #include "network/message.hpp"
 
@@ -24,7 +24,7 @@ TEST_CASE("IBD gating: ignore large HEADERS from non-sync peer", "[network][ibd]
 
     // Serving peers (P1, P2)
     SimulatedNode P1(11, &net);
-    AttackSimulatedNode P2(12, &net); // attacker to inject large HEADERS
+    NodeSimulator P2(12, &net); // attacker to inject large HEADERS
     REQUIRE(P1.ConnectTo(miner.GetId()));
     REQUIRE(P2.ConnectTo(miner.GetId()));
 

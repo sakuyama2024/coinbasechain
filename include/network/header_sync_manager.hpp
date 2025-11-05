@@ -17,7 +17,7 @@
  *   HeadersSyncState; simplified behavior).
  * - DoS-check skip heuristic: if the batch’s last header is already on the ACTIVE chain, we
  *   skip low-work checks for that batch to avoid false positives after local invalidations.
- *   Side chains do NOT qualify (safer than historic Core heuristics).
+ *   Side chains do NOT qualify.
  * - Stall detection: a fixed 120s timeout disconnects an unresponsive sync peer; reselection
  *   occurs via the regular SendMessages/maintenance cadence (simpler than Core’s dynamic timers).
  */

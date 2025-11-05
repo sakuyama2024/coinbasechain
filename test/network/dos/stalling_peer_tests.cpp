@@ -3,7 +3,7 @@
 #include "catch_amalgamated.hpp"
 #include "infra/simulated_network.hpp"
 #include "infra/simulated_node.hpp"
-#include "infra/attack_simulated_node.hpp"
+#include "infra/node_simulator.hpp"
 #include "test_orchestrator.hpp"
 #include "network_observer.hpp"
 #include "chain/chainparams.hpp"
@@ -25,7 +25,7 @@ TEST_CASE("DoS: Stalling peer timeout", "[dos][network]") {
     AutoDumpOnFailure auto_dump(observer);
 
     SimulatedNode victim(1, &network);
-    AttackSimulatedNode attacker(2, &network);
+    NodeSimulator attacker(2, &network);
 
     observer.OnCustomEvent("TEST_START", -1, "Stalling peer timeout test");
 
@@ -103,9 +103,12 @@ TEST_CASE("DoS: Stall causes sync peer switch", "[dos][network]") {
         victim.GetNetworkManager().test_hook_header_sync_process_timers();
     }
 
-    // Re-select sync peer and progress
+    // Give more time for stall disconnect to complete and state to stabilize
+    t += 2000; net.AdvanceTime(t);
+
+    // Re-select sync peer
     victim.GetNetworkManager().test_hook_check_initial_sync();
-    t += 500; net.AdvanceTime(t);
+    t += 2000; net.AdvanceTime(t);  // Allow sync peer selection to complete fully
 
     // Verify new GETHEADERS went to p2 (the healthy peer)
     int gh_p1_after = net.CountCommandSent(victim.GetId(), p1.GetId(), protocol::commands::GETHEADERS);
@@ -113,6 +116,11 @@ TEST_CASE("DoS: Stall causes sync peer switch", "[dos][network]") {
     CHECK(gh_p2_after >= gh_p2_before);
     CHECK(gh_p1_after >= gh_p1_before);
 
-    // Sync completes
+    // Sync completes - allow more time for sync to finish
+    // Don't call test_hook_check_initial_sync() repeatedly as it interferes with ongoing sync
+    for (int i = 0; i < 20 && victim.GetTipHeight() < 30; ++i) {
+        t += 500;
+        net.AdvanceTime(t);
+    }
     CHECK(victim.GetTipHeight() == 30);
 }

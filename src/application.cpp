@@ -85,7 +85,7 @@ bool Application::initialize() {
   // Subscribe to block notifications to relay new blocks to peers
   block_sub_ = Notifications().SubscribeBlockConnected(
       [this](const CBlockHeader &block, const chain::CBlockIndex *pindex) {
-        // Only relay blocks if not in IBD (Bitcoin Core behavior)
+        // Only relay blocks if not in IBD (Bitcoin Core pattern)
         if (pindex && network_manager_ && !chainstate_manager_->IsInitialBlockDownload()) {
           // Bitcoin Core: Only relay blocks received recently (< 10 seconds)
           // This prevents relaying old blocks during reorgs - peers already know them
@@ -127,7 +127,7 @@ bool Application::initialize() {
         if (miner_) {
           miner_->InvalidateTemplate();
         }
-        // Queue tip announcements to all connected peers (Bitcoin Core approach)
+        // Queue tip announcements to all connected peers ( Core approach)
         // Announcements are queued here and flushed by periodic SendMessages-like loop
         if (network_manager_) {
           network_manager_->announce_tip_to_peers();
@@ -408,7 +408,6 @@ void Application::stop_periodic_saves() {
 void Application::periodic_save_loop() {
   using namespace std::chrono;
 
-  // Bitcoin Core intervals:
   // - Headers: 10 minutes
   // - Peers: 15 minutes
   const auto header_interval = minutes(10);

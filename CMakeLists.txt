@@ -349,7 +349,7 @@ add_executable(coinbasechain_tests
     test/network/simulated_network.cpp
     test/network/simulated_node.cpp
     test/network/network_bridged_transport.cpp
-    test/network/attack_simulated_node.cpp
+    test/network/node_simulator.cpp
     test/network/nat_manager_tests.cpp
     test/network/peer_connection_tests.cpp
     test/network/sync_ibd_tests.cpp
@@ -392,7 +392,7 @@ endif() # BUILD_LEGACY_TESTS
 
 # Add tools subdirectory
 add_subdirectory(tools/genesis_miner)
-add_subdirectory(tools/attack_node)
+add_subdirectory(tools/node_simulator)
 
 # Fuzzing targets (requires libFuzzer or OSS-Fuzz environment)
 # Build with: cmake -DENABLE_FUZZING=ON -DCMAKE_CXX_COMPILER=clang++ ..

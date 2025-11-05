@@ -11,14 +11,10 @@
 
  Key responsibilities
  1. Ban/unban peers by IP address
- 2. Discourage peers temporarily (Bitcoin Core pattern for misbehavior)
+ 2. Discourage peers temporarily 
  3. Whitelist peers (bypass ban/discourage checks)
  4. Save/load ban state to/from disk
  5. Sweep expired bans and discouragements
-
- Architecture
- Extracted from PeerLifecycleManager to separate concerns.
- Ban management is orthogonal to peer lifecycle.
 */
 
 #include <map>
@@ -43,7 +39,7 @@ public:
     CBanEntry(int64_t create_time, int64_t ban_until)
         : nCreateTime(create_time), nBanUntil(ban_until) {}
 
-    // Check if ban has expired (Bitcoin Core pattern)
+    // Check if ban has expired 
     bool IsExpired(int64_t now) const {
       // nBanUntil == 0 means permanent ban
       return nBanUntil != 0 && nBanUntil < now;
@@ -98,7 +94,7 @@ public:
   // === Discourage Management (Temporary) ===
 
   /**
-   * Discourage an address temporarily (Bitcoin Core pattern)
+   * Discourage an address temporarily 
    * Discouraged peers are rejected for new connections but existing connections remain
    * @param address IP address to discourage
    */
@@ -164,7 +160,7 @@ public:
   std::string GetBanlistPath() const;
 
 private:
-  // Discourage duration (24 hours in Bitcoin Core)
+  // Discourage duration (24 hours matches Bitcoin Core)
   static constexpr int64_t DISCOURAGE_DURATION_SEC = 24 * 60 * 60;
 
   // Banned addresses (persistent, stored on disk)

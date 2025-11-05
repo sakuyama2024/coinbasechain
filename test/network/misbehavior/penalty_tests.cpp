@@ -3,7 +3,7 @@
 #include "catch_amalgamated.hpp"
 #include "infra/simulated_network.hpp"
 #include "infra/simulated_node.hpp"
-#include "infra/attack_simulated_node.hpp"
+#include "infra/node_simulator.hpp"
 #include "test_orchestrator.hpp"
 
 using namespace coinbasechain;
@@ -13,7 +13,7 @@ static void SetZeroLatency(SimulatedNetwork& network){ SimulatedNetwork::Network
 
 TEST_CASE("MisbehaviorTest - InvalidPoWPenalty", "[misbehaviortest][network]") {
     SimulatedNetwork network(12345); SetZeroLatency(network);
-    SimulatedNode victim(1,&network); AttackSimulatedNode attacker(2,&network);
+    SimulatedNode victim(1,&network); NodeSimulator attacker(2,&network);
     for(int i=0;i<5;i++) victim.MineBlock();
     // Connect first with PoW validation bypassed (default)
 attacker.ConnectTo(1);
@@ -27,7 +27,7 @@ attacker.ConnectTo(1);
 
 TEST_CASE("MisbehaviorTest - OversizedMessagePenalty", "[misbehaviortest][network]") {
     SimulatedNetwork network(12346); SetZeroLatency(network);
-    SimulatedNode victim(10,&network); AttackSimulatedNode attacker(20,&network);
+    SimulatedNode victim(10,&network); NodeSimulator attacker(20,&network);
     for(int i=0;i<5;i++) victim.MineBlock();
 attacker.ConnectTo(10);
     TestOrchestrator orch(&network);
@@ -38,7 +38,7 @@ attacker.ConnectTo(10);
 
 TEST_CASE("MisbehaviorTest - NonContinuousHeadersPenalty", "[misbehaviortest][network]") {
     SimulatedNetwork network(12347); SetZeroLatency(network);
-    SimulatedNode victim(30,&network); AttackSimulatedNode attacker(40,&network);
+    SimulatedNode victim(30,&network); NodeSimulator attacker(40,&network);
     for(int i=0;i<5;i++) victim.MineBlock();
 attacker.ConnectTo(30);
     TestOrchestrator orch(&network);
@@ -49,7 +49,7 @@ attacker.ConnectTo(30);
 
 TEST_CASE("MisbehaviorTest - TooManyOrphansPenalty", "[misbehaviortest][network]") {
     SimulatedNetwork network(12348); SetZeroLatency(network);
-    SimulatedNode victim(50,&network); AttackSimulatedNode attacker(60,&network);
+    SimulatedNode victim(50,&network); NodeSimulator attacker(60,&network);
     for(int i=0;i<5;i++) victim.MineBlock();
     // Connect first with PoW validation bypassed (default)
 attacker.ConnectTo(50);
@@ -63,7 +63,7 @@ attacker.ConnectTo(50);
 
 TEST_CASE("MisbehaviorTest - ScoreAccumulation", "[misbehaviortest][network]") {
     SimulatedNetwork network(12349); SetZeroLatency(network);
-    SimulatedNode victim(70,&network); AttackSimulatedNode attacker(80,&network);
+    SimulatedNode victim(70,&network); NodeSimulator attacker(80,&network);
     for(int i=0;i<5;i++) victim.MineBlock();
 attacker.ConnectTo(70);
     TestOrchestrator orch(&network);
@@ -76,7 +76,7 @@ attacker.ConnectTo(70);
 
 TEST_CASE("DuplicateHeaders - Resending same valid header does not penalize or disconnect", "[misbehaviortest][network][duplicates]") {
     SimulatedNetwork network(12350); SetZeroLatency(network);
-    SimulatedNode victim(90, &network); AttackSimulatedNode attacker(91, &network);
+    SimulatedNode victim(90, &network); NodeSimulator attacker(91, &network);
 
     // Ensure victim has a known tip to attach to
     for (int i = 0; i < 3; ++i) victim.MineBlock();

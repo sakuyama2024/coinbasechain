@@ -1,5 +1,6 @@
 # Build directories
 build/
+build-*/
 cmake-build-*/
 bin/
 
@@ -15,6 +16,7 @@ Makefile
 *.swp
 *.swo
 *~
+.claude/
 
 # Compiled files
 *.o
@@ -34,6 +36,8 @@ _deps/
 # Static analysis
 .scannerwork/
 cppcheck-report.txt
+iwyu_results/
+*.iwyu
 
 # Sensitive deployment configuration
 deploy/ansible/inventory.yml

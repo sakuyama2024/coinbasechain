@@ -67,6 +67,13 @@ NetworkManager::NetworkManager(
   LOG_NET_TRACE("NetworkManager initialized (local nonce: {}, external_io_context: {})",
                local_nonce_, external_io_context_ ? "yes" : "no");
 
+  // Set process-wide nonce for all peers (self-connection detection)
+  // In test mode, each node gets unique nonce via set_local_nonce() calls
+  // In production, all peers share process-wide nonce for reliable self-connect detection
+  if (!config.test_nonce.has_value()) {
+    Peer::set_process_nonce(local_nonce_);
+  }
+
   // Create components in dependency order (3-manager architecture)
   // PeerLifecycleManager
   peer_manager_ = std::make_unique<PeerLifecycleManager>(*io_context_, PeerLifecycleManager::Config{}, config_.datadir);

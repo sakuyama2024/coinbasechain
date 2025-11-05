@@ -17,8 +17,7 @@ namespace util {
  * control time passage without waiting for real time to elapse.
  *
  * Usage:
- * - Production code calls GetTime() or GetSteadyTime() instead of direct system
- * calls
+ * - Production code calls GetTime() or GetSteadyTime() instead of direct systemcalls
  * - Tests call SetMockTime() to control the current time
  * - When mock time is set, all time functions return the mocked value
  * - When mock time is 0 (default), time functions return real system time

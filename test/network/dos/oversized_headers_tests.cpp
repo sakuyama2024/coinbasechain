@@ -3,7 +3,7 @@
 #include "catch_amalgamated.hpp"
 #include "infra/simulated_network.hpp"
 #include "infra/simulated_node.hpp"
-#include "infra/attack_simulated_node.hpp"
+#include "infra/node_simulator.hpp"
 #include "test_orchestrator.hpp"
 #include "network_observer.hpp"
 #include "chain/chainparams.hpp"
@@ -23,7 +23,7 @@ TEST_CASE("DoS: Oversized message triggers disconnect", "[dos][network]") {
     AutoDumpOnFailure auto_dump(observer);
 
     SimulatedNode victim(1, &network);
-    AttackSimulatedNode attacker(2, &network);
+    NodeSimulator attacker(2, &network);
 
     observer.OnCustomEvent("TEST_START", -1, "Oversized message DoS test");
 

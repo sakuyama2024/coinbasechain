@@ -1,7 +1,7 @@
 // Copyright (c) 2024 Coinbase Chain
-// AttackSimulatedNode implementation - Sends malicious P2P messages for testing
+// NodeSimulator implementation - Sends malicious P2P messages for testing
 
-#include "attack_simulated_node.hpp"
+#include "node_simulator.hpp"
 #include "network/protocol.hpp"
 #include "network/message.hpp"
 #include "chain/validation.hpp"
@@ -12,7 +12,7 @@
 namespace coinbasechain {
 namespace test {
 
-CBlockHeader AttackSimulatedNode::CreateDummyHeader(const uint256& prev_hash, uint32_t nBits) {
+CBlockHeader NodeSimulator::CreateDummyHeader(const uint256& prev_hash, uint32_t nBits) {
     CBlockHeader header;
     header.nVersion = 1;
     header.hashPrevBlock = prev_hash;
@@ -36,7 +36,7 @@ CBlockHeader AttackSimulatedNode::CreateDummyHeader(const uint256& prev_hash, ui
     return header;
 }
 
-void AttackSimulatedNode::SendOrphanHeaders(int peer_node_id, size_t count) {
+void NodeSimulator::SendOrphanHeaders(int peer_node_id, size_t count) {
     printf("[Attack] Node %d sending %zu orphan headers to node %d\n",
            GetId(), count, peer_node_id);
 
@@ -90,7 +90,7 @@ void AttackSimulatedNode::SendOrphanHeaders(int peer_node_id, size_t count) {
     printf("[Attack] Injected %zu orphan headers into network\n", count);
 }
 
-void AttackSimulatedNode::SendInvalidPoWHeaders(int peer_node_id, const uint256& prev_hash, size_t count) {
+void NodeSimulator::SendInvalidPoWHeaders(int peer_node_id, const uint256& prev_hash, size_t count) {
     printf("[Attack] Node %d sending %zu invalid PoW headers to node %d\n",
            GetId(), count, peer_node_id);
 
@@ -118,7 +118,7 @@ void AttackSimulatedNode::SendInvalidPoWHeaders(int peer_node_id, const uint256&
     printf("[Attack] Injected %zu invalid PoW headers into network\n", count);
 }
 
-void AttackSimulatedNode::SendNonContinuousHeaders(int peer_node_id, const uint256& prev_hash) {
+void NodeSimulator::SendNonContinuousHeaders(int peer_node_id, const uint256& prev_hash) {
     printf("[Attack] Node %d sending non-continuous headers to node %d\n",
            GetId(), peer_node_id);
 
@@ -144,7 +144,7 @@ void AttackSimulatedNode::SendNonContinuousHeaders(int peer_node_id, const uint2
     printf("[Attack] Injected non-continuous headers\n");
 }
 
-void AttackSimulatedNode::SendOversizedHeaders(int peer_node_id, size_t count) {
+void NodeSimulator::SendOversizedHeaders(int peer_node_id, size_t count) {
     printf("[Attack] Node %d sending %zu oversized headers to node %d\n",
            GetId(), count, peer_node_id);
 
@@ -178,7 +178,7 @@ void AttackSimulatedNode::SendOversizedHeaders(int peer_node_id, size_t count) {
     printf("[Attack] Injected oversized message with %zu headers\n", count);
 }
 
-uint256 AttackSimulatedNode::MineBlockPrivate(const std::string& miner_address) {
+uint256 NodeSimulator::MineBlockPrivate(const std::string& miner_address) {
     printf("[Attack] Node %d mining block PRIVATELY (not broadcasting)\n", GetId());
 
     // Create block header (same as normal MineBlock)
@@ -223,7 +223,7 @@ uint256 AttackSimulatedNode::MineBlockPrivate(const std::string& miner_address) 
     return uint256();  // Failed
 }
 
-void AttackSimulatedNode::BroadcastBlock(const uint256& block_hash, int peer_node_id) {
+void NodeSimulator::BroadcastBlock(const uint256& block_hash, int peer_node_id) {
     printf("[Attack] Node %d broadcasting previously private block: %s to peer %d\n",
            GetId(), block_hash.ToString().substr(0, 16).c_str(), peer_node_id);
 
@@ -262,7 +262,7 @@ void AttackSimulatedNode::BroadcastBlock(const uint256& block_hash, int peer_nod
     printf("[Attack] Broadcast complete for block at height %d\n", pindex->nHeight);
 }
 
-void AttackSimulatedNode::SendLowWorkHeaders(int peer_node_id, const std::vector<uint256>& block_hashes) {
+void NodeSimulator::SendLowWorkHeaders(int peer_node_id, const std::vector<uint256>& block_hashes) {
     printf("[Attack] Node %d sending %zu low-work headers to node %d\n",
            GetId(), block_hashes.size(), peer_node_id);
 

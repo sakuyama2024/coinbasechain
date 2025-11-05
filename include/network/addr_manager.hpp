@@ -15,8 +15,7 @@
 
  How this differs from Bitcoin Core's addrman
  - No bucketization/source-grouping: this first release does NOT implement Core's
-   bucket model. Selection is simpler (tried/new + cooldown) and has lower Sybil
-   resistance. 
+   bucket model. Selection is simpler (tried/new + cooldown) 
  - Persistence format: human-readable JSON vs Core's binary peers.dat. Corruption
    detection relies on nlohmann::json parser error handling.
  - Simpler scoring: no per-entry chance weighting or privacy scoring; limits like
@@ -150,7 +149,6 @@ private:
   std::map<AddrKey, AddrInfo> new_;
 
   // Random number generator for selection (base entropy source)
-  // SECURITY: Not used directly - see make_request_rng() for per-request entropy
   std::mt19937 rng_;
 
   // Create RNG with per-request entropy to prevent seed prediction attacks

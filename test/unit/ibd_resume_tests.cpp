@@ -63,8 +63,10 @@ TEST_CASE("IBD resume after restart", "[ibd][network][persistence]") {
     // Destroy node (simulate process stop)
     sync.reset();
 
-    // Re-create node (simulate restart)
-    sync = std::make_unique<SimulatedNode>(2, &net);
+    // Re-create node with different node_id to simulate restart with new nonce
+    // (In production, node restart generates a new random nonce; using different
+    // node_id in tests achieves the same effect via test_nonce = node_id + 1000000)
+    sync = std::make_unique<SimulatedNode>(3, &net);
 
     // Load previously saved headers (simulate startup load)
     REQUIRE(sync->GetChainstate().Load(tmp_path.string()));
@@ -76,10 +78,18 @@ TEST_CASE("IBD resume after restart", "[ibd][network][persistence]") {
     // Reconnect and finish sync
     REQUIRE(sync->ConnectTo(miner.GetId()));
 
+    // Allow connection handshake to complete
+    t += 3000; net.AdvanceTime(t);
+
+    // Select sync peer
+    sync->GetNetworkManager().test_hook_check_initial_sync();
+    t += 2000; net.AdvanceTime(t);  // Allow sync peer selection to complete fully
+
     // Advance time in chunks to deliver remaining HEADERS batches
-    const int MAX_STEPS = 6;
+    // Don't call test_hook_check_initial_sync() repeatedly as it interferes with ongoing sync
+    const int MAX_STEPS = 10;
     for (int i = 0; i < MAX_STEPS && sync->GetTipHeight() < CHAIN_LEN; ++i) {
-        t += 45'000; // enough for another batch
+        t += 30'000; // enough for another batch
         net.AdvanceTime(t);
     }
 

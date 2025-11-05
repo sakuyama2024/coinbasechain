@@ -3,7 +3,7 @@
 
 #include "infra/simulated_network.hpp"
 #include "infra/simulated_node.hpp"
-#include "infra/attack_simulated_node.hpp"
+#include "infra/node_simulator.hpp"
 #include "chain/chainparams.hpp"
 #include <catch_amalgamated.hpp>
 

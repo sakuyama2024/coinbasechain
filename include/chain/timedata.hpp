@@ -28,7 +28,6 @@ static constexpr int64_t DEFAULT_MAX_TIME_ADJUSTMENT = 70 * 60;
  * - Starts with an initial value (typically 0) which affects early medians
  * - Potential integer overflow in median calculation for extreme values
  * - O(n log n) sorting on every input
- * These are preserved for Bitcoin Core compatibility.
  */
 template <typename T>
 class CMedianFilter

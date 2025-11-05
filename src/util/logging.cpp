@@ -29,7 +29,6 @@ static void InitializeInternal(const std::string &log_level, bool log_to_file,
 
     if (log_to_file) {
       // Rotating file sink (max 10MB per file, 3 files total = 30MB max)
-      // Bitcoin Core uses similar rotation to prevent unbounded growth
       auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
           log_file_path,
           10 * 1024 * 1024,  // 10MB max file size

@@ -53,15 +53,8 @@ using LearnedMap = std::unordered_map<AddressKey, LearnedEntry, AddressKey::Hash
 /**
  * PerPeerState - Consolidated per-peer state
  *
- * Purpose:
  * - Single source of truth for all per-peer data across network managers
- * - Eliminates ~20% code duplication from scattered peer_id maps
- * - Simplifies cleanup: one erase removes all peer data
- *
- * Design:
  * - Stored in ThreadSafeMap<int, PerPeerState> in ConnectionManager
- * - Replaces 5 separate per-peer maps across different managers
- * - All fields grouped logically by functionality
  *
  * Note: Named "PerPeerState" to avoid conflict with PeerState enum (connection state)
  */

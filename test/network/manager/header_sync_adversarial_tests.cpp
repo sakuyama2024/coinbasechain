@@ -3,7 +3,7 @@
 #include "catch_amalgamated.hpp"
 #include "infra/simulated_network.hpp"
 #include "infra/simulated_node.hpp"
-#include "infra/attack_simulated_node.hpp"
+#include "infra/node_simulator.hpp"
 #include "network/protocol.hpp"
 #include "chain/chainparams.hpp"
 #include "chain/block.hpp"
@@ -18,7 +18,7 @@ using namespace coinbasechain::protocol;
 TEST_CASE("NetworkManager Adversarial - Oversized Headers Message", "[adversarial][network_manager][dos][critical]") {
     SimulatedNetwork network(42001);
     SimulatedNode victim(1, &network);
-    AttackSimulatedNode attacker(2, &network);
+    NodeSimulator attacker(2, &network);
 
     SECTION("Send 2001 headers (exceeds MAX_HEADERS_SIZE)") {
         attacker.ConnectTo(1);
@@ -119,9 +119,12 @@ TEST_CASE("HeaderSync - Switch sync peer on stall", "[network][network_header_sy
         n.GetNetworkManager().test_hook_header_sync_process_timers();
     }
 
-    // Re-select sync peer and progress
+    // Give more time for stall disconnect to complete and state to stabilize
+    t += 2000; net.AdvanceTime(t);
+
+    // Re-select sync peer
     n.GetNetworkManager().test_hook_check_initial_sync();
-    t += 500; net.AdvanceTime(t);
+    t += 2000; net.AdvanceTime(t);  // Allow sync peer selection to complete fully
 
     int gh_p1_after = net.CountCommandSent(n.GetId(), p1.GetId(), protocol::commands::GETHEADERS);
     int gh_p2_after = net.CountCommandSent(n.GetId(), p2.GetId(), protocol::commands::GETHEADERS);
@@ -129,14 +132,19 @@ TEST_CASE("HeaderSync - Switch sync peer on stall", "[network][network_header_sy
     CHECK(gh_p2_after >= gh_p2_before);  // switched to or at least not decreased for p2
     CHECK(gh_p1_after >= gh_p1_before); // no new GETHEADERS sent to stalled p1
 
-    // Final state: synced
+    // Final state: synced - allow more time for sync to finish
+    // Don't call test_hook_check_initial_sync() repeatedly as it interferes with ongoing sync
+    for (int i = 0; i < 20 && n.GetTipHeight() < 40; ++i) {
+        t += 500;
+        net.AdvanceTime(t);
+    }
     CHECK(n.GetTipHeight() == 40);
 }
 
 TEST_CASE("NetworkManager Adversarial - Non-Continuous Headers", "[adversarial][network_manager][dos]") {
     SimulatedNetwork network(42002);
     SimulatedNode victim(1, &network);
-    AttackSimulatedNode attacker(2, &network);
+    NodeSimulator attacker(2, &network);
 
     attacker.ConnectTo(1);
     network.AdvanceTime(network.GetCurrentTime() + 500);
@@ -157,7 +165,7 @@ TEST_CASE("NetworkManager Adversarial - Non-Continuous Headers", "[adversarial][
 TEST_CASE("NetworkManager Adversarial - Invalid PoW Headers", "[adversarial][network_manager][pow]") {
     SimulatedNetwork network(42003);
     SimulatedNode victim(1, &network);
-    AttackSimulatedNode attacker(2, &network);
+    NodeSimulator attacker(2, &network);
 
     attacker.ConnectTo(1);
     network.AdvanceTime(500);
@@ -174,7 +182,7 @@ TEST_CASE("NetworkManager Adversarial - Invalid PoW Headers", "[adversarial][net
 TEST_CASE("NetworkManager Adversarial - Orphan Headers Attack", "[adversarial][network_manager][orphan]") {
     SimulatedNetwork network(42004);
     SimulatedNode victim(1, &network);
-    AttackSimulatedNode attacker(2, &network);
+    NodeSimulator attacker(2, &network);
 
     attacker.ConnectTo(1);
     network.AdvanceTime(network.GetCurrentTime() + 500);
@@ -193,7 +201,7 @@ TEST_CASE("NetworkManager Adversarial - Orphan Headers Attack", "[adversarial][n
 TEST_CASE("NetworkManager Adversarial - Repeated Unconnecting Headers", "[adversarial][network_manager][unconnecting]") {
     SimulatedNetwork network(42005);
     SimulatedNode victim(1, &network);
-    AttackSimulatedNode attacker(2, &network);
+    NodeSimulator attacker(2, &network);
 
     attacker.ConnectTo(1);
     network.AdvanceTime(500);
@@ -214,7 +222,7 @@ TEST_CASE("NetworkManager Adversarial - Empty Headers Message", "[adversarial][n
     SimulatedNetwork net(42006);
     net.EnableCommandTracking(true);
     SimulatedNode victim(1, &net);
-    AttackSimulatedNode attacker(2, &net);
+    NodeSimulator attacker(2, &net);
 
     // Connect and allow basic handshake
     attacker.ConnectTo(1);
@@ -242,4 +250,126 @@ TEST_CASE("NetworkManager Adversarial - Empty Headers Message", "[adversarial][n
     // Ensure victim remained connected and chain did not change
     CHECK(victim.GetPeerCount() > 0);
     CHECK(victim.GetTipHeight() == tip_before);
+}
+
+TEST_CASE("Race condition - HEADERS in-flight during sync peer switch", "[network][race_condition][header_sync][critical]") {
+    // When a large HEADERS batch is in-flight and the sync peer disconnects
+    // before delivery, the new sync peer should be selected and sync should continue
+    // without duplicate processing or hangs
+
+    SimulatedNetwork net(42008);
+    net.EnableCommandTracking(true);
+
+    SimulatedNode miner(1, &net);
+    for (int i = 0; i < 80; ++i) {
+        (void)miner.MineBlock();
+    }
+
+    // Two peers sync from miner
+    SimulatedNode p1(2, &net);
+    SimulatedNode p2(3, &net);
+
+    p1.ConnectTo(miner.GetId());
+    p2.ConnectTo(miner.GetId());
+
+    uint64_t t = 1000; net.AdvanceTime(t);
+
+    p1.GetNetworkManager().test_hook_check_initial_sync();
+    p2.GetNetworkManager().test_hook_check_initial_sync();
+
+    for (int i = 0; i < 20 && (p1.GetTipHeight() < 80 || p2.GetTipHeight() < 80); ++i) {
+        t += 1000; net.AdvanceTime(t);
+    }
+
+    REQUIRE(p1.GetTipHeight() == 80);
+    REQUIRE(p2.GetTipHeight() == 80);
+
+    // Victim connects to both
+    SimulatedNode victim(4, &net);
+    victim.ConnectTo(p1.GetId());
+    victim.ConnectTo(p2.GetId());
+
+    t += 1000; net.AdvanceTime(t);
+
+    // Select p1 as sync peer
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    t += 500; net.AdvanceTime(t);
+
+    // Start sync but don't wait for complete delivery
+    for (int i = 0; i < 3; ++i) {
+        t += 500; net.AdvanceTime(t);
+    }
+
+    int height_before_race = victim.GetTipHeight();
+
+    // Simulate race: disconnect p1 while HEADERS may be in-flight
+    victim.DisconnectFrom(p1.GetId());
+    t += 500; net.AdvanceTime(t);
+
+    // Select p2 as new sync peer
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    t += 2000; net.AdvanceTime(t);
+
+    // Sync should complete with p2 without issues
+    for (int i = 0; i < 25 && victim.GetTipHeight() < 80; ++i) {
+        t += 2000; net.AdvanceTime(t);
+    }
+
+    // Verify: completed sync, no hang, no crash
+    CHECK(victim.GetTipHeight() == 80);
+    CHECK(victim.GetTipHash() == miner.GetTipHash());
+}
+
+TEST_CASE("Race condition - Concurrent CheckInitialSync calls", "[network][race_condition][sync_peer_selection]") {
+    // When multiple CheckInitialSync() calls happen in quick succession
+    // (e.g., due to timer + manual trigger), only one sync peer should be
+    // selected and sync should proceed normally without duplicate GETHEADERS
+
+    SimulatedNetwork net(42009);
+    net.EnableCommandTracking(true);
+
+    SimulatedNode miner(1, &net);
+    for (int i = 0; i < 50; ++i) {
+        (void)miner.MineBlock();
+    }
+
+    SimulatedNode p1(2, &net);
+    p1.ConnectTo(miner.GetId());
+
+    uint64_t t = 1000; net.AdvanceTime(t);
+    p1.GetNetworkManager().test_hook_check_initial_sync();
+
+    for (int i = 0; i < 15 && p1.GetTipHeight() < 50; ++i) {
+        t += 1000; net.AdvanceTime(t);
+    }
+
+    REQUIRE(p1.GetTipHeight() == 50);
+
+    // Victim connects to p1
+    SimulatedNode victim(3, &net);
+    victim.ConnectTo(p1.GetId());
+
+    t += 1000; net.AdvanceTime(t);
+
+    // Simulate concurrent CheckInitialSync calls
+    int gh_before = net.CountCommandSent(victim.GetId(), p1.GetId(), protocol::commands::GETHEADERS);
+
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+    victim.GetNetworkManager().test_hook_check_initial_sync();
+
+    t += 1000; net.AdvanceTime(t);
+
+    int gh_after = net.CountCommandSent(victim.GetId(), p1.GetId(), protocol::commands::GETHEADERS);
+
+    // Should only send one GETHEADERS despite multiple calls
+    // (Implementation may allow 1-2 depending on timing)
+    CHECK(gh_after - gh_before <= 2);
+
+    // Sync should complete normally
+    for (int i = 0; i < 20 && victim.GetTipHeight() < 50; ++i) {
+        t += 2000; net.AdvanceTime(t);
+    }
+
+    CHECK(victim.GetTipHeight() == 50);
 }

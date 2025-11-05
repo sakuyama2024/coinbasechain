@@ -13,7 +13,7 @@ namespace test {
 /**
  * MaliciousBehavior - Strategy pattern for composable attack behaviors
  * 
- * Instead of AttackSimulatedNode with hardcoded methods, behaviors can be
+ * Instead of NodeSimulator with hardcoded methods, behaviors can be
  * dynamically attached to any SimulatedNode to intercept/modify messages.
  * 
  * Benefits:

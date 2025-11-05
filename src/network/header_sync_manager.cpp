@@ -78,6 +78,18 @@ void HeaderSyncManager::OnPeerDisconnected(uint64_t peer_id) {
   if (sync_state_.sync_peer_id == peer_id) {
     LOG_NET_DEBUG("Sync peer {} disconnected, clearing sync state", peer_id);
     ClearSyncPeerUnlocked();
+
+    // Reset sync_started on all remaining outbound peers to allow retry after stall.
+    // This ensures that if the sync peer failed/stalled, we can select another peer
+    // even if it was previously attempted. This is necessary when the peer set is small
+    // (e.g. in tests) and we need to retry with the same peers.
+    auto outbound_peers = peer_manager_.get_outbound_peers();
+    for (const auto &peer : outbound_peers) {
+      if (peer && peer->sync_started()) {
+        LOG_NET_DEBUG("Resetting sync_started for peer {} to allow retry", peer->id());
+        peer->set_sync_started(false);
+      }
+    }
   }
 }
 

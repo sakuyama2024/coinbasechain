@@ -138,7 +138,7 @@ ChainstateManager::AcceptBlockHeader(const CBlockHeader &header,
   // Step 9: Anti-DoS gate – require caller to have validated sufficient work
   // SECURITY: Follows Bitcoin Core pattern (TryLowWorkHeadersSync). Caller MUST perform
   // batch-level work validation using GetAntiDoSWorkThreshold() BEFORE calling this function.
-  // See HeaderSyncManager::ProcessHeaders() for reference implementation (lines 312-357).
+  // See HeaderSyncManager::ProcessHeaders() for reference implementation.
   // This parameter is a defense-in-depth gate to prevent programming errors.
   if (!min_pow_checked) {
     LOG_CHAIN_TRACE("Not adding header {}: min_pow_checked=false (anti-DoS)", hash.ToString().substr(0, 16));
@@ -1010,7 +1010,7 @@ bool ChainstateManager::InvalidateBlock(const uint256 &hash) {
   chain::CBlockIndex *to_mark_failed = pindex;
   bool pindex_was_in_chain = false;
 
-  // Step 1: Pre-build candidate map (Bitcoin Core pattern)
+  // Step 1: Pre-build candidate map 
   // Find all competing fork blocks that have at least as much work as where
   // we'll end up (i.e., pindex->pprev)
   const auto &block_index = block_manager_.GetBlockIndex();
@@ -1066,7 +1066,7 @@ bool ChainstateManager::InvalidateBlock(const uint256 &hash) {
       chain_selector_.AddCandidateUnchecked(invalid_walk_tip->pprev);
     }
 
-    // ADD COMPETING FORKS as they become viable (Bitcoin Core pattern)
+    // ADD COMPETING FORKS as they become viable candidates
     // As we disconnect, some fork blocks now have enough work to be candidates
     if (invalid_walk_tip->pprev) {
       auto candidate_it = candidate_blocks_by_work.lower_bound(

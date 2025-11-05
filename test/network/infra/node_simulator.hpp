@@ -8,7 +8,7 @@ namespace coinbasechain {
 namespace test {
 
 /**
- * AttackSimulatedNode - Extends SimulatedNode to send malicious P2P messages
+ * NodeSimulator - Extends SimulatedNode to send malicious P2P messages
  *
  * This node can:
  * - Send headers with invalid PoW
@@ -19,9 +19,9 @@ namespace test {
  *
  * Used for testing DoS protection and attack resilience.
  */
-class AttackSimulatedNode : public SimulatedNode {
+class NodeSimulator : public SimulatedNode {
 public:
-    AttackSimulatedNode(int node_id,
+    NodeSimulator(int node_id,
                         SimulatedNetwork* network,
                         const chain::ChainParams* params = nullptr)
         : SimulatedNode(node_id, network, params)

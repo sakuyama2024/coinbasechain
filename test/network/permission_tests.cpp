@@ -18,7 +18,7 @@ static struct TestSetup {
 #include "infra/simulated_network.hpp"
 using namespace coinbasechain::chain;
 #include "infra/simulated_node.hpp"
-#include "infra/attack_simulated_node.hpp"
+#include "infra/node_simulator.hpp"
 #include "test_orchestrator.hpp"
 #include "network_observer.hpp"
 #include "chain/chainparams.hpp"
@@ -38,7 +38,7 @@ TEST_CASE("Permission: Normal peer gets disconnected for invalid PoW", "[permiss
     AutoDumpOnFailure auto_dump(observer);
     
     SimulatedNode victim(1, &network);
-    AttackSimulatedNode attacker(2, &network);
+    NodeSimulator attacker(2, &network);
     
     
     
@@ -85,7 +85,7 @@ TEST_CASE("Permission: NoBan peer survives invalid PoW", "[permissions][network]
     AutoDumpOnFailure auto_dump(observer);
     
     SimulatedNode victim(1, &network);
-    AttackSimulatedNode attacker(2, &network);
+    NodeSimulator attacker(2, &network);
     
     
     
@@ -147,7 +147,7 @@ TEST_CASE("Permission: NoBan peer survives orphan spam", "[permissions][network]
     AutoDumpOnFailure auto_dump(observer);
     
     SimulatedNode victim(1, &network);
-    AttackSimulatedNode attacker(2, &network);
+    NodeSimulator attacker(2, &network);
     
     
     
@@ -206,8 +206,8 @@ TEST_CASE("Permission: NoBan vs Normal peer comparison", "[permissions][network]
     // Setup two victims
     SimulatedNode victim_normal(1, &network);
     SimulatedNode victim_noban(2, &network);
-    AttackSimulatedNode attacker1(10, &network);
-    AttackSimulatedNode attacker2(20, &network);
+    NodeSimulator attacker1(10, &network);
+    NodeSimulator attacker2(20, &network);
     
     
     
@@ -283,7 +283,7 @@ TEST_CASE("Permission: NoBan with multiple attack types", "[permissions][network
     AutoDumpOnFailure auto_dump(observer);
     
     SimulatedNode victim(1, &network);
-    AttackSimulatedNode attacker(2, &network);
+    NodeSimulator attacker(2, &network);
     
     
     
@@ -345,7 +345,7 @@ TEST_CASE("Permission: Score tracking works for NoBan peers", "[permissions][net
     AutoDumpOnFailure auto_dump(observer);
     
     SimulatedNode victim(1, &network);
-    AttackSimulatedNode attacker(2, &network);
+    NodeSimulator attacker(2, &network);
     
     
     

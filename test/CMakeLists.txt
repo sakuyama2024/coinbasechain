@@ -4,7 +4,7 @@
 add_library(test2_network_infra
     network/infra/simulated_network.cpp
     network/infra/simulated_node.cpp
-    network/infra/attack_simulated_node.cpp
+    network/infra/node_simulator.cpp
     network/infra/network_bridged_transport.cpp
 )
 
@@ -77,6 +77,9 @@ add_executable(coinbasechain_tests
     network/manager/header_sync_adversarial_tests.cpp
     network/manager/header_sync_ibd_gating_tests.cpp
     network/manager/header_sync_reselection_regression_tests.cpp
+    network/manager/ibd_gating_tests.cpp
+    network/manager/sync_started_reset_tests.cpp
+    network/manager/sync_peer_switching_tests.cpp
     chain/orphan_dos_tests.cpp
     chain/orphan_edge_case_tests.cpp
     chain/orphan_integration_tests.cpp
