@@ -136,9 +136,8 @@ LOG_NET_TRACE("Peer::start() peer={} state={} is_inbound={} address={}",
     }
   }
 
-  // SECURITY: Store timestamps as atomic durations to prevent data races (Bitcoin Core pattern)
-  auto now = std::chrono::duration_cast<std::chrono::seconds>(
-      util::GetSteadyTime().time_since_epoch());
+  // Store timestamps as atomic durations to prevent data races 
+  auto now = std::chrono::duration_cast<std::chrono::seconds>(util::GetSteadyTime().time_since_epoch());
   stats_.connected_time.store(now, std::memory_order_relaxed);
   // Initialize last activity times to prevent false inactivity timeout
   stats_.last_send.store(now, std::memory_order_relaxed);
@@ -223,8 +222,6 @@ void Peer::do_disconnect() {
 
 void Peer::post_disconnect() {
   // SECURITY: Post disconnect() to io_context to prevent use-after-free
-  // If caller holds the last shared_ptr, calling disconnect() synchronously
-  // would destroy 'this' while still in the call stack (re-entrancy bug).
   // By posting, we defer disconnect until after the current call finishes.
   auto self = shared_from_this();
   boost::asio::post(io_context_, [self]() {
@@ -267,7 +264,6 @@ LOG_NET_TRACE("Sending {} to {} (size: {} bytes, state: {})",
     LOG_NET_TRACE("Successfully sent {} to {}", command, address());
   } else {
     LOG_NET_ERROR("Failed to send {} to {}", command, address());
-    // SECURITY: Use post_disconnect() to avoid use-after-free if caller holds last shared_ptr
     post_disconnect();
   }
 }
@@ -325,7 +321,6 @@ void Peer::on_transport_receive(const std::vector<uint8_t> &data) {
 
   // Compact buffer if offset has grown large (over half the buffer)
   // This prevents unbounded memory growth while keeping O(1) amortized cost
-  // SECURITY: Use erase() instead of memmove+resize to avoid uninitialized memory issues
   if (recv_buffer_offset_ > 0 && recv_buffer_offset_ >= recv_buffer_.size() / 2) {
     recv_buffer_.erase(recv_buffer_.begin(), recv_buffer_.begin() + recv_buffer_offset_);
     recv_buffer_offset_ = 0;
@@ -343,8 +338,7 @@ void Peer::on_transport_receive(const std::vector<uint8_t> &data) {
 
   // Update stats
   stats_.bytes_received.fetch_add(data.size(), std::memory_order_relaxed);
-  auto now = std::chrono::duration_cast<std::chrono::seconds>(
-      util::GetSteadyTime().time_since_epoch());
+  auto now = std::chrono::duration_cast<std::chrono::seconds>(util::GetSteadyTime().time_since_epoch());
   stats_.last_recv.store(now, std::memory_order_relaxed);
 
   // Try to process complete messages
@@ -412,7 +406,6 @@ void Peer::handle_version(const message::VersionMessage &msg) {
   }
 
   // SECURITY: Reject obsolete protocol versions
-  // Bitcoin Core: rejects version < MIN_PROTO_VERSION (209)
   // Prevents: compatibility issues, potential exploits in old protocol versions
   if (msg.version < static_cast<int32_t>(protocol::MIN_PROTOCOL_VERSION)) {
     LOG_NET_WARN("peer={} using obsolete protocol version {} (min: {}), disconnecting",
@@ -431,7 +424,7 @@ void Peer::handle_version(const message::VersionMessage &msg) {
       "Received VERSION from {} - version: {}, user_agent: {}, nonce: {}",
       address(), peer_version_, peer_user_agent_, peer_nonce_);
 
-  // Defense-in-depth: Check for self-connection at Peer level (inbound only)
+  // Defensive Check for self-connection at Peer level (inbound only)
   // NetworkManager also performs comprehensive nonce checking for all connections
   // This check allows Peer to work standalone (e.g., in unit tests) and provides
   // an early disconnect without needing to route through NetworkManager
@@ -485,7 +478,7 @@ void Peer::handle_verack() {
   LOG_NET_TRACE("Received VERACK from {} - handshake complete", address());
 
   // FEELER connections: Disconnect immediately after handshake completes
-  // Bitcoin Core pattern (net_processing.cpp:3606): "feeler connection completed peer=%d; disconnecting"
+  // Bitcoin Core pattern: "feeler connection completed peer=%d; disconnecting"
   // Purpose: Test address liveness without consuming an outbound slot
   if (is_feeler()) {
     LOG_NET_DEBUG("feeler connection completed peer={}; disconnecting", id_);
@@ -556,7 +549,7 @@ void Peer::process_received_data() {
 
     // SECURITY: Validate zero-length payloads (Bitcoin Core pattern)
     // Only VERACK and GETADDR are allowed to have empty payloads
-    // PING/PONG must include 8-byte nonce (BIP31)
+    // PING/PONG must include 8-byte nonce
     // All other messages (VERSION, ADDR, INV, GETHEADERS, HEADERS) must have data
     if (header.length == 0) {
       std::string cmd = header.get_command();
@@ -656,12 +649,10 @@ void Peer::schedule_ping() {
       if (self->last_ping_nonce_ != 0) {
         // We sent a ping but haven't received PONG yet
         auto now = util::GetSteadyTime();
-        auto ping_age = std::chrono::duration_cast<std::chrono::seconds>(
-            now - self->ping_sent_time_);
+        auto ping_age = std::chrono::duration_cast<std::chrono::seconds>(now - self->ping_sent_time_);
 
         if (ping_age.count() > protocol::PING_TIMEOUT_SEC) {
-          LOG_NET_DEBUG("ping timeout: {} seconds, peer={}",
-                       ping_age.count(), self->id_);
+          LOG_NET_DEBUG("ping timeout: {} seconds, peer={}",ping_age.count(), self->id_);
           self->disconnect();
           return;
         }
@@ -671,7 +662,6 @@ void Peer::schedule_ping() {
         // No outstanding PING, safe to send a new one
         self->send_ping();
       }
-
       self->schedule_ping();
     }
   });
@@ -688,8 +678,7 @@ void Peer::send_ping() {
 void Peer::handle_pong(const message::PongMessage &msg) {
   if (msg.nonce == last_ping_nonce_) {
     auto now = util::GetSteadyTime();
-    auto ping_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now - ping_sent_time_);
+    auto ping_time = std::chrono::duration_cast<std::chrono::milliseconds>(now - ping_sent_time_);
     stats_.ping_time_ms.store(ping_time, std::memory_order_relaxed);
     LOG_NET_TRACE("Ping time for {}: {}ms", address(), ping_time.count());
 
@@ -729,14 +718,12 @@ void Peer::start_inactivity_timeout() {
       // SECURITY: Check if disconnected BEFORE accessing any members
       // If this callback holds the last shared_ptr and calls disconnect(),
       // the destructor runs when callback ends, causing re-entrancy corruption
-      if (self->state_ == PeerState::DISCONNECTED ||
-          self->state_ == PeerState::DISCONNECTING) {
+      if (self->state_ == PeerState::DISCONNECTED ||self->state_ == PeerState::DISCONNECTING) {
         return;
       }
 
       // SECURITY: Load atomic durations (Bitcoin Core pattern)
-      auto now_duration = std::chrono::duration_cast<std::chrono::seconds>(
-          util::GetSteadyTime().time_since_epoch());
+      auto now_duration = std::chrono::duration_cast<std::chrono::seconds>(util::GetSteadyTime().time_since_epoch());
       auto last_send = self->stats_.last_send.load(std::memory_order_relaxed);
       auto last_recv = self->stats_.last_recv.load(std::memory_order_relaxed);
       auto last_activity = std::max(last_send, last_recv);

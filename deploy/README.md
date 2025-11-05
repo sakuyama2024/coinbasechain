@@ -49,9 +49,10 @@ docker run -d \
   -p 9590:9590 \
   -v ~/.coinbasechain:/home/coinbasechain/.coinbasechain \
   -e COINBASECHAIN_NETWORK=mainnet \
-  -e COINBASECHAIN_LISTEN=1 \
   coinbasechain:latest
 ```
+
+Inbound connections are enabled by default. To disable inbound, set COINBASECHAIN_LISTEN=0.
 
 ## Network Configuration
 
